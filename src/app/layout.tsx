@@ -24,6 +24,9 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
               <Link href="/" className="hover:text-ink">
                 Jobs
               </Link>
+              <Link href="/agents" className="hidden hover:text-ink sm:inline">
+                Agents
+              </Link>
               <Link href="/new" className="rounded-lg bg-ink px-3 py-1.5 text-white transition-opacity hover:opacity-85">
                 + New job
               </Link>

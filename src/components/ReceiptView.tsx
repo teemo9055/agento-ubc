@@ -6,6 +6,8 @@ import type { Run } from "@/lib/types";
 import { useState } from "react";
 import { motion } from "framer-motion";
 import { Button } from "./ui";
+import { AgentIcon } from "./AgentIcon";
+import { runOutfit } from "@/lib/summary";
 
 function download(name: string, body: string, type: string) {
   const a = document.createElement("a");
@@ -57,6 +59,7 @@ export function ReceiptView({ run }: { run: Run }) {
       <div className="flex flex-wrap items-start justify-between gap-4">
         <div>
           <div className={`flex items-center gap-2 text-[13px] font-medium ${cancelled ? "text-ink-2" : "text-good"}`}>
+            <AgentIcon agent={run.agent} size={30} outfit={runOutfit(run)} mood={cancelled ? "sad" : "happy"} />
             {!cancelled && <Check />}
             {cancelled ? "Job cancelled" : "Transaction confirmed"}
           </div>

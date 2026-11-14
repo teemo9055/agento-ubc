@@ -10,8 +10,8 @@ export function Button({
   ...p
 }: React.ButtonHTMLAttributes<HTMLButtonElement> & { variant?: "primary" | "ghost" | "danger" | "quiet" }) {
   const v = {
-    primary: "bg-ink text-white hover:bg-ink/85 disabled:bg-ink/40",
-    ghost: "border border-line bg-panel text-ink hover:bg-surface disabled:text-ink-3",
+    primary: "pix-press border border-ink bg-ink text-white disabled:bg-ink/40 disabled:shadow-none",
+    ghost: "pix-press border border-ink bg-panel text-ink disabled:text-ink-3 disabled:shadow-none",
     danger: "border border-bad/40 text-bad hover:bg-bad/5",
     quiet: "text-ink-2 hover:text-ink hover:bg-ink/5",
   }[variant];

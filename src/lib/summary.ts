@@ -1,5 +1,6 @@
 import { sum } from "./money";
 import type { AgentId, Run, RunStatus } from "./types";
+import { outfitFor, type Outfit } from "./outfit";
 
 /** Light view of a run for lists; no data feeds or event payloads. */
 export interface RunSummary {
@@ -20,6 +21,7 @@ export interface RunSummary {
   activeStep?: string;
   headline?: string;
   faults: number;
+  outfit: Outfit;
 }
 
 export function summarize(r: Run): RunSummary {
@@ -41,5 +43,8 @@ export function summarize(r: Run): RunSummary {
     activeStep: r.phases.find((p) => p.status === "active" || p.status === "awaiting_reapproval" || p.status === "failed_waiting")?.label,
     headline: r.deliverable?.summary,
     faults: r.faults.length,
+    outfit: runOutfit(r),
   };
 }
+
+export const runOutfit = (r: Run): Outfit => outfitFor(r.agent, [r.task, ...r.phases.map((p) => p.sub), r.deliverable?.summary ?? ""].join(" "));

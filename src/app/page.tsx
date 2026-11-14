@@ -10,6 +10,7 @@ import { fmt } from "@/lib/money";
 import { THEMES } from "@/lib/themes";
 import type { RunSummary } from "@/lib/summary";
 import type { AgentId } from "@/lib/types";
+import { moodFor } from "@/lib/outfit";
 
 type Folder = "all" | AgentId;
 type Section = "needs" | "running" | "drafts" | "finished";
@@ -50,11 +51,11 @@ function JobCard({ r }: { r: RunSummary }) {
     <motion.li layout initial={{ opacity: 0, y: 6 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0 }} data-agent={r.agent}>
       <Link
         href={`/runs/${r.id}`}
-        className={`group block rounded-2xl border bg-panel p-4 transition-[transform,box-shadow,border-color] hover:-translate-y-0.5 hover:shadow-[0_10px_30px_-16px_var(--agent)] ${r.needsYou ? "border-warn" : "border-line hover:border-agent/40"}`}
+        className={`pix-lift group block rounded-2xl border bg-panel p-4 ${r.needsYou ? "border-warn" : "border-line"}`}
         data-testid={`job-${r.id}`}
       >
         <div className="flex items-start gap-3">
-          <AgentIcon agent={r.agent} size={36} className={live ? "float" : ""} />
+          <AgentIcon agent={r.agent} size={40} outfit={r.outfit} mood={moodFor(r.status, r.needsYou)} />
           <div className="min-w-0 flex-1">
             <div className="flex flex-wrap items-center gap-1.5 text-[11.5px] text-ink-3">
               <span className="font-medium text-agent">{THEMES[r.agent].name}</span>
@@ -75,7 +76,7 @@ function JobCard({ r }: { r: RunSummary }) {
                 {r.stepsDone}/{r.stepsTotal} steps
               </span>
             </div>
-            <div className="mt-1 h-1 overflow-hidden rounded-full bg-line">
+            <div className="mt-1 h-1 pix-bar overflow-hidden bg-line">
               <motion.div className="h-full rounded-full bg-agent" animate={{ width: `${pct}%` }} transition={{ duration: 0.5 }} />
             </div>
           </div>
@@ -191,7 +192,7 @@ function Dashboard() {
         </nav>
         <Link
           href={folder === "all" ? "/new" : `/new?agent=${folder}`}
-          className="mt-3 hidden h-9 items-center justify-center gap-2 rounded-xl bg-agent text-sm font-medium text-white transition-opacity hover:opacity-90 lg:flex"
+          className="pix-press mt-3 hidden h-9 items-center justify-center gap-2 rounded-xl border border-ink bg-agent text-sm font-medium text-white lg:flex"
         >
           + New job <kbd className="rounded border border-white/30 px-1 text-[10px]">N</kbd>
         </Link>

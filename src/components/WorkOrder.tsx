@@ -148,7 +148,7 @@ export function CostTable({ run, compact = false }: { run: Run; compact?: boolea
               <span className="font-semibold text-ink">{fmt(actual)}</span> / {fmt(approved)} USDC
             </span>
           </div>
-          <div className="mt-2 h-1.5 overflow-hidden rounded-full bg-line">
+          <div className="mt-2 h-1.5 pix-bar overflow-hidden bg-line">
             <motion.div className="h-full rounded-full bg-agent" animate={{ width: `${Math.min(100, pct)}%` }} transition={{ duration: 0.5 }} />
           </div>
         </div>

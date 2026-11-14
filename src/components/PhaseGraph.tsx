@@ -33,7 +33,7 @@ function PhaseNode({ data }: NodeProps<Node<PhaseNodeData>>) {
       <div className="truncate text-[11.5px] text-ink-3">{p.note && active ? p.note : p.sub}</div>
 
       {active && (
-        <div className="mt-2 h-1 overflow-hidden rounded-full bg-line">
+        <div className="mt-2 h-1 pix-bar overflow-hidden bg-line">
           <div className="h-full rounded-full bg-agent transition-[width] duration-500" style={{ width: `${Math.round((p.progress ?? 0) * 100)}%` }} />
         </div>
       )}

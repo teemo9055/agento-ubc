@@ -7,6 +7,7 @@ import { Button } from "@/components/ui";
 import { post, useAgentTheme } from "@/components/useRun";
 import { THEMES } from "@/lib/themes";
 import type { AgentId, FailureCode, Run } from "@/lib/types";
+import { OUTFIT_LABEL, outfitFor } from "@/lib/outfit";
 
 const FAULTS: { code: FailureCode; label: string }[] = [
   { code: "price_increase", label: "Seller raises price" },
@@ -156,16 +157,14 @@ export default function Home() {
 
       <form onSubmit={submit} className="ring-agent mt-3 rounded-2xl border border-line bg-panel p-4 shadow-sm transition-shadow sm:p-5">
         <AnimatePresence mode="wait">
-          <motion.label
-            key={agent}
-            htmlFor="task"
-            initial={{ opacity: 0, y: -4 }}
-            animate={{ opacity: 1, y: 0 }}
-            exit={{ opacity: 0, y: 4 }}
-            className="block text-[12.5px] font-medium text-ink-3"
-          >
-            <span className="text-agent">{theme.name}</span> · {theme.tagline}
-          </motion.label>
+          <motion.div key={agent} initial={{ opacity: 0, y: -4 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0, y: 4 }} className="flex items-center gap-3">
+            <AgentIcon agent={agent} size={52} outfit={outfitFor(agent, task)} mood={busy ? "working" : "idle"} />
+            <label htmlFor="task" className="block text-[12.5px] font-medium text-ink-3">
+              <span className="font-pixel text-[13px] text-agent">{theme.name}</span>
+              <span className="block">{theme.tagline}</span>
+              {OUTFIT_LABEL[outfitFor(agent, task)] && <span className="block text-[11px] text-ink-3">Dressed for it: {OUTFIT_LABEL[outfitFor(agent, task)].toLowerCase()}</span>}
+            </label>
+          </motion.div>
         </AnimatePresence>
         <textarea
           id="task"

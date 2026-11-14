@@ -1,5 +1,23 @@
 @import "tailwindcss";
 
+@font-face {
+  font-family: "Silkscreen";
+  src: url("/fonts/Silkscreen-Regular.ttf") format("truetype");
+  font-weight: 400;
+  font-display: swap;
+}
+@font-face {
+  font-family: "Silkscreen";
+  src: url("/fonts/Silkscreen-Bold.ttf") format("truetype");
+  font-weight: 700;
+  font-display: swap;
+}
+
+@theme inline {
+  --color-agent: var(--agent);
+  --color-agent-soft: var(--agent-soft);
+}
+
 @theme {
   --color-surface: #fcfcfb;
   --color-panel: #ffffff;
@@ -14,10 +32,15 @@
   --color-s1: #2a78d6;
   --color-s2: #eb6834;
   --color-s3: #1baf7a;
-  --color-agent: var(--agent);
-  --color-agent-soft: var(--agent-soft);
   --font-sans: ui-sans-serif, system-ui, -apple-system, "Segoe UI", Inter, sans-serif;
   --font-mono: ui-monospace, "SF Mono", Menlo, Consolas, monospace;
+  --font-pixel: "Silkscreen", ui-monospace, monospace;
+  --radius-sm: 1px;
+  --radius-md: 2px;
+  --radius-lg: 3px;
+  --radius-xl: 3px;
+  --radius-2xl: 4px;
+  --radius-3xl: 6px;
 }
 
 html,
@@ -28,10 +51,106 @@ body {
 
 body {
   background-image:
-    radial-gradient(1200px 500px at 85% -10%, color-mix(in oklab, var(--agent) 9%, transparent), transparent 70%),
-    radial-gradient(900px 400px at -10% 0%, color-mix(in oklab, var(--agent) 5%, transparent), transparent 70%);
+    radial-gradient(1200px 500px at 85% -10%, color-mix(in oklab, var(--agent) 8%, transparent), transparent 70%),
+    linear-gradient(to right, rgb(11 11 11 / 0.035) 1px, transparent 1px),
+    linear-gradient(to bottom, rgb(11 11 11 / 0.035) 1px, transparent 1px);
+  background-size: auto, 24px 24px, 24px 24px;
   background-attachment: fixed;
-  transition: background-color 400ms;
+}
+
+/* ---------- pixel / block language ---------- */
+h1,
+h2 {
+  font-family: var(--font-pixel);
+  letter-spacing: 0;
+  font-weight: 400;
+}
+h1 {
+  line-height: 1.15;
+}
+.font-pixel {
+  font-family: var(--font-pixel);
+}
+/* Square everything that was pill-shaped; dots become pixels. */
+.rounded-full {
+  border-radius: 2px;
+}
+.pix-frame {
+  border: 1.5px solid var(--color-ink);
+  box-shadow: 2px 2px 0 0 var(--color-ink);
+  border-radius: 2px;
+}
+.pix-bubble {
+  border: 1.5px solid var(--color-ink);
+  border-radius: 1px;
+}
+.pix-shadow {
+  box-shadow: 3px 3px 0 0 var(--color-ink);
+}
+.pix-press {
+  box-shadow: 3px 3px 0 0 var(--color-ink);
+  transition: transform 90ms steps(2), box-shadow 90ms steps(2);
+}
+.pix-press:hover:not(:disabled) {
+  transform: translate(-1px, -1px);
+  box-shadow: 4px 4px 0 0 var(--color-ink);
+}
+.pix-press:active:not(:disabled) {
+  transform: translate(3px, 3px);
+  box-shadow: 0 0 0 0 var(--color-ink);
+}
+.pix-lift {
+  transition: transform 120ms steps(2), box-shadow 120ms steps(2), border-color 120ms;
+}
+.pix-lift:hover {
+  transform: translate(-2px, -2px);
+  box-shadow: 4px 4px 0 0 var(--agent);
+  border-color: var(--agent);
+}
+/* Segmented progress: fills in blocks. */
+.pix-bar > * {
+  mask-image: repeating-linear-gradient(90deg, #000 0 7px, transparent 7px 9px);
+}
+
+/* ---------- mascot motion (every motion has a cause: status) ---------- */
+@keyframes blink {
+  0%,
+  92%,
+  100% {
+    opacity: 1;
+  }
+  94%,
+  98% {
+    opacity: 0;
+  }
+}
+@keyframes bob {
+  0% {
+    transform: translateY(0);
+  }
+  50% {
+    transform: translateY(-1px);
+  }
+}
+@keyframes twinkle {
+  0% {
+    opacity: 1;
+  }
+  50% {
+    opacity: 0.15;
+  }
+}
+.mascot .mascot-pupil {
+  animation: blink 4.5s steps(1) infinite;
+}
+.mascot-working {
+  animation: bob 0.5s steps(1) infinite;
+}
+.mascot-spark {
+  animation: twinkle 0.7s steps(1) infinite;
+}
+.pix-bubble {
+  animation: bob 0.9s steps(1) infinite;
 }
 
 :root,
@@ -117,6 +236,9 @@ body {
 }
 
 @media (prefers-reduced-motion: reduce) {
+  .mascot,
+  .mascot *,
+  .pix-bubble,
   .float,
   .draw,
   .glow,

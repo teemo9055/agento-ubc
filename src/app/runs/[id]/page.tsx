@@ -14,6 +14,8 @@ import { fmt, sum } from "@/lib/money";
 import { THEMES } from "@/lib/themes";
 import { short, txUrl } from "@/lib/format";
 import type { Card } from "@/lib/types";
+import { moodFor } from "@/lib/outfit";
+import { runOutfit } from "@/lib/summary";
 
 function Skeleton() {
   return (
@@ -88,7 +90,7 @@ export default function RunPage({ params }: { params: Promise<{ id: string }> })
 
       <motion.header initial={{ opacity: 0, y: 6 }} animate={{ opacity: 1, y: 0 }} className="flex flex-wrap items-end justify-between gap-4">
         <div className="flex min-w-0 items-start gap-3">
-          <AgentIcon agent={run.agent} size={44} className={run.status === "running" ? "float" : ""} />
+          <AgentIcon agent={run.agent} size={56} outfit={runOutfit(run)} mood={moodFor(run.status, run.pendingReapprovals.length + run.pendingFailures.length)} />
           <div className="min-w-0">
             <div className="flex flex-wrap items-center gap-2 text-[12px] font-medium text-ink-3">
               <span className="text-agent">{theme.name}</span>
@@ -184,7 +186,7 @@ export default function RunPage({ params }: { params: Promise<{ id: string }> })
               {run.phases.filter((p) => p.status === "active").map((p) => `${p.label} running`).join(", ")}
               {pending.length ? ` · ${pending.length} needs your decision` : ""}
             </div>
-            <div className="h-1.5 overflow-hidden rounded-full bg-line">
+            <div className="h-1.5 pix-bar overflow-hidden bg-line">
               <motion.div className="h-full rounded-full bg-good" animate={{ width: `${(done / run.phases.length) * 100}%` }} transition={{ duration: 0.5 }} />
             </div>
             <div className="mt-2">
