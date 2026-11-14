@@ -16,10 +16,11 @@ import type { AgentId } from "@/lib/types";
 import { moodFor } from "@/lib/outfit";
 
 type Folder = "all" | AgentId;
-type Section = "needs" | "running" | "drafts" | "finished";
+type Section = "needs" | "chats" | "running" | "drafts" | "finished";
 
 const SECTIONS: { key: Section; title: string; match: (r: RunSummary) => boolean }[] = [
   { key: "needs", title: "Needs you", match: (r) => r.needsYou > 0 },
+  { key: "chats", title: "Exploring", match: (r) => r.status === "exploring" },
   { key: "running", title: "Running", match: (r) => (r.status === "running" || r.status === "funding") && r.needsYou === 0 },
   { key: "drafts", title: "Drafts awaiting approval", match: (r) => r.status === "draft" },
   { key: "finished", title: "Finished", match: (r) => r.status === "done" || r.status === "cancelled" },
@@ -39,6 +40,12 @@ function StatusPill({ r }: { r: RunSummary }) {
     return (
       <span className="inline-flex items-center gap-1 rounded-full border border-agent/40 bg-agent-soft px-2 py-0.5 text-[11px] font-medium text-agent">
         <Spinner /> Planning
+      </span>
+    );
+  if (r.status === "exploring")
+    return (
+      <span className="inline-flex items-center gap-1 rounded-full border border-agent/40 bg-agent-soft px-2 py-0.5 text-[11px] font-medium text-agent">
+        {r.thinking ? <Spinner /> : "…"} {r.thinking ? "Thinking" : "Chat"}
       </span>
     );
   if (r.needsYou > 0) return <span className="rounded-full border border-warn bg-warn/15 px-2 py-0.5 text-[11px] font-medium text-[#7a5000]">! Needs you</span>;
@@ -101,12 +108,22 @@ function JobCard({ r }: { r: RunSummary }) {
           </div>
         ) : r.headline ? (
           <p className="mt-2 line-clamp-2 text-[12.5px] text-ink-2">{r.headline}</p>
+        ) : r.status === "exploring" && r.lastMessage ? (
+          <p className="mt-2 line-clamp-2 text-[12.5px] text-ink-2">{r.lastMessage}</p>
+        ) : r.move ? (
+          <p className="mt-2 line-clamp-2 text-[12.5px] text-ink-2">Move: {r.move}</p>
         ) : null}
 
         <div className="num mt-3 flex items-center justify-between border-t border-line pt-2 text-[12px] text-ink-3">
           <span>
-            {r.status === "draft" ? "Quoted" : "Spent"} <b className="font-semibold text-ink">{fmt(r.status === "draft" ? r.approved : r.spent)}</b>
-            {r.status !== "draft" && <> / {fmt(r.approved)}</>} USDC
+            {r.status === "exploring" ? (
+              "Nothing spent while exploring"
+            ) : (
+              <>
+                {r.status === "draft" ? "Quoted" : "Spent"} <b className="font-semibold text-ink">{fmt(r.status === "draft" ? r.approved : r.spent)}</b>
+                {r.status !== "draft" && <> / {fmt(r.approved)}</>} USDC
+              </>
+            )}
           </span>
           {r.refunded && BigInt(r.refunded) > 0n ? <span>{fmt(r.refunded)} returned</span> : <span className="reveal opacity-0 transition-opacity group-hover:opacity-100">Open →</span>}
         </div>

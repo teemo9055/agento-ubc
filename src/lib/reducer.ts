@@ -12,6 +12,12 @@ export function reduce(run: Run | null, e: SeqEvent): Run | null {
   if (!run) return run;
 
   switch (e.type) {
+    case "chat.message":
+      return { ...run, chat: [...(run.chat ?? []), e.message], thinking: e.message.role === "user" ? run.thinking : undefined };
+    case "chat.thinking":
+      return { ...run, thinking: e.note };
+    case "order.updated":
+      return { ...run, order: e.order };
     case "run.funding":
       return { ...run, status: "funding" };
     case "run.approved":

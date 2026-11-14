@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { z } from "zod";
 import type { SeqEvent } from "@/lib/events";
-import { approve, cancel, decideReapproval, editCard, fundingInfo, previewEdit, reapprovalPlan, resolveFailure, setMethod, subscribe } from "@/server/orchestrator";
+import { adopt, approve, backToChat, cancel, sendChat, decideReapproval, editCard, fundingInfo, previewEdit, reapprovalPlan, resolveFailure, setMethod, subscribe } from "@/server/orchestrator";
 
 export const dynamic = "force-dynamic";
 
@@ -12,12 +12,26 @@ const Hash = z.string().regex(/^0x[0-9a-fA-F]{64}$/);
 const Reapproval = z.object({ requestId: z.string(), outcome: z.enum(["approved", "denied"]), amount: z.string().regex(/^\d+$/).optional(), txHash: Hash.optional() });
 const Method = z.object({ seller: z.enum(["primary", "mirror"]).optional(), analysis: z.enum(["builtin", "ide"]).optional() });
 const Failure = z.object({ failureId: z.string(), action: z.enum(["retry", "skip", "switch", "edit", "cancel", "topup"]), txHash: Hash.optional() });
+const Chat = z.object({ text: z.string().min(1).max(600) });
+const Adopt = z.object({ proposalId: z.string() });
 const Approve = z.object({ txHash: Hash.optional() });
 
 export async function POST(req: NextRequest, ctx: Ctx) {
   const { id, action } = await ctx.params;
   try {
     switch (action) {
+      case "chat": {
+        const b = Chat.parse(await req.json());
+        // The reply streams over events; don't hold the request open for it.
+        void sendChat(id, b.text).catch((e) => console.warn("chat", e));
+        return NextResponse.json({ ok: true });
+      }
+      case "adopt": {
+        const b = Adopt.parse(await req.json());
+        return NextResponse.json(await adopt(id, b.proposalId));
+      }
+      case "back":
+        return NextResponse.json(backToChat(id));
       case "edit": {
         const b = Edit.parse(await req.json());
         return NextResponse.json(await editCard(id, b.card, b.prompt));

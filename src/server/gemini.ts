@@ -113,3 +113,21 @@ export async function spotCandles(symbol: string, tf: "15m" | "1hr" | "6hr" | "1
   const rows = await get<Candle[]>(`/v2/candles/${encodeURIComponent(symbol)}/${tf}`);
   return rows.map(([t, , , , c]) => ({ t, p: c })).sort((a, b) => a.t - b.t);
 }
+
+export interface SpotQuote {
+  symbol: string;
+  last: number;
+  bid: number | null;
+  ask: number | null;
+  change24h: number | null;
+  high24h: number | null;
+  low24h: number | null;
+}
+
+/** Latest spot price and 24h range. */
+export async function spotTicker(symbol: string): Promise<SpotQuote> {
+  const t = await get<{ close: string; open: string; high: string; low: string; bid?: string; ask?: string }>(`/v2/ticker/${encodeURIComponent(symbol)}`);
+  const last = Number(t.close);
+  const open = Number(t.open);
+  return { symbol, last, bid: num(t.bid), ask: num(t.ask), change24h: open ? last / open - 1 : null, high24h: num(t.high), low24h: num(t.low) };
+}

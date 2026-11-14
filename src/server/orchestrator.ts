@@ -20,8 +20,10 @@ import type {
   Run,
 } from "@/lib/types";
 import { AGENTS } from "./agents";
-import { aiEdit, aiPlan, aiSummary } from "./agents/ai-planning";
+import { aiSummary } from "./agents/ai-planning";
 import { aiEnabled, type AiUsage } from "./ai";
+import { exploreTurn } from "./explore";
+import { offVault, type ChatMsg, type Proposal } from "@/lib/types";
 import { PhaseFailure, type AgentCtx, type PlanDraft } from "./agents/types";
 import { FACTORY, USDC, addresses, factoryAbi, liveReady, publicClient, vaultAbi } from "./chain";
 import { planTree } from "./merkle";
@@ -116,7 +118,9 @@ export function planHash(run: Pick<Run, "id" | "task" | "threshold" | "lines" | 
   return keccak256(toBytes(canonical));
 }
 
-function priceCard(lines: CostLine[], cap: bigint, threshold: bigint, fees: bigint): Card {
+function priceCard(all: CostLine[], cap: bigint, threshold: bigint, fees: bigint): Card {
+  const lines = all.filter((l) => !offVault(l.rail));
+  const order = all.find((l) => l.rail === "exchange");
   const total = sum(lines.map((l) => l.approved));
   const big = lines.filter((l) => l.bigSpend).length;
   const calls = lines.reduce((a, l) => a + (l.calls?.max ?? 0), 0);
@@ -124,7 +128,12 @@ function priceCard(lines: CostLine[], cap: bigint, threshold: bigint, fees: bigi
   return {
     kind: "price",
     title: `${f(total)} USDC`,
-    points: [`Cap ${f(cap)} USDC (+${BUFFER_PCT}% buffer)`, `${calls} paid requests · ~${fmtFee(fees)} fees`, big ? `${big} big ${big === 1 ? "spend" : "spends"} over ${f(threshold)}` : `No spend over ${f(threshold)}`],
+    points: [
+      `Cap ${f(cap)} USDC (+${BUFFER_PCT}% buffer)`,
+      `${calls} paid requests · ~${fmtFee(fees)} fees`,
+      ...(order ? [`Order up to $${f(BigInt(order.approved))} on ${order.payeeName}`] : []),
+      big ? `${big} big ${big === 1 ? "spend" : "spends"} over ${f(threshold)}` : `No spend over ${f(threshold)}`,
+    ],
   };
 }
 
@@ -189,11 +198,11 @@ function materialize(ctl: Ctl, raw: PlanDraft) {
   let idx = 0;
   const lines: CostLine[] = draft.lines.map((l) => ({
     ...l,
-    index: l.rail === "subscription" ? -1 : idx++,
+    index: offVault(l.rail) ? -1 : idx++,
     actual: "0",
     bigSpend: BigInt(l.approved) >= threshold,
   }));
-  const total = sum(lines.map((l) => l.approved));
+  const total = sum(lines.filter((l) => !offVault(l.rail)).map((l) => l.approved));
   const cap = total + (total * BUFFER_PCT) / 100n;
   const txs = lines.reduce((a, l) => a + (l.rail === "x402" ? (l.calls?.max ?? 1) : 0), 0) + 3; // + approve, open, close
   const fees = EST_FEE_PER_TX * BigInt(txs);
@@ -201,7 +210,16 @@ function materialize(ctl: Ctl, raw: PlanDraft) {
   return { cards: [...draft.cards, priceCard(lines, cap, threshold, fees)], lines, phases, cap: cap.toString(), estFees: fees.toString() };
 }
 
-type CreateInput = { agent: AgentId; task: string; mode?: "demo" | "live"; faults?: FailureCode[]; options?: Record<string, unknown>; plannedBy?: string; payerAddress?: Hex };
+type CreateInput = {
+  agent: AgentId;
+  task: string;
+  mode?: "demo" | "live";
+  faults?: FailureCode[];
+  /** A move written by an outside AI (already validated): skips the chat. */
+  proposal?: Proposal;
+  plannedBy?: string;
+  payerAddress?: Hex;
+};
 
 /**
  * Creates a job. With `wait: false` it returns at once with `planning: true` and the
@@ -217,7 +235,7 @@ export async function createRun(input: CreateInput, opts: { wait?: boolean } = {
     task: input.task.trim().slice(0, 280),
     mode,
     faults: input.faults ?? [],
-    status: "draft",
+    status: input.proposal ? "draft" : "exploring",
     cards: [],
     lines: [],
     phases: [],
@@ -252,33 +270,72 @@ export async function createRun(input: CreateInput, opts: { wait?: boolean } = {
     cancelled: false,
   };
   runs.set(run.id, ctl);
-  emit(ctl, { type: "workorder.updated", run: { ...run, planning: true } });
-  const planned = draftPlan(ctl, input).catch((e) => {
-    console.warn("planning failed", e);
-    emit(ctl, { type: "workorder.updated", run: { ...ctl.run, planning: false, editNote: { ok: false, message: "Couldn't plan this task. Try rephrasing it." } } });
-  });
-  if (opts.wait !== false) await planned;
+  if (input.proposal) {
+    emit(ctl, { type: "workorder.updated", run: { ...run, planner: "ai", ai: { model: input.plannedBy ?? "your AI (MCP)", calls: 0, promptTokens: 0, completionTokens: 0 } } });
+    await adoptProposal(ctl, input.proposal);
+    return ctl.run;
+  }
+  emit(ctl, { type: "workorder.updated", run: { ...run, chat: [] } });
+  const first = sendChat(run.id, input.task);
+  if (opts.wait !== false) await first;
   return ctl.run;
 }
 
-async function draftPlan(ctl: Ctl, input: CreateInput) {
-  const run = { ...ctl.run };
-  const agent = AGENTS[run.agent];
-  // The model drafts options from the task; code validates, prices and can always fall back to rules.
-  // A plan from an outside AI (already validated) wins; otherwise the built-in planner drafts one.
-  const drafted = input.options ? null : aiEnabled() ? await aiPlan(run.agent, run.task) : null;
-  if (input.options) {
-    ctl.options = { ...ctl.options, ...input.options };
-    run.planner = "ai";
-    run.ai = { model: input.plannedBy ?? "your AI (MCP)", calls: 0, promptTokens: 0, completionTokens: 0 };
+/** Turns an agreed move into a priced work order the user approves. */
+async function adoptProposal(ctl: Ctl, proposal: Proposal) {
+  ctl.options = { ...ctl.options, proposal };
+  const plan = materialize(ctl, await AGENTS[ctl.run.agent].plan(ctl.run.task, ctl.options));
+  emit(ctl, { type: "workorder.updated", run: { ...ctl.run, ...plan, status: "draft", proposal, planning: false, editNote: undefined } });
+}
+
+const chatBusy = new Set<string>();
+
+/** One explore turn: the user's message, the agent's free lookups, its reply and maybe a move. */
+export function sendChat(runId: string, text: string): Promise<Run> {
+  const ctl = ctlOf(runId);
+  if (!["exploring", "draft"].includes(ctl.run.status)) throw new Error("this job is already running");
+  if (chatBusy.has(runId)) throw new Error("the agent is still answering");
+  const msg: ChatMsg = { id: id(), role: "user", text: text.trim().slice(0, 600), at: now() };
+  if (!msg.text) throw new Error("empty message");
+  chatBusy.add(runId);
+  emit(ctl, { type: "chat.message", message: msg });
+  emit(ctl, { type: "chat.thinking", note: "Thinking" });
+  return agentReply(ctl);
+}
+
+async function agentReply(ctl: Ctl) {
+  const runId = ctl.run.id;
+  try {
+    const r = await exploreTurn(ctl.run.agent, ctl.run.chat ?? [], (note) => emit(ctl, { type: "chat.thinking", note }), id());
+    for (const u of r.usage) trackAi(ctl, "chat", u);
+    if (r.usage.length) ctl.run = { ...ctl.run, planner: "ai" };
+    emit(ctl, { type: "chat.message", message: { id: id(), role: "agent", text: r.text, at: now(), tools: r.tools, proposal: r.proposal, suggestions: r.suggestions } });
+  } catch (e) {
+    console.warn("chat failed", e);
+    emit(ctl, { type: "chat.message", message: { id: id(), role: "agent", text: "Something went wrong looking that up. Try again?", at: now() } });
+  } finally {
+    chatBusy.delete(runId);
   }
-  if (drafted) {
-    ctl.options = { ...ctl.options, ...drafted.options };
-    run.planner = "ai";
-  }
-  const plan = materialize(ctl, await agent.plan(run.task, ctl.options));
-  emit(ctl, { type: "workorder.updated", run: { ...run, ...plan, planning: false } });
-  if (drafted) trackAi(ctl, "plan", drafted.usage);
+  return ctl.run;
+}
+
+/** The user said yes to a move from the chat. */
+export async function adopt(runId: string, proposalId: string) {
+  const ctl = ctlOf(runId);
+  if (!["exploring", "draft"].includes(ctl.run.status)) throw new Error("this job is already running");
+  const p = [...(ctl.run.chat ?? [])].reverse().find((m) => m.proposal?.id === proposalId)?.proposal;
+  if (!p) throw new Error("move not found");
+  await adoptProposal(ctl, p);
+  log(ctl, { kind: "card_edit", what: `Move chosen: ${p.title}`, why: p.ask, outcome: "approved", by: "user" });
+  return ctl.run;
+}
+
+/** Back to chat from the work order, keeping the conversation. */
+export function backToChat(runId: string) {
+  const ctl = ctlOf(runId);
+  if (ctl.run.status !== "draft") throw new Error("only before approval");
+  emit(ctl, { type: "workorder.updated", run: { ...ctl.run, status: "exploring", cards: [], lines: [], phases: [], proposal: undefined, editNote: undefined } });
+  return ctl.run;
 }
 
 const ctlOf = (runId: string) => {
@@ -311,7 +368,7 @@ export async function editCard(runId: string, card: Card["kind"], prompt: string
     const after = plan.cards.find((c) => c.kind === "price")?.title;
     emit(ctl, {
       type: "workorder.updated",
-      run: { ...ctl.run, ...plan, editNote: { ok: true, message: before === after ? res.message : `${res.message} · ${before} → ${after}` } },
+      run: { ...ctl.run, ...plan, proposal: (ctl.options.proposal as Proposal | undefined) ?? ctl.run.proposal, editNote: { ok: true, message: before === after ? res.message : `${res.message} · ${before} → ${after}` } },
     });
   } else {
     emit(ctl, { type: "workorder.updated", run: { ...ctl.run, editNote: { ok: false, message: res.message, alternatives: res.alternatives } } });
@@ -326,14 +383,8 @@ function trackAi(ctl: Ctl, purpose: string, usage: AiUsage) {
 
 /** AI edit first (keeps the model's card copy in sync), rule-based edit as fallback. */
 async function editOptions(ctl: Ctl, card: Card["kind"], prompt: string) {
-  if (aiEnabled() && ctl.run.planner === "ai") {
-    const r = await aiEdit(ctl.run.agent, ctl.run.task, card, prompt, ctl.options);
-    if (r) {
-      trackAi(ctl, "edit", r.usage);
-      return { ok: r.ok, message: r.message, alternatives: r.alternatives, options: r.ok ? { ...ctl.options, ...r.options } : undefined };
-    }
-  }
-  return AGENTS[ctl.run.agent].edit(card, prompt, ctl.options);
+  const r = AGENTS[ctl.run.agent].edit(card, prompt, ctl.options);
+  return r.ok && r.options ? { ...r, options: { ...ctl.options, ...r.options } } : r;
 }
 
 /** Large arrays (price series) become a short sketch so the summary prompt stays small. */
@@ -388,13 +439,15 @@ export async function approve(runId: string, signed?: { txHash?: Hex }) {
   const ctl = ctlOf(runId);
   if (ctl.run.status !== "draft") throw new Error("already approved");
   if (ctl.run.planning) throw new Error("still planning");
-  if (ctl.run.payer === "passkey" && !signed?.txHash) throw new Error("sign the funding with your passkey wallet first");
+  const noVault = BigInt(ctl.run.cap) === 0n;
+  if (ctl.run.payer === "passkey" && !signed?.txHash && !noVault) throw new Error("sign the funding with your passkey wallet first");
   emit(ctl, { type: "run.funding" });
   const hash = planHash(ctl.run);
   const adapter = adapterFor(ctl.run);
   try {
     const { vault, fundingTx } =
-      ctl.run.payer === "passkey" ? { vault: await verifyUserFunding(ctl.run, hash), fundingTx: signed!.txHash } : await adapter.open(ctl.run, hash);
+      // A move with no paid research spends nothing from USDC, so no vault is opened.
+      noVault ? {} : ctl.run.payer === "passkey" ? { vault: await verifyUserFunding(ctl.run, hash), fundingTx: signed!.txHash } : await adapter.open(ctl.run, hash);
     ctl.funded = BigInt(ctl.run.cap);
     emit(ctl, { type: "run.approved", planHash: hash, vault, fundingTx, at: now() });
     const big = ctl.run.lines.filter((l) => l.bigSpend);
@@ -439,7 +492,7 @@ async function finish(ctl: Ctl) {
   const agent = AGENTS[ctl.run.agent];
   const deliverable = agent.deliver(agentCtx(ctl, "deliver"));
   if (aiEnabled() && ctl.run.method.analysis !== "ide") {
-    const r = await aiSummary(ctl.run.agent, ctl.run.task, compact(deliverable.data));
+    const r = await aiSummary(ctl.run.agent, ctl.run.proposal ? `${ctl.run.proposal.ask} (user first asked: ${ctl.run.task})` : ctl.run.task, compact(deliverable.data));
     if (r) {
       trackAi(ctl, "summary", r.usage);
       deliverable.summary = r.summary.headline;
@@ -453,8 +506,14 @@ async function finish(ctl: Ctl) {
       data: deliverable.data,
     };
   }
-  const { refunded, txHash } = await adapterFor(ctl.run).close(ctl.run);
+  const { refunded, txHash } = await closeVault(ctl.run);
   emit(ctl, { type: "run.done", deliverable, refunded: refunded.toString(), refundTx: txHash, at: now() });
+}
+
+/** Closes the vault and refunds what's left; nothing to do when no vault was opened. */
+async function closeVault(run: Run): Promise<{ refunded: bigint; txHash?: Hex }> {
+  if (run.mode === "live" && !run.vault) return { refunded: 0n };
+  return adapterFor(run).close(run);
 }
 
 function optionsFor(code: FailureCode, phase: Phase, retryable: boolean): FailureAction[] {
@@ -536,7 +595,8 @@ const phaseCharged = (ctl: Ctl, phaseId: string) =>
   sum(ctl.run.phases.find((p) => p.id === phaseId)?.payments.filter((p) => p.txState === "settled").map((p) => p.amount) ?? []);
 
 function takeFault(ctl: Ctl, phaseId: string): FailureCode | undefined {
-  if (phaseId !== AGENTS[ctl.run.agent].faultPhase) return;
+  const target = ctl.run.phases.some((p) => p.id === AGENTS[ctl.run.agent].faultPhase) ? AGENTS[ctl.run.agent].faultPhase : ctl.run.lines.find((l) => l.rail === "x402")?.phaseId;
+  if (phaseId !== target) return;
   const f = ctl.run.faults.find((x) => PAYMENT_FAULTS.includes(x) && !ctl.usedFaults.has(x));
   if (f) ctl.usedFaults.add(f);
   return f;
@@ -554,6 +614,7 @@ function agentCtx(ctl: Ctl, phaseId: string): AgentCtx {
       return true;
     },
     buy: (lineId, product, params, key) => buy(ctl, phaseId, lineId, product, params, key),
+    order: (o) => emit(ctl, { type: "order.updated", order: o }),
   };
 }
 
@@ -818,7 +879,7 @@ export async function cancel(runId: string) {
     emit(ctl, { type: "run.cancelled", refunded: "0", at: now() });
     return ctl.run;
   }
-  const { refunded, txHash } = await adapterFor(ctl.run).close(ctl.run);
+  const { refunded, txHash } = await closeVault(ctl.run);
   log(ctl, { kind: "failure", what: "Job cancelled", why: "Stopped by you", outcome: "cancelled", by: "user", amount: refunded.toString(), tx: txHash });
   emit(ctl, { type: "run.cancelled", refunded: refunded.toString(), refundTx: txHash, at: now() });
   return ctl.run;
@@ -866,7 +927,7 @@ async function recover(ctl: Ctl) {
   let refundTx: Hex | undefined;
   if (ctl.run.mode === "live" && ctl.run.vault) {
     try {
-      const r = await adapterFor(ctl.run).close(ctl.run);
+      const r = await closeVault(ctl.run);
       refunded = r.refunded;
       refundTx = r.txHash;
     } catch (e) {

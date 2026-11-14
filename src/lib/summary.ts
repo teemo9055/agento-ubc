@@ -1,5 +1,5 @@
 import { sum } from "./money";
-import type { AgentId, Run, RunStatus } from "./types";
+import { offVault, type AgentId, type Run, type RunStatus } from "./types";
 import { outfitFor, type Outfit } from "./outfit";
 
 /** Light view of a run for lists; no data feeds or event payloads. */
@@ -23,6 +23,10 @@ export interface RunSummary {
   faults: number;
   outfit: Outfit;
   planning: boolean;
+  thinking: boolean;
+  /** Latest chat line, for jobs still exploring. */
+  lastMessage?: string;
+  move?: string;
 }
 
 export function summarize(r: Run): RunSummary {
@@ -35,7 +39,7 @@ export function summarize(r: Run): RunSummary {
     planner: r.planner ?? "rules",
     createdAt: r.createdAt,
     finishedAt: r.finishedAt,
-    approved: sum(r.lines.map((l) => l.approved)).toString(),
+    approved: sum(r.lines.filter((l) => !offVault(l.rail)).map((l) => l.approved)).toString(),
     spent: sum(r.lines.map((l) => l.actual)).toString(),
     refunded: r.refunded,
     needsYou: r.pendingReapprovals.length + r.pendingFailures.length,
@@ -46,6 +50,9 @@ export function summarize(r: Run): RunSummary {
     faults: r.faults.length,
     outfit: runOutfit(r),
     planning: Boolean(r.planning),
+    thinking: Boolean(r.thinking),
+    lastMessage: r.chat?.[r.chat.length - 1]?.text.slice(0, 140),
+    move: r.proposal?.title,
   };
 }
 

@@ -1,14 +1,16 @@
 # Agento
 
-Bring a task. An agent turns it into a priced work order, you approve it once, and it spends USDC on Arc only on the lines you approved. You get the result and an itemized receipt.
+Ask an agent anything; it looks things up for free. When there's something worth doing, it proposes one concrete move ("Buy 7 YES on Phoenix at 39¢ or less if the odds are still under 40%?"). Say yes and the move becomes a priced work order: you approve once, the agent pays for its research in USDC on Arc from a vault that only pays what you approved, re-checks the condition on fresh data, then acts. You get the result and an itemized receipt.
 
-Three agents share one core:
+Three agents share one runtime; none runs a fixed recipe. Each move's steps come from the conversation.
 
-| Agent | Domain | Buys | Widget |
-| ----- | ------ | ---- | ------ |
-| **Inso** | Prediction markets | Gemini Prediction Markets data: market search, odds history, trade tape | Odds-over-time chart |
-| **Trado** | Trading | Gemini spot candles plus related prediction-market odds | Price chart and trend call |
-| **Travo** | Travel | Geocoding and driving routes (OpenStreetMap) | Route map and day plan |
+| Agent | Domain | Explores with (free) | Paid research (x402) | Moves |
+| ----- | ------ | -------------------- | -------------------- | ----- |
+| **Inso** | Prediction markets | Gemini Prediction Markets search and contracts | Odds history, trade tape | Limit order on a YES/NO contract |
+| **Trado** | Trading | Gemini spot prices, related markets | Spot candles | Spot limit order |
+| **Travo** | Travel | Place lookup (OpenStreetMap) | Driving route | Day-by-day driving plan |
+
+All three can search [Circle's Agent Marketplace](https://agents.circle.com/services) catalog to show what other x402 services exist and whether they accept Arc testnet.
 
 ## How it uses Arc
 
@@ -67,17 +69,19 @@ Measured network fee per `authorize` call, paid by the agent: about 0.0026 USDC.
 
 ## Agent decision loop
 
-1. **Plan.** The agent turns the task into cards (deliverable, risk, method, price) and cost lines (step, payee, rail, unit price, max calls). The total cost is shown before anything is spent.
-2. **Edit.** You change a card by prompt. The agent re-prices the plan, or says why it can't and offers edits that it can apply.
-3. **Approve.** One approval covers the whole plan, including big spends over the threshold. The vault is funded with the total plus a 20% buffer.
-4. **Execute.** Steps run in dependency order. Independent steps run in parallel. For each purchase:
+1. **Explore.** You chat. The model calls free tools (market search, spot prices, places, marketplace catalog) in a loop of up to 6 rounds and answers with the numbers it found. Nothing is spent.
+2. **Propose.** When there's something to do, the model calls `propose_move`: paid research steps from a priced catalog, an optional condition (e.g. YES price ≤ 40¢), and an action. Code validates it against live data (the contract exists, the agent may do this, the order is under the limit) and prices it. A loose condition is tightened to the order's own limit.
+3. **Edit.** You say yes, change it in chat, or edit a card ("5 contracts", "drop the trade tape"). The work order is re-priced.
+4. **Approve.** One approval covers the whole plan, including big spends over the threshold. The vault is funded with the total plus a 20% buffer.
+5. **Execute.** Research steps run in parallel. Independent steps run in parallel. For each purchase:
    1. Ask the seller for its price (HTTP 402).
    2. Check the policy against the approved line.
    3. Authorize from the vault.
    4. The seller settles onchain and returns the data.
-5. **Change → ask.** If the policy blocks a spend, that step pauses and you get a re-approval popup. Other steps keep going.
-6. **Fail → choose.** A failed step offers retry, skip (optional steps only), switch provider, top up, or cancel. Purchases are cached per request key, so a retry never pays twice.
-7. **Close.** The vault closes, unspent USDC returns to you, and you get the receipt.
+6. **Check, then act.** The condition is read on a fresh price right before acting. If it fails, the order is skipped and the report says why. Orders go to the Gemini sandbox when trading keys are set, otherwise they are recorded as paper trades.
+7. **Change → ask.** If the policy blocks a spend, that step pauses and you get a re-approval popup. Other steps keep going.
+8. **Fail → choose.** A failed step offers retry, skip (optional steps only), switch provider, top up, or cancel. Purchases are cached per request key, so a retry never pays twice.
+9. **Close.** The vault closes, unspent USDC returns to you, and you get the receipt.
 
 ## Safety limits
 
@@ -93,7 +97,9 @@ Measured network fee per `authorize` call, paid by the agent: about 0.0026 USDC.
 | Re-approval timeout counts as deny | Orchestrator (`REAPPROVAL_TIMEOUT_MS`, default 2 min) |
 | Big spends listed and approved up front | Work order (default threshold 0.25 USDC, editable on the price card) |
 | Cancel anytime, funds returned | `vault.close()` by client or agent |
-| Read-only domains | Agents refuse trades, bookings and other actions outside the plan |
+| Orders only as approved | The order line (side, contract, max price, size) is part of the approved work order; the condition is re-checked on fresh data |
+| Order size | `MAX_ORDER_USD` (default 50); the order is paid on the exchange, never from the vault |
+| Model output is untrusted | Every move is validated against live data before it is shown; tool results are marked as third-party data |
 
 The policy engine runs before any signature. The vault enforces the same rules onchain, so a bug in the app fails closed.
 
@@ -103,11 +109,12 @@ The app is also an MCP server at `/api/mcp`, so Claude Code, Claude Desktop, Cur
 
 | Tool | What it does |
 | ---- | ------------ |
-| `list_agents` | Agents, unit prices, plan shapes, rules |
-| `browse_options` | Real active markets (Inso) or tradable symbols (Trado). Free |
-| `draft_work_order` | Priced draft from your AI's own plan (validated by the server) or the built-in planner |
-| `edit_work_order` | Change a card by request; re-priced or refused with a reason |
-| `get_job`, `list_jobs` | Status, cost, steps, what it is waiting for |
+| `list_agents` | Agents, free tools, paid research prices, allowed moves, rules |
+| `look_up` | Run a free tool (market search, spot price, place, marketplace catalog) |
+| `ask_agent` | Chat with a built-in agent; it explores and may propose a move |
+| `propose_move` | Your AI's own move, validated against live data and priced as a draft work order |
+| `edit_work_order` | Change a draft by request; re-priced or refused with a reason |
+| `get_job`, `list_jobs` | Status, chat, cost, steps, what it is waiting for |
 | `get_job_data`, `get_receipt` | Results for your AI to analyse; itemized receipt |
 | `cancel_job` | Stop and return unspent funds |
 
@@ -146,6 +153,8 @@ cd contracts && forge script script/Deploy.s.sol --rpc-url https://rpc.testnet.a
 ```
 
 4. Put the factory address in `FACTORY_ADDRESS`, then run `npm run dev`.
+
+To place sandbox orders, create an API key at https://exchange.sandbox.gemini.com (Settings → API, trading scope) and set `GEMINI_TRADING_KEY` and `GEMINI_TRADING_SECRET`. Without them, orders are recorded as paper trades. `GEMINI_TRADING_ENV=production` switches to the real exchange.
 
 For passkey wallets, create a Circle client key bound to your domain (`localhost` locally) and set the same domain under Console → Modular Wallets → Configurator → Passkey. Put the key in `NEXT_PUBLIC_CIRCLE_CLIENT_KEY`.
 

@@ -32,10 +32,10 @@ interface Config {
 }
 
 const STEPS = [
-  { k: "Task", v: "you ask" },
-  { k: "Work order", v: "priced up front" },
-  { k: "Vault", v: "funded once" },
-  { k: "Payees", v: "only approved" },
+  { k: "Explore", v: "free lookups" },
+  { k: "Move", v: "“Buy if…?”" },
+  { k: "Approve", v: "vault funded once" },
+  { k: "Act", v: "only what you approved" },
 ];
 
 function FlowStrip() {
@@ -135,7 +135,7 @@ export default function Home() {
         <span className="text-agent transition-colors duration-500">what you approved.</span>
       </motion.h1>
       <p className="mt-4 max-w-xl text-[15px] text-ink-2">
-        Bring a task. Get a priced work order. Approve once and the agent pays per request in USDC on Arc, from a vault that only pays the lines you approved.
+        Ask freely: the agent looks things up for you at no cost. When there's a move worth making, it proposes one, priced. Approve once and it pays for research in USDC on Arc from a vault that only pays what you approved, then acts.
       </p>
       <FlowStrip />
 
@@ -217,7 +217,7 @@ export default function Home() {
             ))}
           </div>
           <Button type="submit" disabled={busy || task.trim().length < 3 || (usePasskey && !pk.wallet)} className="bg-agent hover:opacity-90">
-            {busy ? "Planning…" : "Get work order →"}
+            {busy ? "Starting…" : "Ask →"}
           </Button>
         </div>
         {mode === "live" && pk.supported && (

@@ -1,8 +1,11 @@
-import type { AiStats, CostLine, Decision, Deliverable, Failure, FailureAction, Hex, Payment, ReapprovalRequest, Run } from "./types";
+import type { AiStats, ChatMsg, OrderResult, CostLine, Decision, Deliverable, Failure, FailureAction, Hex, Payment, ReapprovalRequest, Run } from "./types";
 
 export type RunEvent =
   | { type: "workorder.updated"; run: Run }
   | { type: "run.funding" }
+  | { type: "chat.message"; message: ChatMsg }
+  | { type: "chat.thinking"; note?: string }
+  | { type: "order.updated"; order: OrderResult }
   | { type: "run.approved"; planHash: Hex; vault?: Hex; fundingTx?: Hex; at: string }
   | { type: "phase.started"; phaseId: string }
   | { type: "phase.progress"; phaseId: string; progress: number; note?: string }

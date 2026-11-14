@@ -3,7 +3,7 @@ import { useState } from "react";
 import { AnimatePresence, motion } from "framer-motion";
 import { fmt, fmtFee, sum } from "@/lib/money";
 import { short, addrUrl } from "@/lib/format";
-import type { Card, CostLine, Method, Run } from "@/lib/types";
+import { offVault, type Card, type CostLine, type Method, type Run } from "@/lib/types";
 import { Modal } from "./Modal";
 import { Amount, Button, Spinner } from "./ui";
 import { post } from "./useRun";
@@ -140,8 +140,8 @@ function rowState(run: Run, l: CostLine) {
 }
 
 export function CostTable({ run, compact = false }: { run: Run; compact?: boolean }) {
-  const approved = sum(run.lines.map((l) => l.approved));
-  const actual = sum(run.lines.map((l) => l.actual));
+  const approved = sum(run.lines.filter((l) => !offVault(l.rail)).map((l) => l.approved));
+  const actual = sum(run.lines.filter((l) => !offVault(l.rail)).map((l) => l.actual));
   const live = run.status !== "draft" && run.status !== "funding";
   const pct = approved > 0n ? Number((actual * 1000n) / approved) / 10 : 0;
   return (
@@ -174,7 +174,7 @@ export function CostTable({ run, compact = false }: { run: Run; compact?: boolea
             {run.lines.map((l) => {
               const st = rowState(run, l);
               const diff = BigInt(l.actual) - BigInt(l.approved);
-              const sub = l.rail === "subscription";
+              const sub = offVault(l.rail);
               return (
                 <motion.tr
                   key={l.id}
@@ -187,7 +187,8 @@ export function CostTable({ run, compact = false }: { run: Run; compact?: boolea
                 >
                   <td className="px-4 py-2.5">
                     <div className="font-medium">{l.purpose}</div>
-                    {l.bigSpend && <span className="mt-0.5 inline-block rounded-md bg-warn/20 px-1.5 py-px text-[10.5px] font-medium text-[#7a5000]">Big spend · approved up front</span>}
+                    {l.rail === "exchange" && <span className="mt-0.5 block text-[11px] text-ink-3">Order limit · paid on the exchange, not from your vault</span>}
+                    {l.bigSpend && l.rail !== "exchange" && <span className="mt-0.5 inline-block rounded-md bg-warn/20 px-1.5 py-px text-[10.5px] font-medium text-[#7a5000]">Big spend · approved up front</span>}
                   </td>
                   <td className="px-2 py-2.5 text-ink-2">
                     {l.payeeName}
@@ -197,7 +198,7 @@ export function CostTable({ run, compact = false }: { run: Run; compact?: boolea
                       </a>
                     )}
                   </td>
-                  {!compact && <td className="hidden px-2 py-2.5 text-ink-3 sm:table-cell">{sub ? "your subscription" : l.rail}</td>}
+                  {!compact && <td className="hidden px-2 py-2.5 text-ink-3 sm:table-cell">{l.rail === "exchange" ? "exchange · not from vault" : sub ? "your subscription" : l.rail}</td>}
                   <td className="num px-4 py-2.5 text-right">
                     {st === "planned" && <span>{fmt(l.approved)}</span>}
                     {st === "progress" && (
@@ -394,16 +395,16 @@ export function ApproveModal({ run, open, onClose }: { run: Run; open: boolean; 
   const passkey = run.payer === "passkey" && run.mode === "live";
   const pk = usePasskeyWallet();
   const [err, setErr] = useState("");
-  const total = sum(run.lines.map((l) => l.approved));
+  const total = sum(run.lines.filter((l) => !offVault(l.rail)).map((l) => l.approved));
   const big = run.lines.filter((l) => l.bigSpend);
 
   // Server-signed: optimistic, close at once; the step graph shows "Funding vault" from the server's own event.
   // Passkey: the user signs approve + open in one batched operation, then the server verifies it onchain.
   async function approve() {
     setErr("");
-    if (!passkey) {
+    if (!passkey || BigInt(run.cap) === 0n) {
       onClose();
-      toast(`Approved · funding vault with ${fmt(run.cap)} USDC`, "good");
+      toast(BigInt(run.cap) === 0n ? "Approved · no research to pay for, so no vault" : `Approved · funding vault with ${fmt(run.cap)} USDC`, "good");
       post(`/api/runs/${run.id}/approve`).catch((e) => toast(`Funding failed: ${(e as Error).message}`, "bad"));
       return;
     }
@@ -429,7 +430,14 @@ export function ApproveModal({ run, open, onClose }: { run: Run; open: boolean; 
       <div className="text-[13px] text-ink-3">Total for this work order</div>
       <Amount value={total} className="text-[44px] font-semibold leading-none tracking-tight" />
       <div className="mt-2 text-[13px] text-ink-2">
-        Funds a vault with <b className="num">{fmt(run.cap)} USDC</b>. Unspent funds come back when the job ends. Network fees ~<span className="num">{fmtFee(run.estFees)}</span>.
+        {BigInt(run.cap) === 0n ? (
+          "No paid research, so no vault is funded."
+        ) : (
+          <>
+            Funds a vault with <b className="num">{fmt(run.cap)} USDC</b>. Unspent funds come back when the job ends. Network fees ~<span className="num">{fmtFee(run.estFees)}</span>.
+          </>
+        )}
+        {run.lines.some((l) => l.rail === "exchange") && <> The order limit is paid on the exchange, not from the vault.</>}
       </div>
 
       <ul className="mt-5 divide-y divide-line overflow-hidden rounded-xl border border-line text-[13px]">
@@ -459,8 +467,8 @@ export function ApproveModal({ run, open, onClose }: { run: Run; open: boolean; 
         <div className="flex gap-2 rounded-xl bg-surface p-3">
           <span className="text-agent">⛨</span>
           <span>
-            Vault rule: up to <b className="num">{fmt(total)}</b> across {run.lines.filter((l) => l.rail !== "subscription").length} lines, only to{" "}
-            {[...new Set(run.lines.filter((l) => l.rail !== "subscription").map((l) => l.payeeName))].join(", ")}. Enforced onchain.
+            Vault rule: up to <b className="num">{fmt(total)}</b> across {run.lines.filter((l) => !offVault(l.rail)).length} lines, only to{" "}
+            {[...new Set(run.lines.filter((l) => !offVault(l.rail)).map((l) => l.payeeName))].join(", ")}. Enforced onchain.
           </span>
         </div>
         <div className="num flex justify-between rounded-xl border border-dashed border-line px-3 py-2 text-[12px] text-ink-3">

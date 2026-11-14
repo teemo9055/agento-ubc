@@ -3,8 +3,11 @@ export type AgentId = "inso" | "trado" | "travo";
 
 export type PhaseStatus = "planned" | "active" | "awaiting_reapproval" | "failed_waiting" | "done" | "failed" | "skipped";
 export type TxState = "planned" | "signing" | "pending" | "settled" | "failed";
-/** direct: vault.pay · x402: vault-authorized EIP-3009 · subscription: user's own AI, no USDC */
-export type Rail = "direct" | "x402" | "subscription";
+/** direct: vault.pay · x402: vault-authorized EIP-3009 · subscription: user's own AI, no USDC · exchange: order on an exchange account, not paid from the vault */
+export type Rail = "direct" | "x402" | "subscription" | "exchange";
+
+/** Lines that are approved but never paid from the vault. */
+export const offVault = (rail: Rail) => rail === "subscription" || rail === "exchange";
 
 export type FailureCode =
   | "seller_402_timeout"
@@ -123,7 +126,68 @@ export interface Method {
   analysis: "builtin" | "ide";
 }
 
-export type RunStatus = "draft" | "funding" | "running" | "done" | "cancelled";
+export type RunStatus = "exploring" | "draft" | "funding" | "running" | "done" | "cancelled";
+
+/** A free lookup the agent made while exploring. */
+export interface ToolCall {
+  tool: string;
+  args: Record<string, unknown>;
+  summary: string;
+  ok: boolean;
+}
+
+export interface ChatMsg {
+  id: string;
+  role: "user" | "agent";
+  text: string;
+  at: string;
+  tools?: ToolCall[];
+  proposal?: Proposal;
+  /** Quick replies the user can tap. */
+  suggestions?: string[];
+}
+
+/** Paid research the move depends on. Tools come from the catalog; code prices them. */
+export interface ResearchStep {
+  id: string;
+  tool: string;
+  args: Record<string, string>;
+  label: string;
+  why: string;
+}
+
+export type MoveAction =
+  | { kind: "prediction_order"; eventTicker: string; symbol: string; label: string; side: "yes" | "no"; maxPrice: number; quantity: number }
+  | { kind: "spot_order"; symbol: string; side: "buy" | "sell"; limitPrice: number; amountUsd: number }
+  | { kind: "itinerary"; stops: string[]; hoursPerDay: number };
+
+/** Condition checked on fresh data right before acting. */
+export interface MoveCondition {
+  /** What is compared: the contract's YES price, or a spot price. */
+  metric: "yes_price" | "no_price" | "spot_price";
+  symbol: string;
+  op: "<=" | ">=";
+  value: number;
+}
+
+export interface Proposal {
+  id: string;
+  title: string;
+  why: string;
+  research: ResearchStep[];
+  action?: MoveAction;
+  condition?: MoveCondition;
+  /** The plain question shown to the user, e.g. "Buy 10 YES at 55¢ or less if odds are still under 60%?" */
+  ask: string;
+}
+
+export interface OrderResult {
+  venue: "gemini-sandbox" | "gemini" | "paper";
+  status: "placed" | "filled" | "skipped" | "rejected";
+  detail: string;
+  orderId?: string;
+  notional?: number;
+}
 
 export interface Run {
   id: string;
@@ -161,4 +225,11 @@ export interface Run {
   planning?: boolean;
   ai?: AiStats;
   estFees: string; // 18-decimal native USDC
+  /** Explore conversation, before and after the move is chosen. */
+  chat?: ChatMsg[];
+  /** True while the agent is answering in chat. */
+  thinking?: string;
+  /** The move this work order executes. */
+  proposal?: Proposal;
+  order?: OrderResult;
 }

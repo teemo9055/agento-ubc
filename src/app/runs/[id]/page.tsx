@@ -8,6 +8,9 @@ import dynamic from "next/dynamic";
 import { CancelModal, FailureModal, ReapprovalModal } from "@/components/RunPopups";
 import { transitionReady } from "@/components/transitions";
 import { ApproveModal, Cards, CostTable, EditCardModal, MethodPicker } from "@/components/WorkOrder";
+import { Chat, MoveCard } from "@/components/Chat";
+import { OrderStatus } from "@/components/OrderStatus";
+import { post } from "@/components/useRun";
 
 // Heavy parts load only when the job reaches them.
 const PhaseGraph = dynamic(() => import("@/components/PhaseGraph").then((m) => m.PhaseGraph), {
@@ -25,7 +28,7 @@ import { toast } from "@/components/Toaster";
 import { fmt, sum } from "@/lib/money";
 import { THEMES } from "@/lib/themes";
 import { short, txUrl } from "@/lib/format";
-import type { Card } from "@/lib/types";
+import { offVault, type Card } from "@/lib/types";
 import { moodFor } from "@/lib/outfit";
 import { runOutfit } from "@/lib/summary";
 
@@ -70,7 +73,7 @@ export default function RunPage({ params }: { params: Promise<{ id: string }> })
     if (!lastEvent || !isLive(lastEvent)) return;
     if (lastEvent.type === "run.done") toast(`Done · ${fmt(lastEvent.refunded)} USDC returned · receipt ready`, "good");
     if (lastEvent.type === "run.cancelled") toast(`Cancelled · ${fmt(lastEvent.refunded)} USDC returned`);
-    if (lastEvent.type === "workorder.updated" && !lastEvent.run.planning && lastEvent.seq === 1) toast("Plan ready · review and approve when you're happy", "good");
+
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [lastEvent]);
 
@@ -106,8 +109,10 @@ export default function RunPage({ params }: { params: Promise<{ id: string }> })
   const draft = !planning && (run.status === "draft" || run.status === "funding");
   const finished = run.status === "done" || run.status === "cancelled";
   const done = run.phases.filter((p) => p.status === "done" || p.status === "skipped").length;
-  const total = sum(run.lines.map((l) => l.approved));
-  const actual = sum(run.lines.map((l) => l.actual));
+  const exploring = run.status === "exploring";
+  const vaultLines = run.lines.filter((l) => !offVault(l.rail));
+  const total = sum(vaultLines.map((l) => l.approved));
+  const actual = sum(vaultLines.map((l) => l.actual));
   const showPopup = head && dismissed !== head.id && !editing && !approving && !cancelling;
   const reapproval = head?.kind === "re" ? run.pendingReapprovals.find((r) => r.id === head.id) : undefined;
   const failure = head?.kind === "fail" ? run.pendingFailures.find((f) => f.id === head.id) : undefined;
@@ -139,7 +144,7 @@ export default function RunPage({ params }: { params: Promise<{ id: string }> })
                 </span>
               )}
               <span className="rounded-full bg-agent-soft px-2 py-0.5 text-[11px] text-agent" title={run.ai ? `${run.ai.calls} model calls` : undefined}>
-                {run.planning ? "Planning…" : run.planner === "ai" ? `Planned by AI · ${run.ai?.model ?? ""}` : "Rule-based plan"}
+                {run.ai ? `AI · ${run.ai.model}` : "Rule-based agent"}
               </span>
             </div>
             <h1 style={{ viewTransitionName: `task-${run.id}` }} className="mt-1 max-w-2xl font-sans font-semibold text-[22px] font-semibold leading-tight tracking-tight sm:text-[26px]">{run.task}</h1>
@@ -150,14 +155,26 @@ export default function RunPage({ params }: { params: Promise<{ id: string }> })
             </AnimatePresence>
           </div>
         </div>
+        {exploring ? (
+          <div className="text-right">
+            <div className="text-[12px] text-ink-3">Spent</div>
+            <div className="text-[40px] font-semibold leading-none tracking-tight" data-testid="big-number">
+              <Amount value={0n} />
+            </div>
+            <div className="mt-1 text-[12px] text-ink-3">Exploring is free</div>
+          </div>
+        ) : (
         <div className="text-right">
-          <div className="text-[12px] text-ink-3">{planning ? "Pricing…" : draft ? "Total cost" : finished ? "Paid" : "Spent so far"}</div>
+          <div className="text-[12px] text-ink-3">{planning ? "Pricing…" : draft ? "Research cost" : finished ? "Paid" : "Spent so far"}</div>
           <div className="text-[40px] font-semibold leading-none tracking-tight" data-testid="big-number">
             {planning ? <span className="inline-block h-10 w-36 animate-pulse bg-line align-middle motion-reduce:animate-none" /> : <Amount value={draft ? total : actual} />}
           </div>
           {!draft && !planning && <div className="num mt-1 text-[12px] text-ink-3">of {fmt(total)} approved</div>}
         </div>
+        )}
       </motion.header>
+
+      {exploring && <Chat run={run} />}
 
       {planning && (
         <section className="space-y-6" aria-busy="true" aria-label="Planning">
@@ -186,6 +203,18 @@ export default function RunPage({ params }: { params: Promise<{ id: string }> })
 
       {draft && (
         <>
+          {run.proposal && (
+            <div>
+              <MoveCard p={run.proposal} run={run} chosen />
+              {run.status === "draft" && (
+                <div className="mt-2 flex justify-end">
+                  <Button variant="quiet" className="h-8 text-[12.5px]" onClick={() => post(`/api/runs/${run.id}/back`).catch((e) => toast((e as Error).message, "bad"))} data-testid="back-to-chat">
+                    ← Back to chat
+                  </Button>
+                </div>
+              )}
+            </div>
+          )}
           <Cards run={run} onEdit={run.status === "draft" ? setEditing : undefined} />
           <MethodPicker run={run} />
           <CostTable run={run} />
@@ -220,8 +249,9 @@ export default function RunPage({ params }: { params: Promise<{ id: string }> })
         </>
       )}
 
-      {!draft && !planning && (
+      {!draft && !planning && !exploring && (
         <>
+          {run.proposal && <OrderStatus run={run} />}
           <section className="rounded-2xl border border-line bg-panel p-4" aria-label="Progress">
             <div className="mb-3 flex flex-wrap items-center justify-between gap-2 text-[13px]">
               <span className="font-medium">
@@ -298,6 +328,17 @@ export default function RunPage({ params }: { params: Promise<{ id: string }> })
             )}
           </AnimatePresence>
         </>
+      )}
+
+      {!exploring && (run.chat?.length ?? 0) > 0 && (
+        <details className="group rounded-2xl border border-line bg-panel/40 p-3">
+          <summary className="cursor-pointer list-none text-[13px] font-medium text-ink-2 hover:text-ink">
+            <span className="mr-1 inline-block transition-transform group-open:rotate-90">▸</span> Conversation ({run.chat!.length} messages)
+          </summary>
+          <div className="mt-3">
+            <Chat run={run} compact />
+          </div>
+        </details>
       )}
 
       {editing && <EditCardModal run={run} kind={editing} onClose={() => setEditing(null)} />}

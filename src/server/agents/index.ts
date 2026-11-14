@@ -1,7 +1,5 @@
 import type { AgentId } from "@/lib/types";
-import { inso } from "./inso";
-import { trado } from "./trado";
-import { travo } from "./travo";
+import { toolboxAgent } from "./toolbox";
 import type { AgentDef } from "./types";
 
-export const AGENTS: Record<AgentId, AgentDef> = { inso, trado, travo };
+export const AGENTS: Record<AgentId, AgentDef> = { inso: toolboxAgent("inso"), trado: toolboxAgent("trado"), travo: toolboxAgent("travo") };

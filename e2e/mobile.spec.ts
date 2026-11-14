@@ -10,7 +10,8 @@ async function newDemoJob(page: import("@playwright/test").Page, task: string, f
     await page.getByText("Test mode").click();
     for (const f of faults) await page.locator("label", { hasText: f }).click();
   }
-  await page.getByRole("button", { name: /Get work order/ }).click();
+  await page.getByRole("button", { name: /Ask/ }).click();
+  await page.getByTestId("adopt-move").click({ timeout: 30_000 });
   await expect(page.getByTestId("card-price")).toBeVisible({ timeout: 30_000 });
 }
 

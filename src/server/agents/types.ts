@@ -1,4 +1,4 @@
-import type { AgentId, Card, CostLine, Deliverable, Phase } from "@/lib/types";
+import type { AgentId, Card, CostLine, Deliverable, OrderResult, Phase } from "@/lib/types";
 
 export type LineDraft = Omit<CostLine, "index" | "actual" | "bigSpend">;
 export type PhaseDraft = Omit<Phase, "status" | "payments">;
@@ -26,6 +26,8 @@ export interface AgentCtx {
   buy<T>(lineId: string, product: string, params: Record<string, string>, key: string): Promise<T>;
   /** Returns true once if this fault switch is on for the run. */
   fault(code: "model_error" | "policy_block"): boolean;
+  /** Reports the exchange order placed for this move. */
+  order?(o: OrderResult): void;
 }
 
 export interface AgentDef {

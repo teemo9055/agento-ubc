@@ -9,10 +9,12 @@ const feedOf = (run: Run, product: string) => Object.entries(run.feed ?? {}).fil
 const pct = (x: number) => `${Math.round(x * 100)}%`;
 const signed = (x: number, f: (v: number) => string) => `${x >= 0 ? "+" : "−"}${f(Math.abs(x))}`;
 
-function InsoWidget({ run }: { run: Run }) {
+type CheckData = { check?: { text: string; stats: Record<string, unknown>[] } };
+
+function OddsCharts({ run }: { run: Run }) {
   const names: Record<string, string> = {};
-  for (const [, v] of feedOf(run, "markets.search"))
-    for (const e of v.data as Ev[]) for (const c of e.contracts) names[c.symbol] = `${e.title} · ${c.label}`;
+  for (const r of run.proposal?.research ?? []) if (r.args.symbol) names[r.args.symbol] = r.label;
+  if (run.proposal?.action?.kind === "prediction_order") names[run.proposal.action.symbol] = run.proposal.action.label;
   const series: Series[] = feedOf(run, "markets.history")
     .filter(([k]) => k.startsWith("history:"))
     .slice(0, 3)
@@ -20,68 +22,30 @@ function InsoWidget({ run }: { run: Run }) {
       const sym = k.split(":")[1];
       return { id: sym, name: names[sym] ?? sym, color: SERIES_COLORS[i], points: v.data as Pt[] };
     });
-  const analysis = (run.deliverable?.data as { markets?: { symbol: string; event: string; label: string; stats: { first: number; last: number; change: number; trend: string; biggestJump: number } | null; flow: { buys: number; sells: number } | null }[] })?.markets;
-
+  if (!series.length) return null;
   return (
     <div>
       <div className="mb-1 text-[13px] font-semibold">YES odds over time</div>
       <LineChart series={series} format={pct} domain={[0, 1]} label="Prediction market odds over time" />
-      {analysis && (
-        <div className="mt-4 overflow-x-auto">
-        <table className="w-full min-w-[520px] text-[12.5px] sm:min-w-0">
-          <thead className="text-left text-[11px] uppercase tracking-wide text-ink-3">
-            <tr>
-              <th className="py-1.5 font-medium">Market</th>
-              <th className="py-1.5 text-right font-medium">Now</th>
-              <th className="py-1.5 text-right font-medium">Move</th>
-              <th className="hidden py-1.5 text-right font-medium sm:table-cell">Biggest jump</th>
-              <th className="py-1.5 text-right font-medium">Trend</th>
-              <th className="hidden py-1.5 text-right font-medium sm:table-cell">Buy / sell flow</th>
-            </tr>
-          </thead>
-          <tbody>
-            {analysis.map((m) => (
-              <tr key={m.symbol} className="border-t border-line">
-                <td className="max-w-[220px] truncate py-1.5">
-                  {m.event} <span className="text-ink-3">· {m.label}</span>
-                </td>
-                <td className="num py-1.5 text-right">{m.stats ? pct(m.stats.last) : "—"}</td>
-                <td className="num py-1.5 text-right">{m.stats ? `${signed(m.stats.change * 100, (v) => v.toFixed(0))} pts` : "—"}</td>
-                <td className="num hidden py-1.5 text-right sm:table-cell">{m.stats ? `${Math.round(m.stats.biggestJump * 100)} pts` : "—"}</td>
-                <td className="py-1.5 text-right">{m.stats?.trend ?? "—"}</td>
-                <td className="num hidden py-1.5 text-right sm:table-cell">{m.flow ? `${m.flow.buys.toFixed(0)} / ${m.flow.sells.toFixed(0)}` : "—"}</td>
-              </tr>
-            ))}
-          </tbody>
-        </table>
-        </div>
-      )}
     </div>
   );
 }
 
-function TradoWidget({ run }: { run: Run }) {
-  const hourly = feedOf(run, "spot.candles").filter(([k]) => k.endsWith(":1hr"));
-  const signals = (run.deliverable?.data as { signals?: { symbol: string; ticker: string; trend: string; change24h: number; change7d: number; dailyVol: number }[] })?.signals;
+function SpotCharts({ run }: { run: Run }) {
+  const feeds = feedOf(run, "spot.candles");
   const money = (v: number) => (v >= 1000 ? `$${(v / 1000).toFixed(1)}k` : `$${v.toFixed(v < 10 ? 3 : 1)}`);
+  if (!feeds.length) return null;
   return (
     <div className="space-y-5">
-      {hourly.length === 0 && <div className="flex h-[220px] items-center justify-center text-sm text-ink-3">Waiting for candles…</div>}
-      {hourly.map(([k, v]) => {
-        const sym = k.split(":")[1];
-        const pts = (v.data as Pt[]).slice(-72);
-        const sig = signals?.find((s) => s.symbol === sym);
+      {feeds.map(([k, v]) => {
+        const [, sym, tf] = k.split(":");
+        const pts = (v.data as Pt[]).slice(tf === "1day" ? -60 : -72);
         return (
           <div key={k}>
-            <div className="mb-1 flex items-baseline justify-between text-[13px]">
-              <span className="font-semibold">{sym.replace("usd", "").toUpperCase()} · last 72h</span>
-              {sig && (
-                <span className="num text-ink-2">
-                  {sig.trend} · 24h {signed(sig.change24h * 100, (x) => x.toFixed(1))}% · 7d {signed(sig.change7d * 100, (x) => x.toFixed(1))}%
-                </span>
-              )}
+            <div className="mb-1 text-[13px] font-semibold">
+              {sym.replace("usd", "").toUpperCase()} · {tf === "1day" ? "daily" : "last 72h"}
             </div>
-            <LineChart series={[{ id: sym, name: sym, color: SERIES_COLORS[0], points: pts }]} format={money} label={`${sym} price, hourly`} />
+            <LineChart series={[{ id: sym, name: sym, color: SERIES_COLORS[0], points: pts }]} format={money} label={`${sym} price`} />
           </div>
         );
       })}
@@ -89,14 +53,80 @@ function TradoWidget({ run }: { run: Run }) {
   );
 }
 
+function Tape({ run }: { run: Run }) {
+  const tapes = feedOf(run, "markets.tape");
+  if (!tapes.length) return null;
+  return (
+    <div className="grid gap-2 sm:grid-cols-2">
+      {tapes.map(([k, v]) => {
+        const ts = v.data as { size: number; side: string }[];
+        const buys = ts.filter((t) => t.side === "buy").reduce((a, t) => a + t.size, 0);
+        const sells = ts.filter((t) => t.side === "sell").reduce((a, t) => a + t.size, 0);
+        const share = buys + sells ? buys / (buys + sells) : 0.5;
+        return (
+          <div key={k} className="rounded-lg border border-line p-3 text-[12.5px]">
+            <div className="font-medium">Trade flow · {ts.length} trades</div>
+            <div className="mt-2 flex h-2 overflow-hidden bg-line">
+              <div className="bg-good" style={{ width: `${share * 100}%` }} />
+              <div className="bg-bad/70" style={{ width: `${(1 - share) * 100}%` }} />
+            </div>
+            <div className="num mt-1 flex justify-between text-ink-3">
+              <span>Buys {buys.toFixed(0)}</span>
+              <span>Sells {sells.toFixed(0)}</span>
+            </div>
+          </div>
+        );
+      })}
+    </div>
+  );
+}
+
+const STAT_LABEL: Record<string, string> = { first: "start", last: "now", change: "move", high: "high", low: "low", biggestJump: "biggest jump", trend: "trend", change24h: "24h", change7d: "7d", trades: "trades", buys: "buys", sells: "sells", km: "km", hours: "hours" };
+
+function Findings({ run }: { run: Run }) {
+  const c = (run.deliverable?.data as CheckData | undefined)?.check;
+  if (!c) return null;
+  const odds = (k: string) => ["first", "last", "high", "low"].includes(k);
+  const fmtV = (k: string, v: unknown) => {
+    if (typeof v !== "number") return String(v);
+    if (k === "change" || k === "biggestJump") return `${signed(v * 100, (x) => x.toFixed(0))} pts`;
+    if (k === "change24h" || k === "change7d") return signed(v * 100, (x) => `${x.toFixed(1)}%`);
+    if (odds(k) && v <= 1) return pct(v);
+    return v.toLocaleString(undefined, { maximumFractionDigits: 2 });
+  };
+  return (
+    <div className="rounded-lg border border-line p-3 text-[12.5px]">
+      <div className="font-medium">{c.text}</div>
+      {c.stats.map((s, i) => (
+        <div key={i} className="mt-2">
+          <div className="text-[11px] uppercase tracking-wide text-ink-3">{String(s.step)}</div>
+          <dl className="mt-1 grid grid-cols-2 gap-x-4 gap-y-0.5 sm:grid-cols-3">
+            {Object.entries(s)
+              .filter(([k, v]) => k !== "step" && v != null && STAT_LABEL[k])
+              .map(([k, v]) => (
+                <div key={k} className="flex justify-between gap-2">
+                  <dt className="text-ink-3">{STAT_LABEL[k]}</dt>
+                  <dd className="num">{fmtV(k, v)}</dd>
+                </div>
+              ))}
+          </dl>
+        </div>
+      ))}
+    </div>
+  );
+}
+
 type Place = { name: string; lat: number; lon: number };
 
-function TravoWidget({ run }: { run: Run }) {
-  const places = feedOf(run, "places.geocode").map(([k, v]) => ({ k, p: v.data as Place | null })).filter((x) => x.p) as { k: string; p: Place }[];
-  const route = feedOf(run, "routes.drive")[0]?.[1].data as { path: [number, number][]; distanceKm: number; hours: number } | undefined;
-  const days = (run.deliverable?.data as { days?: { day: number; from: string; to: string; hours: number; km: number }[] })?.days;
+type RouteData = { path: [number, number][]; distanceKm: number; hours: number };
+
+function RouteMap({ run }: { run: Run }) {
+  const d0 = run.deliverable?.data as { days?: { day: number; from: string; to: string; hours: number; km: number }[]; places?: Place[]; route?: RouteData } | undefined;
+  const places = (d0?.places ?? []).map((p, i) => ({ k: `${i}`, p }));
+  const route = (feedOf(run, "routes.drive")[0]?.[1].data as RouteData | undefined) ?? d0?.route;
+  const days = d0?.days;
   const pts: [number, number][] = [...(route?.path ?? []), ...places.map((x) => [x.p.lon, x.p.lat] as [number, number])];
-  if (pts.length === 0) return <div className="flex h-[260px] items-center justify-center text-sm text-ink-3">Waiting for places…</div>;
+  if (pts.length === 0) return null;
   const W = 640;
   const H = 300;
   const lats = pts.map((p) => p[1]);
@@ -147,7 +177,15 @@ function TravoWidget({ run }: { run: Run }) {
 }
 
 export function AgentWidget({ run }: { run: Run }) {
-  if (run.agent === "inso") return <InsoWidget run={run} />;
-  if (run.agent === "trado") return <TradoWidget run={run} />;
-  return <TravoWidget run={run} />;
+  const empty = !Object.keys(run.feed ?? {}).length && !run.deliverable;
+  return (
+    <div className="space-y-5">
+      {empty && <div className="flex h-[200px] items-center justify-center text-sm text-ink-3">Waiting for the first data…</div>}
+      <OddsCharts run={run} />
+      <SpotCharts run={run} />
+      <RouteMap run={run} />
+      <Tape run={run} />
+      <Findings run={run} />
+    </div>
+  );
 }

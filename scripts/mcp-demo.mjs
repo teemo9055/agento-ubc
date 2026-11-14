@@ -1,4 +1,4 @@
-// Plays "your AI" over MCP: browse, draft its own plan, wait for the human to approve, read results.
+// Plays "your AI" over MCP: look up markets, propose its own move, wait for the human to approve, read results.
 // Usage: node scripts/mcp-demo.mjs [http://localhost:3000] [--auto-approve]
 import { Client } from "@modelcontextprotocol/sdk/client/index.js";
 import { StreamableHTTPClientTransport } from "@modelcontextprotocol/sdk/client/streamableHttp.js";
@@ -16,13 +16,22 @@ const call = async (name, args = {}) => {
 };
 
 console.log("tools:", (await client.listTools()).tools.map((t) => t.name).join(", "));
-const { events } = await call("browse_options", { agent: "inso", query: "BTC" });
-const picks = events.filter((e) => /btc/i.test(e.title)).slice(0, 2);
-console.log("my AI picked:", picks.map((e) => e.title).join(" | "));
-const draft = await call("draft_work_order", {
+const found = await call("look_up", { tool: "search_markets", args: { query: "BTC" } });
+const event = found.data.find((e) => e.contracts.some((c) => c.ask != null)) ?? found.data[0];
+const contract = event.contracts.find((c) => c.ask != null) ?? event.contracts[0];
+const max = Math.min(0.99, Math.round(((contract.ask ?? contract.last ?? 0.5) + 0.01) * 100) / 100);
+console.log("my AI picked:", event.title, "·", contract.label, "at", max);
+const draft = await call("propose_move", {
   agent: "inso",
-  task: "How have BTC odds moved today?",
-  plan: { eventTickers: picks.map((e) => e.ticker), markets: 2, tape: false, timeframe: "15m", cards: { deliverableTitle: "BTC odds today", deliverablePoints: ["2 BTC price markets", "Odds over time"], riskPoints: ["Read-only", "Thin markets"] } },
+  task: "Small BTC bet if the price holds",
+  move: {
+    title: `Buy YES: ${contract.label}`.slice(0, 60),
+    why: "Picked by the client's own AI from the free lookup.",
+    ask: `Buy 2 YES at ${Math.round(max * 100)}¢ or less?`,
+    research: [{ tool: "odds_history", args: { symbol: contract.symbol, tf: "15m" }, label: "Odds history", why: "trend first" }],
+    action: { kind: "prediction_order", eventTicker: event.ticker, symbol: contract.symbol, label: contract.label.slice(0, 60), side: "yes", maxPrice: max, quantity: 2 },
+    condition: { metric: "yes_price", symbol: contract.symbol, op: "<=", value: max },
+  },
 });
 console.log("draft:", draft.cost.approvedUSDC, "USDC ·", draft.nextStep);
 const tools = (await client.listTools()).tools.map((t) => t.name);

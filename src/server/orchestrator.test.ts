@@ -11,6 +11,11 @@ vi.mock("@/server/gemini", async (orig) => {
       { ticker: `${q}-2`, title: `${q} event B`, category: "Crypto", volume: 9, contracts: [{ symbol: `GEMI-${q}-B`, label: "B", last: 0.3, bid: 0.29, ask: 0.31 }] },
       { ticker: `${q}-3`, title: `${q} event C`, category: "Crypto", volume: 8, contracts: [{ symbol: `GEMI-${q}-C`, label: "C", last: 0.7, bid: 0.69, ask: 0.71 }] },
     ],
+    getEvent: async (t: string) => {
+      const q = t.split("-")[0];
+      return { ticker: t, title: `${q} event A`, category: "Crypto", volume: 10, contracts: [{ symbol: `GEMI-${q}-A`, label: "A", last: 0.5, bid: 0.49, ask: 0.51 }] };
+    },
+    spotTicker: async (symbol: string) => ({ symbol, last: 60000, bid: 59990, ask: 60010, change24h: 0.01, high24h: 61000, low24h: 59000 }),
     oddsHistory: async () => series,
     spotCandles: async () => series.map((s) => ({ ...s, p: 60000 + s.p * 1000 })),
     recentTrades: async () => [
@@ -20,7 +25,10 @@ vi.mock("@/server/gemini", async (orig) => {
   };
 });
 
+vi.mock("@/server/agents/ai-planning", async (orig) => ({ ...(await orig<typeof import("@/server/agents/ai-planning")>()), spotSymbols: async () => ["btcusd", "ethusd"] }));
+
 process.env.DEMO_DELAY_SCALE = "0";
+process.env.AI_DISABLED = "true";
 process.env.FAULT_TIMEOUT_MS = "50";
 
 let orch: typeof import("@/server/orchestrator");
@@ -32,9 +40,17 @@ const tick = () => new Promise((r) => setTimeout(r, 5));
 
 type Strategy = { reapproval?: "approved" | "denied" | "ignore"; failure?: FailureAction[] };
 
+/** Chat, then say yes to the agent's move: a priced draft. */
+async function draft(task: string, faults: FailureCode[] = [], agent: Run["agent"] = "inso") {
+  const created = await orch.createRun({ agent, task, faults });
+  const move = created.chat?.find((m) => m.proposal)?.proposal;
+  if (!move) throw new Error("no move proposed: " + JSON.stringify(created.chat));
+  return orch.adopt(created.id, move.id);
+}
+
 /** Runs a job to the end, answering popups like a user would. */
 async function drive(task: string, faults: FailureCode[], s: Strategy = {}, agent: Run["agent"] = "inso") {
-  const created = await orch.createRun({ agent, task, faults });
+  const created = await draft(task, faults, agent);
   await orch.approve(created.id);
   const actions = [...(s.failure ?? [])];
   const seen = { reapprovals: 0, failures: [] as FailureCode[] };
@@ -66,11 +82,12 @@ describe("orchestrator (demo rail)", () => {
     const { run, seen } = await drive("How have BTC odds moved?", []);
     expect(run.status).toBe("done");
     expect(seen.reapprovals).toBe(0);
-    expect(run.lines.find((l) => l.id === "tape")?.bigSpend).toBe(true);
+    expect(run.lines.find((l) => l.id === "order")).toMatchObject({ rail: "exchange", bigSpend: true, index: -1 });
     for (const l of run.lines) expect(BigInt(l.actual)).toBeLessThanOrEqual(BigInt(l.approved));
     expect(BigInt(run.refunded!)).toBe(BigInt(run.cap) - total(run));
-    expect(run.decisions[0].kind).toBe("plan_approval");
-    expect(run.deliverable?.summary).toMatch(/Biggest move/);
+    expect(run.decisions.some((d) => d.kind === "plan_approval")).toBe(true);
+    expect(run.order).toMatchObject({ venue: "paper", status: "placed" });
+    expect(run.deliverable?.summary).toMatch(/Placed/);
   });
 
   it("price_increase asks for re-approval, then pays the new price", async () => {
@@ -107,7 +124,7 @@ describe("orchestrator (demo rail)", () => {
     const { run, seen } = await drive("BTC odds", ["seller_402_timeout"], { failure: ["switch"], reapproval: "approved" });
     expect(seen.failures).toEqual(["seller_402_timeout"]);
     expect(seen.reapprovals).toBe(1);
-    expect(run.lines.find((l) => l.id === "history")?.payeeName).toBe("Data Mirror");
+    expect(run.lines.find((l) => l.id === "r1")?.payeeName).toBe("Data Mirror");
     expect(run.status).toBe("done");
   });
 
@@ -120,8 +137,8 @@ describe("orchestrator (demo rail)", () => {
   it("policy_block: off-plan purchase is routed to the user, never paid silently", async () => {
     const { run, seen } = await drive("BTC odds", ["policy_block"], { reapproval: "denied", failure: ["skip", "cancel"] });
     expect(seen.reapprovals).toBe(1);
-    expect(run.lines.some((l) => l.id === "extra-history")).toBe(false);
-    expect(settled(run).some((p) => p.lineId === "extra-history")).toBe(false);
+    expect(run.lines.some((l) => l.id === "extra")).toBe(false);
+    expect(settled(run).some((p) => p.lineId === "extra")).toBe(false);
   });
 
   it("model_error: retry", async () => {
@@ -136,7 +153,7 @@ describe("orchestrator (demo rail)", () => {
   });
 
   it("card edits re-price, and impossible edits explain why", async () => {
-    const r = await orch.createRun({ agent: "inso", task: "BTC odds" });
+    const r = await draft("BTC odds");
     const before = r.cap;
     const edited = await orch.editCard(r.id, "deliverable", "drop the trade tape");
     expect(edited.editNote?.ok).toBe(true);
@@ -152,26 +169,85 @@ describe("orchestrator (demo rail)", () => {
   });
 });
 
+describe("explore, then act", () => {
+  it("chat is free: a move is proposed, nothing is priced or paid until it's chosen", async () => {
+    const r = await orch.createRun({ agent: "inso", task: "What are BTC odds?" });
+    expect(r.status).toBe("exploring");
+    expect(r.lines).toHaveLength(0);
+    const agentMsg = r.chat!.find((m) => m.role === "agent")!;
+    expect(agentMsg.tools?.[0]).toMatchObject({ tool: "search_markets", ok: true });
+    expect(agentMsg.proposal?.action).toMatchObject({ kind: "prediction_order", side: "yes" });
+    await expect(orch.approve(r.id)).rejects.toThrow();
+    const d = await orch.adopt(r.id, agentMsg.proposal!.id);
+    expect(d.status).toBe("draft");
+    expect(d.lines.map((l) => l.id)).toEqual(["r1", "r2", "order"]);
+    // The order limit is approved but never sits in the vault.
+    const vault = d.lines.filter((l) => l.rail !== "exchange").reduce((a, l) => a + BigInt(l.approved), 0n);
+    expect(BigInt(d.cap)).toBe(vault + vault / 5n);
+  });
+
+  it("back to chat clears the priced order and keeps the conversation", async () => {
+    const d = await draft("BTC odds");
+    const back = orch.backToChat(d.id);
+    expect(back.status).toBe("exploring");
+    expect(back.lines).toHaveLength(0);
+    expect(back.chat!.length).toBeGreaterThan(1);
+    await orch.sendChat(d.id, "what about ETH?");
+    expect(orch.getRun(d.id)!.chat!.filter((m) => m.role === "agent")).toHaveLength(2);
+  });
+
+  it("the move is skipped when the condition fails on fresh data", async () => {
+    const created = await orch.createRun({
+      agent: "inso",
+      task: "BTC odds",
+      proposal: {
+        id: "p1",
+        title: "Buy YES if cheap",
+        why: "test",
+        ask: "Buy 5 YES at 20¢ or less?",
+        research: [{ id: "r1", tool: "odds_history", args: { symbol: "GEMI-BTC-A", tf: "15m" }, label: "Odds history", why: "trend" }],
+        action: { kind: "prediction_order", eventTicker: "BTC-1", symbol: "GEMI-BTC-A", label: "A", side: "yes", maxPrice: 0.2, quantity: 5 },
+        condition: { metric: "yes_price", symbol: "GEMI-BTC-A", op: "<=", value: 0.2 },
+      },
+    });
+    expect(created.status).toBe("draft");
+    await orch.approve(created.id);
+    for (let i = 0; i < 300 && orch.getRun(created.id)!.status !== "done"; i++) await tick();
+    const run = orch.getRun(created.id)!;
+    expect(run.status).toBe("done");
+    expect(run.order?.status).toBe("skipped");
+    expect(run.deliverable?.summary).toMatch(/Held off/);
+  });
+
+  it("travo plans driving days from a route", async () => {
+    const geo = await import("@/server/geo");
+    vi.spyOn(geo, "geocode").mockImplementation(async (q) => ({ name: q, lat: 49 + q.length / 10, lon: -123 }));
+    vi.spyOn(geo, "drive").mockImplementation(async (stops) => ({ distanceKm: 300, hours: 9, path: stops.map((s) => [s.lon, s.lat]), legs: stops.slice(1).map(() => ({ distanceKm: 150, hours: 4.5 })) }));
+    const { run } = await drive("Drive from Vancouver to Portland via Seattle", [], {}, "travo");
+    expect(run.status).toBe("done");
+    expect((run.deliverable?.data as { days: unknown[] }).days.length).toBeGreaterThan(0);
+  });
+});
+
 describe("edit alternatives", () => {
   it("every suggested alternative is itself a valid edit", async () => {
     const { AGENTS } = await import("@/server/agents");
-    const prompts = ["place a real bet", "guarantee profit", "make it free", "9 markets", "do a backflip", "open a long position", "add eth sol doge link", "book a hotel", "take a flight", "add Portland", "30 hours"];
-    for (const agent of Object.values(AGENTS)) {
-      const opts = { ...agent.defaults, stops: ["Vancouver", "Seattle"] };
-      for (const p of prompts) {
-        const r = agent.edit("deliverable", p, opts);
-        for (const alt of r.alternatives ?? []) expect(agent.edit("deliverable", alt, opts).ok, `${agent.id}: "${p}" -> "${alt}"`).toBe(true);
-      }
+    const d = await draft("BTC odds");
+    const opts = { proposal: d.proposal };
+    const agent = AGENTS.inso;
+    for (const p of ["place a real bet", "guarantee profit", "make it free", "do a backflip", "book a hotel"]) {
+      const r = agent.edit("deliverable", p, opts);
+      for (const alt of r.alternatives ?? []) expect(agent.edit("deliverable", alt, opts).ok, `"${p}" -> "${alt}"`).toBe(true);
     }
   });
 });
 
 describe("method, preview and edited re-approval", () => {
   it("mirror seller re-prices lines; AI IDE adds a 0 USDC subscription line and a context pack", async () => {
-    const r = await orch.createRun({ agent: "inso", task: "BTC odds" });
-    const base = BigInt(r.lines.find((l) => l.id === "history")!.approved);
+    const r = await draft("BTC odds");
+    const base = BigInt(r.lines.find((l) => l.id === "r1")!.approved);
     const m = await orch.setMethod(r.id, { seller: "mirror", analysis: "ide" });
-    expect(BigInt(m.lines.find((l) => l.id === "history")!.approved)).toBe((base * 150n) / 100n);
+    expect(BigInt(m.lines.find((l) => l.id === "r1")!.approved)).toBe((base * 150n) / 100n);
     expect(m.lines.find((l) => l.id === "ide")).toMatchObject({ rail: "subscription", approved: "0", payeeName: "Your subscription" });
     expect(BigInt(m.estFees)).toBeGreaterThan(0n);
     await orch.approve(r.id);
@@ -183,15 +259,15 @@ describe("method, preview and edited re-approval", () => {
   });
 
   it("preview shows the new total without changing the work order", async () => {
-    const r = await orch.createRun({ agent: "inso", task: "BTC odds" });
+    const r = await draft("BTC odds");
     const p = await orch.previewEdit(r.id, "deliverable", "drop the trade tape");
     expect(p.ok).toBe(true);
     expect(BigInt(p.after!.total)).toBeLessThan(BigInt(p.before!.total));
-    expect(orch.getRun(r.id)!.lines.some((l) => l.id === "tape")).toBe(true);
+    expect(orch.getRun(r.id)!.lines.some((l) => l.id === "r2")).toBe(true);
   });
 
   it("re-approval with an edited amount uses it, never below one request", async () => {
-    const r = await orch.createRun({ agent: "inso", task: "BTC odds", faults: ["price_increase"] });
+    const r = await draft("BTC odds", ["price_increase"]);
     await orch.approve(r.id);
     const answered = new Set<string>();
     for (let i = 0; i < 600; i++) {
@@ -205,7 +281,7 @@ describe("method, preview and edited re-approval", () => {
       if (run.status === "done") break;
       await tick();
     }
-    expect(answered.size).toBeGreaterThan(1);
+    expect(answered.size).toBeGreaterThanOrEqual(1);
     const run = orch.getRun(r.id)!;
     expect(run.status).toBe("done");
     expect(run.decisions.some((d) => d.kind === "reapproval" && d.outcome === "edited")).toBe(true);

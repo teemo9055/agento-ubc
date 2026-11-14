@@ -11,9 +11,10 @@ export const THEMES: Record<AgentId, AgentTheme> = {
   inso: {
     name: "Inso",
     domain: "Prediction markets",
-    tagline: "Reads the odds so you don't have to.",
+    tagline: "Reads the odds, then asks before it bets.",
     copy: {
-      draft: "Here's the plan. Poke any card.",
+      exploring: "Ask me anything about the odds.",
+      draft: "Here's the move, priced. Poke any card.",
       funding: "Filling the vault…",
       running: "Reading the room.",
       done: "Odds read. Receipt's below.",
@@ -23,9 +24,10 @@ export const THEMES: Record<AgentId, AgentTheme> = {
   trado: {
     name: "Trado",
     domain: "Trading",
-    tagline: "Charts first, feelings later.",
+    tagline: "Spot trends, with a trade only if you say so.",
     copy: {
-      draft: "Plan's ready. Tweak before we buy candles.",
+      exploring: "What are we watching?",
+      draft: "Move's priced. Tweak before we trade.",
       funding: "Funding the vault…",
       running: "Drawing lines on charts.",
       done: "Trend called. Receipt's below.",
@@ -35,9 +37,10 @@ export const THEMES: Record<AgentId, AgentTheme> = {
   travo: {
     name: "Travo",
     domain: "Travel",
-    tagline: "Gets you there, snacks not included.",
+    tagline: "Plans the drive, you take the wheel.",
     copy: {
-      draft: "Route plan ready. Add a stop?",
+      exploring: "Where to?",
+      draft: "Route plan priced. Add a stop?",
       funding: "Fueling the vault…",
       running: "Plotting the route.",
       done: "Trip mapped. Receipt's below.",

@@ -1,11 +1,11 @@
 import { StandardMerkleTree } from "@openzeppelin/merkle-tree";
 import type { Hex } from "viem";
-import type { CostLine } from "@/lib/types";
+import { offVault, type CostLine } from "@/lib/types";
 
 /** Onchain plan commitment: Merkle tree of (index, payee, cap) for every USDC line. */
 export function planTree(lines: CostLine[]) {
   const values = lines
-    .filter((l) => l.rail !== "subscription")
+    .filter((l) => !offVault(l.rail))
     .sort((a, b) => a.index - b.index)
     .map((l) => [l.index, l.payee, BigInt(l.approved).toString()] as [number, string, string]);
   // A one-leaf tree has an empty proof, which MerkleProof accepts when leaf == root.
