@@ -23,10 +23,25 @@ Three agents share one core:
 | Contract | Address (Arc testnet, chain 5042002) |
 | -------- | ------------------------------------ |
 | USDC | `0x3600000000000000000000000000000000000000` |
-| WorkOrderFactory | _not yet deployed_ |
-| WorkOrderVault (implementation) | _not yet deployed_ |
+| WorkOrderFactory | [`0x1bfBF0F370Ecd77CCD665FD677eb505c6325604A`](https://explorer.testnet.arc.io/address/0x1bfBF0F370Ecd77CCD665FD677eb505c6325604A) (verified) |
+| WorkOrderVault (implementation) | [`0x1C2a60C4fB2B6DB9032d7589F01FFD126D51cd0B`](https://explorer.testnet.arc.io/address/0x1C2a60C4fB2B6DB9032d7589F01FFD126D51cd0B) (verified) |
 
 Source: [`contracts/src`](contracts/src). Tests: `npm run test:contracts`.
+
+### Example run on Arc testnet
+
+An Inso job, "How have BTC odds moved today?", approved at 0.37 USDC with a 0.444 cap:
+
+| Step | Transaction |
+| ---- | ----------- |
+| Vault opened and funded (0.444 USDC) | [`0x61b7…79dc`](https://explorer.testnet.arc.io/tx/0x61b749370ba9a5b5f10ad00531892575c91a3c5d9bf51f2c31462ceb543d79dc) |
+| Vault | [`0x7d0B…b950`](https://explorer.testnet.arc.io/address/0x7d0BC76603F5fa18B226427a270F0602f649b950) |
+| x402 market search, 0.01 USDC | [`0xe121…3840`](https://explorer.testnet.arc.io/tx/0xe1218d9f1d2a3c9b8df97b720d2d3cbc6723d103d79b7cd25dd3e55e3b283840) |
+| x402 odds history, 3 × 0.02 USDC | [`0xdfb5…3f3a`](https://explorer.testnet.arc.io/tx/0xdfb51063bf443880670ec306c3168b1ad6b6fae31378937464cf546658266f3a), [`0x8073…3707`](https://explorer.testnet.arc.io/tx/0x8073f2de3d277c45a3b1891b04939c2414f84b3785b006bbf7926a73a5cd3707), [`0xc7e2…f005`](https://explorer.testnet.arc.io/tx/0xc7e217b528561b93c7aa4ed5f9f2a8b1058505e1afea3bc918c7be414e78f005) |
+| x402 trade tape (big spend, pre-approved), 3 × 0.10 USDC | [`0x90f2…c6cd`](https://explorer.testnet.arc.io/tx/0x90f22fc87a66c121bbf7370f171666f38ad3034a0f7b3070ed56a374f2c4c6cd), [`0x9c1d…2004`](https://explorer.testnet.arc.io/tx/0x9c1d97da4228f67b1d841c617fffaf9b79d7e7c28b2d5a1ed70c0bdae72f2004), [`0xfac7…b234`](https://explorer.testnet.arc.io/tx/0xfac777fce539d9da738d74d9afbead2d9935bf03dae96f0adab97e06bd93b234) |
+| Vault closed, 0.074 USDC returned | [`0x406d…4a43`](https://explorer.testnet.arc.io/tx/0x406dc5f5b81706a7d7997902d077aab802c4487769c433b2e2d3d709cd744a43) |
+
+Measured network fee per `authorize` call, paid by the agent: about 0.0026 USDC. The seller pays gas for settlement, acting as its own x402 facilitator.
 
 ## Agent decision loop
 
