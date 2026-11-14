@@ -86,7 +86,6 @@ export const arcAdapter: PaymentAdapter = {
   async payX402(run, line, req, quote, onState) {
     const vault = vaultOf(run);
     const value = BigInt(quote.maxAmountRequired);
-    if (req.fault === "payment_rejected") throw new PaymentError("payment_rejected", "Facilitator rejected the authorization");
     const bal = await publicClient.readContract({ address: USDC, abi: usdcAbi, functionName: "balanceOf", args: [vault] });
     if (req.fault === "insufficient_balance" || bal < value)
       throw new PaymentError("insufficient_balance", "Vault balance can't cover this spend");
@@ -107,7 +106,8 @@ export const arcAdapter: PaymentAdapter = {
       network: quote.network,
       payload: {
         signature: "0x",
-        authorization: { from: vault, to: quote.payTo, value: value.toString(), validAfter: "0", validBefore: validBefore.toString(), nonce },
+        // Test switch: offer one base unit less than the quote, so the seller's own verification rejects it.
+        authorization: { from: vault, to: quote.payTo, value: (req.fault === "payment_rejected" ? value - 1n : value).toString(), validAfter: "0", validBefore: validBefore.toString(), nonce },
       },
     };
     onState("pending", { fee: auth.fee });
@@ -118,6 +118,9 @@ export const arcAdapter: PaymentAdapter = {
       const body = (await res.json()) as { data: unknown };
       return { data: body.data, result: { amount: value, txHash: settled.transaction, fee: auth.fee } };
     }
+
+    const reason = ((await res.json().catch(() => ({}))) as { error?: string }).error ?? `HTTP ${res.status}`;
+    const rejected = /underpaid|wrong payee|wrong network|expired|already used/i.test(reason);
 
     // Not settled: wait until chain time passes the authorization's expiry, confirm it was never used, release the cap.
     for (let i = 0; i < 60; i++) {
@@ -131,7 +134,8 @@ export const arcAdapter: PaymentAdapter = {
       return { data: null, result: { amount: value, fee: auth.fee } };
     }
     await send("agent", { address: vault, abi: vaultAbi, functionName: "release", args: [nonce] });
-    throw new PaymentError("settle_fails", "Signed, but settlement failed. Authorization expired and was released");
+    if (rejected) throw new PaymentError("payment_rejected", `Seller rejected the payment (${reason}). Authorization released, nothing charged`);
+    throw new PaymentError("settle_fails", `Signed, but settlement failed (${reason}). Authorization expired and was released`);
   },
 
   async payDirect(run, line, amount, ref, onState) {

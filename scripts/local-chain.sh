@@ -14,7 +14,13 @@ K3=0x7c852118294e51e653712a81e05800f419141751be58f605c371e15141b007a6
 up() { curl -sf -X POST -H 'content-type: application/json' -d '{"jsonrpc":"2.0","id":1,"method":"eth_chainId","params":[]}' $RPC >/dev/null 2>&1; }
 
 if ! up; then
-  nohup anvil --chain-id 5042002 --block-time 1 --silent >/dev/null 2>&1 &
+  # Prefer Arc's own fork of anvil (simulates Arc's USDC and value rules); fall back to plain anvil.
+  if command -v arc-anvil >/dev/null 2>&1; then
+    nohup arc-anvil --network arc --chain-id 5042002 --block-time 1 --silent >/dev/null 2>&1 &
+  else
+    echo "Note: arc-anvil not found; plain anvil runs a standard EVM, not Arc's."
+    nohup anvil --chain-id 5042002 --block-time 1 --silent >/dev/null 2>&1 &
+  fi
   for _ in $(seq 1 20); do up && break; sleep 0.5; done
 fi
 

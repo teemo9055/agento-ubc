@@ -58,6 +58,12 @@ An Inso job, "How have BTC odds moved today?", approved at 0.37 USDC with a 0.44
 
 Measured network fee per `authorize` call, paid by the agent: about 0.0026 USDC. The seller pays gas for settlement, acting as its own x402 facilitator.
 
+### Arc-specific notes
+
+- The vault moves USDC only through its ERC-20 interface (6 decimals) and never sends native value, so Arc's native-value rules (no transfers to `0x0`, no burns, `SELFDESTRUCT` moving USDC) don't apply to it. Network fees are read from receipts in 18-decimal native units.
+- A payee on USDC's blocklist makes a payment revert; the run shows it as a failed step with retry / switch / cancel.
+- `scripts/local-chain.sh` prefers [Arc Foundry](https://github.com/circlefin/arc-foundry)'s `arc-anvil`, because plain anvil runs a standard EVM.
+
 ## Agent decision loop
 
 1. **Plan.** The agent turns the task into cards (deliverable, risk, method, price) and cost lines (step, payee, rail, unit price, max calls). The total cost is shown before anything is spent.
