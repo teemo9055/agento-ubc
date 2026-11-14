@@ -40,6 +40,8 @@ export const factoryAbi = parseAbi([
   "function open(address agent, bytes32 planHash, address[] payees, uint128[] caps, uint256 amount) returns (address)",
   "function vaultFor(address payer, bytes32 planHash) view returns (address)",
   "event Opened(address indexed vault, address indexed payer, address indexed agent, bytes32 planHash, uint256 funded)",
+  "error FailedDeployment()",
+  "error CapsExceedFunds(uint256 caps, uint256 funds)",
 ]);
 
 export const vaultAbi = parseAbi([
@@ -53,10 +55,36 @@ export const vaultAbi = parseAbi([
   "function closed() view returns (bool)",
   "function usedRef(bytes32) view returns (bool)",
   "event Closed(address indexed by, uint256 spent, uint256 refunded)",
+  "error NotPayer()",
+  "error NotAgent()",
+  "error IsClosed()",
+  "error OverCap(uint256 line, uint256 cap, uint256 wouldSpend)",
+  "error WrongPayee(uint256 line, address expected, address got)",
+  "error RefUsed(bytes32 ref)",
+  "error CapsExceedFunds(uint256 caps, uint256 funds)",
+  "error BadLine(uint256 line)",
+  "error AuthNotReleasable(bytes32 nonce)",
 ]);
 
+const queues = new Map<string, Promise<unknown>>();
+
+/** One in-flight transaction per wallet, so parallel steps never reuse a nonce. */
+function serialized<T>(who: string, job: () => Promise<T>): Promise<T> {
+  const prev = queues.get(who) ?? Promise.resolve();
+  const next = prev.catch(() => undefined).then(job);
+  queues.set(who, next);
+  return next;
+}
+
 /** Sends a tx and returns hash + fee (18-decimal native USDC) once mined. */
-export async function send(
+export function send(
+  who: keyof typeof accounts,
+  req: { address: Hex; abi: readonly unknown[]; functionName: string; args: readonly unknown[] },
+) {
+  return serialized(who, () => sendNow(who, req));
+}
+
+async function sendNow(
   who: keyof typeof accounts,
   req: { address: Hex; abi: readonly unknown[]; functionName: string; args: readonly unknown[] },
 ) {

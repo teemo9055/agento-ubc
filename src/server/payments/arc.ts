@@ -121,9 +121,12 @@ export const arcAdapter: PaymentAdapter = {
       return { data: body.data, result: { amount: value, txHash: settled.transaction, fee: auth.fee } };
     }
 
-    // Not settled: wait for the authorization to expire, confirm it was never used, release the cap.
-    const wait_ms = Number(validBefore) * 1000 - Date.now() + 3000;
-    if (wait_ms > 0) await wait(wait_ms);
+    // Not settled: wait until chain time passes the authorization's expiry, confirm it was never used, release the cap.
+    for (let i = 0; i < 60; i++) {
+      const block = await publicClient.getBlock();
+      if (block.timestamp > validBefore) break;
+      await wait(Math.max(1000, (Number(validBefore - block.timestamp) + 1) * 1000));
+    }
     const used = await publicClient.readContract({ address: USDC, abi: usdcAbi, functionName: "authorizationState", args: [vault, nonce] });
     if (used) {
       // Settled after all; treat as paid.

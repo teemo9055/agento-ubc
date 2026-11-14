@@ -80,8 +80,9 @@ export const listRuns = () => [...runs.values()].map((c) => c.run).sort((a, b) =
 
 // ---------- planning ----------
 
-export function planHash(run: Pick<Run, "task" | "threshold" | "lines" | "agent">): Hex {
+export function planHash(run: Pick<Run, "id" | "task" | "threshold" | "lines" | "agent">): Hex {
   const canonical = JSON.stringify({
+    workOrder: run.id,
     agent: run.agent,
     task: run.task,
     threshold: run.threshold,
@@ -220,7 +221,7 @@ export async function approve(runId: string) {
       tx: fundingTx,
     });
   } catch (e) {
-    emit(ctl, { type: "workorder.updated", run: { ...ctl.run, status: "draft", editNote: { ok: false, message: `Funding failed: ${(e as Error).message}` } } });
+    emit(ctl, { type: "workorder.updated", run: { ...ctl.run, status: "draft", editNote: { ok: false, message: `Funding failed: ${(e as { shortMessage?: string }).shortMessage ?? (e as Error).message}` } } });
     throw e;
   }
   void execute(ctl);
@@ -283,7 +284,7 @@ async function runPhase(ctl: Ctl, phaseId: string): Promise<void> {
         id: id(),
         phaseId,
         code,
-        message: (e as Error).message,
+        message: ((e as { shortMessage?: string }).shortMessage ?? (e as Error).message).split("\n")[0].slice(0, 160),
         charged: (phaseCharged(ctl, phaseId) - chargedBefore).toString(),
         notCharged: ctl.run.phases.find((p) => p.id === phaseId)?.payments.find((p) => p.txState === "failed")?.amount ?? "0",
         options: optionsFor(code, phase, retryable),
