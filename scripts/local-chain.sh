@@ -24,7 +24,9 @@ USDC=$(echo "$OUT" | awk '/  USDC/ {print $2}')
 FACTORY=$(echo "$OUT" | awk '/FACTORY/ {print $2}')
 if [ -z "$USDC" ] || [ -z "$FACTORY" ]; then echo "$OUT"; echo "Deploy failed" >&2; exit 1; fi
 
-cat > .env.local <<ENV
+OUT_FILE=.env.local
+if [ -f .env.local ]; then OUT_FILE=.env.anvil; fi
+cat > $OUT_FILE <<ENV
 ARC_RPC_URL=$RPC
 USDC_ADDRESS=$USDC
 FACTORY_ADDRESS=$FACTORY
@@ -35,4 +37,5 @@ SELLER_ADDRESS=$(cast wallet address $K3)
 MIRROR_ADDRESS=0x000000000000000000000000000000000000B0B0
 APP_URL=http://localhost:3000
 ENV
-echo "Local chain ready. USDC $USDC · factory $FACTORY · wrote .env.local"
+echo "Local chain ready. USDC $USDC · factory $FACTORY · wrote $OUT_FILE"
+if [ "$OUT_FILE" != .env.local ]; then echo "Your .env.local was left untouched. To use the local chain, back it up and copy .env.anvil over it."; fi

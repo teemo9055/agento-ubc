@@ -47,18 +47,20 @@ export const usdcAbi = parseAbi([
 ]);
 
 export const factoryAbi = parseAbi([
-  "function open(address agent, bytes32 planHash, address[] payees, uint128[] caps, uint256 amount) returns (address)",
-  "function vaultFor(address payer, bytes32 planHash) view returns (address)",
-  "event Opened(address indexed vault, address indexed payer, address indexed agent, bytes32 planHash, uint256 funded)",
+  "function open(address agent, bytes32 planRoot, bytes32 orderId, uint256 amount) returns (address)",
+  "function vaultFor(address payer, bytes32 orderId) view returns (address)",
+  "event Opened(address indexed vault, address indexed payer, address indexed agent, bytes32 planRoot, bytes32 orderId, uint256 funded)",
   "error FailedDeployment()",
   "error CapsExceedFunds(uint256 caps, uint256 funds)",
 ]);
 
 export const vaultAbi = parseAbi([
-  "function pay(uint256 line, uint128 amount, bytes32 ref)",
-  "function authorize(uint256 line, address to, uint128 value, uint64 validAfter, uint64 validBefore, bytes32 nonce) returns (bytes32)",
+  "struct Line { uint32 index; address payee; uint128 cap; }",
+  "function pay(Line line, bytes32[] proof, uint128 amount, bytes32 ref)",
+  "function authorize(Line line, bytes32[] proof, address to, uint128 value, uint64 validAfter, uint64 validBefore, bytes32 nonce) returns (bytes32)",
   "function release(bytes32 nonce)",
-  "function setLine(uint256 line, address payee, uint128 cap, bytes32 newPlanHash)",
+  "function setPlan(bytes32 newRoot)",
+  "function planRoot() view returns (bytes32)",
   "function topUp(uint256 amount)",
   "function close()",
   "function funded() view returns (uint256)",
@@ -68,11 +70,10 @@ export const vaultAbi = parseAbi([
   "error NotPayer()",
   "error NotAgent()",
   "error IsClosed()",
+  "error NotInPlan(uint256 line)",
   "error OverCap(uint256 line, uint256 cap, uint256 wouldSpend)",
   "error WrongPayee(uint256 line, address expected, address got)",
   "error RefUsed(bytes32 ref)",
-  "error CapsExceedFunds(uint256 caps, uint256 funds)",
-  "error BadLine(uint256 line)",
   "error AuthNotReleasable(bytes32 nonce)",
 ]);
 

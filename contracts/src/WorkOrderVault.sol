@@ -3,22 +3,25 @@ pragma solidity ^0.8.28;
 
 import {IERC20} from "@openzeppelin/contracts/token/ERC20/IERC20.sol";
 import {SafeERC20} from "@openzeppelin/contracts/token/ERC20/utils/SafeERC20.sol";
+import {MerkleProof} from "@openzeppelin/contracts/utils/cryptography/MerkleProof.sol";
 
 interface IERC3009 {
     function DOMAIN_SEPARATOR() external view returns (bytes32);
     function authorizationState(address authorizer, bytes32 nonce) external view returns (bool);
 }
 
-/// @notice Holds the budget for one approved work order. The agent can only pay
-/// approved lines, to the approved payee, up to the approved cap. Unspent funds
-/// return to the payer on close.
+/// @notice Holds the budget for one approved work order. The approved plan is
+/// committed as a Merkle root of (index, payee, cap) lines: payees and caps stay
+/// private until a line is used. The agent can only pay a line it proves is in
+/// the root, to that line's payee, up to that line's cap. Unspent funds return
+/// to the payer on close.
 contract WorkOrderVault {
     using SafeERC20 for IERC20;
 
     struct Line {
+        uint32 index;
         address payee;
         uint128 cap;
-        uint128 spent;
     }
 
     struct Auth {
@@ -36,11 +39,12 @@ contract WorkOrderVault {
     address public payer;
     address public agent;
     IERC20 public token;
-    bytes32 public planHash;
+    /// @notice Merkle root of the approved lines (OpenZeppelin StandardMerkleTree, leaf = (uint32,address,uint128)).
+    bytes32 public planRoot;
     uint256 public funded;
     bool public closed;
 
-    Line[] internal _lines;
+    mapping(uint256 => uint128) public spent;
     mapping(bytes32 => bool) public usedRef;
     mapping(bytes32 => bool) public approvedDigest;
     mapping(bytes32 => Auth) public auths;
@@ -48,7 +52,7 @@ contract WorkOrderVault {
     event Paid(uint256 indexed line, address indexed payee, uint256 amount, bytes32 ref);
     event Authorized(uint256 indexed line, address indexed payee, uint256 amount, bytes32 nonce, bytes32 digest);
     event Released(uint256 indexed line, uint256 amount, bytes32 nonce);
-    event LineSet(uint256 indexed line, address payee, uint256 cap, bytes32 planHash);
+    event PlanSet(bytes32 planRoot);
     event ToppedUp(address indexed from, uint256 amount);
     event Closed(address indexed by, uint256 spent, uint256 refunded);
 
@@ -56,11 +60,10 @@ contract WorkOrderVault {
     error NotAgent();
     error IsClosed();
     error AlreadyInitialized();
+    error NotInPlan(uint256 line);
     error OverCap(uint256 line, uint256 cap, uint256 wouldSpend);
     error WrongPayee(uint256 line, address expected, address got);
     error RefUsed(bytes32 ref);
-    error CapsExceedFunds(uint256 caps, uint256 funds);
-    error BadLine(uint256 line);
     error AuthNotReleasable(bytes32 nonce);
 
     modifier onlyPayer() {
@@ -78,58 +81,46 @@ contract WorkOrderVault {
         _;
     }
 
-    function initialize(
-        address payer_,
-        address agent_,
-        IERC20 token_,
-        bytes32 planHash_,
-        address[] calldata payees,
-        uint128[] calldata caps,
-        uint256 funded_
-    ) external {
+    function initialize(address payer_, address agent_, IERC20 token_, bytes32 planRoot_, uint256 funded_) external {
         if (payer != address(0)) revert AlreadyInitialized();
         require(payer_ != address(0) && agent_ != address(0), "zero address");
-        require(payees.length == caps.length, "length");
         payer = payer_;
         agent = agent_;
         token = token_;
-        planHash = planHash_;
+        planRoot = planRoot_;
         funded = funded_;
-        for (uint256 i; i < payees.length; ++i) {
-            _lines.push(Line(payees[i], caps[i], 0));
-            emit LineSet(i, payees[i], caps[i], planHash_);
-        }
-        _checkCaps();
+        emit PlanSet(planRoot_);
     }
 
     // ---------- agent ----------
 
     /// @notice Direct transfer for an approved line. `ref` makes retries idempotent.
-    function pay(uint256 line, uint128 amount, bytes32 ref) external onlyAgent whenOpen {
+    function pay(Line calldata line, bytes32[] calldata proof, uint128 amount, bytes32 ref) external onlyAgent whenOpen {
         if (usedRef[ref]) revert RefUsed(ref);
         usedRef[ref] = true;
-        Line storage l = _line(line);
-        _spend(line, l, amount);
-        token.safeTransfer(l.payee, amount);
-        emit Paid(line, l.payee, amount, ref);
+        _spend(line, proof, amount);
+        token.safeTransfer(line.payee, amount);
+        emit Paid(line.index, line.payee, amount, ref);
     }
 
     /// @notice Pre-approve an EIP-3009 transferWithAuthorization from this vault
     /// (x402). The token validates it through ERC-1271 against this approval.
-    function authorize(uint256 line, address to, uint128 value, uint64 validAfter, uint64 validBefore, bytes32 nonce)
-        external
-        onlyAgent
-        whenOpen
-        returns (bytes32 digest)
-    {
+    function authorize(
+        Line calldata line,
+        bytes32[] calldata proof,
+        address to,
+        uint128 value,
+        uint64 validAfter,
+        uint64 validBefore,
+        bytes32 nonce
+    ) external onlyAgent whenOpen returns (bytes32 digest) {
         if (auths[nonce].validBefore != 0) revert RefUsed(nonce);
-        Line storage l = _line(line);
-        if (to != l.payee) revert WrongPayee(line, l.payee, to);
-        _spend(line, l, value);
+        if (to != line.payee) revert WrongPayee(line.index, line.payee, to);
+        _spend(line, proof, value);
         digest = transferAuthDigest(to, value, validAfter, validBefore, nonce);
         approvedDigest[digest] = true;
-        auths[nonce] = Auth(uint32(line), value, validBefore, false);
-        emit Authorized(line, to, value, nonce, digest);
+        auths[nonce] = Auth(line.index, value, validBefore, false);
+        emit Authorized(line.index, to, value, nonce, digest);
     }
 
     /// @notice Return cap from an x402 authorization that expired unused.
@@ -138,25 +129,16 @@ contract WorkOrderVault {
         if (a.validBefore == 0 || a.released || block.timestamp <= a.validBefore) revert AuthNotReleasable(nonce);
         if (IERC3009(address(token)).authorizationState(address(this), nonce)) revert AuthNotReleasable(nonce);
         a.released = true;
-        _lines[a.line].spent -= a.value;
+        spent[a.line] -= a.value;
         emit Released(a.line, a.value, nonce);
     }
 
     // ---------- payer ----------
 
-    /// @notice Re-approval: change a line's payee or cap, or add a line.
-    function setLine(uint256 line, address payee, uint128 cap, bytes32 newPlanHash) external onlyPayer whenOpen {
-        if (line == _lines.length) {
-            _lines.push(Line(payee, cap, 0));
-        } else {
-            Line storage l = _line(line);
-            require(cap >= l.spent, "cap below spent");
-            l.payee = payee;
-            l.cap = cap;
-        }
-        planHash = newPlanHash;
-        _checkCaps();
-        emit LineSet(line, payee, cap, newPlanHash);
+    /// @notice Re-approval: replace the plan with a new root (changed price, payee or step).
+    function setPlan(bytes32 newRoot) external onlyPayer whenOpen {
+        planRoot = newRoot;
+        emit PlanSet(newRoot);
     }
 
     function topUp(uint256 amount) external whenOpen {
@@ -192,36 +174,16 @@ contract WorkOrderVault {
         return keccak256(abi.encodePacked("\x19\x01", IERC3009(address(token)).DOMAIN_SEPARATOR(), structHash));
     }
 
-    function lineCount() external view returns (uint256) {
-        return _lines.length;
-    }
-
-    function lines(uint256 i) external view returns (Line memory) {
-        return _lines[i];
-    }
-
-    function allLines() external view returns (Line[] memory) {
-        return _lines;
+    function lineLeaf(Line calldata line) public pure returns (bytes32) {
+        return keccak256(bytes.concat(keccak256(abi.encode(line.index, line.payee, line.cap))));
     }
 
     // ---------- internal ----------
 
-    function _line(uint256 i) internal view returns (Line storage) {
-        if (i >= _lines.length) revert BadLine(i);
-        return _lines[i];
-    }
-
-    function _spend(uint256 i, Line storage l, uint128 amount) internal {
-        uint256 next = uint256(l.spent) + amount;
-        if (next > l.cap) revert OverCap(i, l.cap, next);
-        l.spent = uint128(next);
-    }
-
-    function _checkCaps() internal view {
-        uint256 total;
-        for (uint256 i; i < _lines.length; ++i) {
-            total += _lines[i].cap;
-        }
-        if (total > funded) revert CapsExceedFunds(total, funded);
+    function _spend(Line calldata line, bytes32[] calldata proof, uint128 amount) internal {
+        if (!MerkleProof.verifyCalldata(proof, planRoot, lineLeaf(line))) revert NotInPlan(line.index);
+        uint256 next = uint256(spent[line.index]) + amount;
+        if (next > line.cap) revert OverCap(line.index, line.cap, next);
+        spent[line.index] = uint128(next);
     }
 }

@@ -13,29 +13,23 @@ contract WorkOrderFactory {
     address public immutable implementation;
     IERC20 public immutable token;
 
-    event Opened(
-        address indexed vault, address indexed payer, address indexed agent, bytes32 planHash, uint256 funded
-    );
+    event Opened(address indexed vault, address indexed payer, address indexed agent, bytes32 planRoot, bytes32 orderId, uint256 funded);
 
     constructor(IERC20 token_) {
         token = token_;
         implementation = address(new WorkOrderVault());
     }
 
-    function open(
-        address agent,
-        bytes32 planHash,
-        address[] calldata payees,
-        uint128[] calldata caps,
-        uint256 amount
-    ) external returns (address vault) {
-        vault = Clones.cloneDeterministic(implementation, keccak256(abi.encode(msg.sender, planHash)));
+    /// @param planRoot Merkle root of the approved lines; payees and caps stay private.
+    /// @param orderId  Unique work-order id (one vault per order).
+    function open(address agent, bytes32 planRoot, bytes32 orderId, uint256 amount) external returns (address vault) {
+        vault = Clones.cloneDeterministic(implementation, keccak256(abi.encode(msg.sender, orderId)));
         token.safeTransferFrom(msg.sender, vault, amount);
-        WorkOrderVault(vault).initialize(msg.sender, agent, token, planHash, payees, caps, amount);
-        emit Opened(vault, msg.sender, agent, planHash, amount);
+        WorkOrderVault(vault).initialize(msg.sender, agent, token, planRoot, amount);
+        emit Opened(vault, msg.sender, agent, planRoot, orderId, amount);
     }
 
-    function vaultFor(address payer, bytes32 planHash) external view returns (address) {
-        return Clones.predictDeterministicAddress(implementation, keccak256(abi.encode(payer, planHash)), address(this));
+    function vaultFor(address payer, bytes32 orderId) external view returns (address) {
+        return Clones.predictDeterministicAddress(implementation, keccak256(abi.encode(payer, orderId)), address(this));
     }
 }

@@ -1,6 +1,7 @@
 import { decodeEventLog, toHex, type Hex } from "viem";
 import { randomBytes } from "node:crypto";
 import { FACTORY, USDC, accounts, addresses, factoryAbi, publicClient, send, usdcAbi, vaultAbi } from "../chain";
+import { lineProof, lineTuple, planTree } from "../merkle";
 import { decodeHeader, encodeHeader, type PaymentPayload, type PaymentRequirements } from "../x402";
 import type { PaymentAdapter, X402Request } from "./index";
 import { PaymentError } from "./index";
@@ -25,16 +26,13 @@ const vaultOf = (run: { vault?: Hex }) => {
   return run.vault;
 };
 
-const usdcLines = (lines: { rail: string; index: number; payee: Hex; approved: string }[]) =>
-  lines.filter((l) => l.rail !== "subscription").sort((a, b) => a.index - b.index);
-
 export const arcAdapter: PaymentAdapter = {
   live: true,
 
   async open(run, planHash) {
     if (!FACTORY || !accounts.client || !addresses.agent) throw new Error("live mode is not configured");
-    const lines = usdcLines(run.lines);
     const cap = BigInt(run.cap);
+    const root = planTree(run.lines).root as Hex;
     const allowance = await publicClient.readContract({
       address: USDC,
       abi: usdcAbi,
@@ -46,7 +44,7 @@ export const arcAdapter: PaymentAdapter = {
       address: FACTORY,
       abi: factoryAbi,
       functionName: "open",
-      args: [addresses.agent, planHash, lines.map((l) => l.payee), lines.map((l) => BigInt(l.approved)), cap],
+      args: [addresses.agent, root, planHash, cap],
     });
     const vault = await publicClient.readContract({
       address: FACTORY,
@@ -61,8 +59,8 @@ export const arcAdapter: PaymentAdapter = {
     const tx = await send("client", {
       address: vaultOf(run),
       abi: vaultAbi,
-      functionName: "setLine",
-      args: [BigInt(line.index), line.payee, BigInt(line.approved), planHash],
+      functionName: "setPlan",
+      args: [planTree(run.lines).root as Hex],
     });
     return tx.hash;
   },
@@ -100,7 +98,7 @@ export const arcAdapter: PaymentAdapter = {
       address: vault,
       abi: vaultAbi,
       functionName: "authorize",
-      args: [BigInt(line.index), quote.payTo, value, 0n, validBefore, nonce],
+      args: [lineTuple(line), lineProof(run.lines, line).proof, quote.payTo, value, 0n, validBefore, nonce],
     });
 
     const payment: PaymentPayload = {
@@ -138,7 +136,7 @@ export const arcAdapter: PaymentAdapter = {
 
   async payDirect(run, line, amount, ref, onState) {
     onState("signing");
-    const tx = await send("agent", { address: vaultOf(run), abi: vaultAbi, functionName: "pay", args: [BigInt(line.index), amount, ref] });
+    const tx = await send("agent", { address: vaultOf(run), abi: vaultAbi, functionName: "pay", args: [lineTuple(line), lineProof(run.lines, line).proof, amount, ref] });
     onState("pending");
     return { amount, txHash: tx.hash, fee: tx.fee };
   },

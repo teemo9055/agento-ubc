@@ -12,9 +12,11 @@ Three agents share one core:
 
 ## How it uses Arc
 
-- **Work-order vault.** Approving a plan calls `WorkOrderFactory.open`. The factory clones a `WorkOrderVault`, funds it with the plan's USDC cap and stores one line per approved spend: payee and maximum amount. The plan hash is stored onchain.
-- **x402 from the vault.** Data is sold per request over x402 (`exact` scheme, `eip155:5042002`). The agent calls `vault.authorize(line, payee, amount, …)`. The vault checks the payee and the line's cap, then approves that exact EIP-3009 `transferWithAuthorization` digest. USDC verifies it through ERC-1271 (`isValidSignature`), so the money moves from the vault straight to the seller. No agent-held balance is ever spent.
-- **Re-approval onchain.** When you approve a change (new price, new payee, extra step), the client wallet calls `vault.setLine`, and adds funds with `topUp` if needed.
+- **Work-order vault.** Approving a plan calls `WorkOrderFactory.open`. The factory clones a `WorkOrderVault` and funds it with the plan's USDC cap. The approved lines (index, payee, cap) are committed as a **Merkle root**, so payees and caps stay private until a line is used.
+- **Proof per payment.** Each payment carries its line and a Merkle proof. The vault pays only lines in the root, only to that line's payee, only up to that line's cap.
+- **x402 from the vault.** Data is sold per request over x402 (`exact` scheme, `eip155:5042002`). The agent calls `vault.authorize(line, proof, payee, amount, …)`. The vault checks the proof, the payee and the line's cap, then approves that exact EIP-3009 `transferWithAuthorization` digest. USDC verifies it through ERC-1271 (`isValidSignature`), so the money moves from the vault straight to the seller. No agent-held balance is ever spent.
+- **Re-approval onchain.** When you approve a change (new price, new payee, extra step), the client wallet calls `vault.setPlan(newRoot)`, and adds funds with `topUp` if needed.
+- **Circle wallets.** The agent and the data sellers are Circle developer-controlled wallets on Arc testnet; their transactions are signed through Circle.
 - **Refunds.** `vault.close()` returns the unspent balance to the client and invalidates any unsettled authorization. An authorization that expires unused can be `release`d to free its cap for a retry.
 - **USDC as gas.** Every fee is in USDC. Receipts show the network fee measured from each transaction receipt (`gasUsed × effectiveGasPrice`, 18 decimals).
 
@@ -23,12 +25,25 @@ Three agents share one core:
 | Contract | Address (Arc testnet, chain 5042002) |
 | -------- | ------------------------------------ |
 | USDC | `0x3600000000000000000000000000000000000000` |
-| WorkOrderFactory | [`0x1bfBF0F370Ecd77CCD665FD677eb505c6325604A`](https://explorer.testnet.arc.io/address/0x1bfBF0F370Ecd77CCD665FD677eb505c6325604A) (verified) |
-| WorkOrderVault (implementation) | [`0x1C2a60C4fB2B6DB9032d7589F01FFD126D51cd0B`](https://explorer.testnet.arc.io/address/0x1C2a60C4fB2B6DB9032d7589F01FFD126D51cd0B) (verified) |
+| WorkOrderFactory | [`0x8e6A9725C747034231Fa0eC32845EcbCC5aa09dc`](https://explorer.testnet.arc.io/address/0x8e6A9725C747034231Fa0eC32845EcbCC5aa09dc) (verified) |
+| WorkOrderVault (implementation) | [`0x19895e2092E6353D33f1fE22D571DCF38c90469e`](https://explorer.testnet.arc.io/address/0x19895e2092E6353D33f1fE22D571DCF38c90469e) (verified) |
+| First version, plan stored in the clear (earlier example runs) | factory [`0x1bfB…604A`](https://explorer.testnet.arc.io/address/0x1bfBF0F370Ecd77CCD665FD677eb505c6325604A) |
 
 Source: [`contracts/src`](contracts/src). Tests: `npm run test:contracts`.
 
 ### Example run on Arc testnet
+
+Merkle-committed plan, agent and seller signing through Circle wallets. Inso, "How have BTC odds moved today?", approved at 0.07 USDC:
+
+| Step | Transaction |
+| ---- | ----------- |
+| Vault opened and funded | [`0x9a05…78af`](https://explorer.testnet.arc.io/tx/0x9a05ce3f5783eb809ca14effdf31ab05d5faa2da8ace302248794805c15c78af) |
+| Vault | [`0x3681…687a`](https://explorer.testnet.arc.io/address/0x3681E019BeF33689430908F7df27bC68aDD0687a) |
+| x402 load event, 0.01 USDC | [`0x50f9…2ff5`](https://explorer.testnet.arc.io/tx/0x50f9ea1b62719d650a76bb5c3926f408868754fae3ded8ac552067162c682ff5) |
+| x402 odds history, 3 × 0.02 USDC | [`0x9f11…11f7`](https://explorer.testnet.arc.io/tx/0x9f118625e3ec2737989594c06679239e2cd87938928357c6f8c691254dd311f7), [`0x9039…0a68`](https://explorer.testnet.arc.io/tx/0x9039a45a1a8de4d32e52736856f0bc409f156d497ef67a57b91261ea977d0a68), [`0x49f2…d620`](https://explorer.testnet.arc.io/tx/0x49f277586e9a585719b16af3b1f819fd23727a0ad887408188bf2d2f470fd620) |
+| Vault closed, unspent returned | [`0x9044…f80`](https://explorer.testnet.arc.io/tx/0x90440a70d86e2a75a6061b254053b9cb3b210ff38aa07c111926757bf6a9cf80) |
+
+Earlier run on the first contract version, plan stored in the clear:
 
 An Inso job, "How have BTC odds moved today?", approved at 0.37 USDC with a 0.444 cap:
 
@@ -61,12 +76,12 @@ Measured network fee per `authorize` call, paid by the agent: about 0.0026 USDC.
 
 | Limit | Enforced by |
 | ----- | ----------- |
-| Spend only on approved lines | Policy engine (`src/lib/policy.ts`) and the vault (`authorize`/`pay` revert otherwise) |
+| Spend only on approved lines | Policy engine (`src/lib/policy.ts`) and the vault (`NotInPlan` unless the line's Merkle proof matches the approved root) |
 | Approved payee per line | Policy engine and the vault (`WrongPayee`) |
 | Per-request price ≤ approved unit price | Policy engine |
 | Line total ≤ approved cap | Policy engine and the vault (`OverCap`) |
-| Sum of caps ≤ vault funds | Vault (`CapsExceedFunds`) |
-| Only the agent key can spend; only the client changes lines | Vault (`NotAgent`, `NotPayer`) |
+| Sum of caps ≤ vault funds | Orchestrator before funding; the vault can never pay more than it holds |
+| Only the agent can spend; only the client changes the plan | Vault (`NotAgent`, `NotPayer`) |
 | No double payment on retry | Request-key cache, unique refs and nonces (`RefUsed`), authorization state check |
 | Re-approval timeout counts as deny | Orchestrator (`REAPPROVAL_TIMEOUT_MS`, default 2 min) |
 | Big spends listed and approved up front | Work order (default threshold 0.25 USDC, editable on the price card) |
