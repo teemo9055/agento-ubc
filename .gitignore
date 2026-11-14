@@ -3,7 +3,7 @@ node_modules/
 out/
 contracts/out/
 contracts/cache/
-contracts/broadcast/*/31337/
+contracts/broadcast/
 .env
 .env.*
 !.env.example
