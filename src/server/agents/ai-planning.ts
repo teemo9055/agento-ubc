@@ -150,3 +150,22 @@ export async function aiSummary(agent: AgentId, task: string, facts: unknown): P
   });
   return r ? { summary: r.value, usage: r.usage } : null;
 }
+
+/** Validates a plan written by an outside AI (MCP). Same rules as the built-in planner. */
+export async function validateExternalPlan(agent: AgentId, plan: unknown): Promise<{ options: Opts } | { error: string }> {
+  const parsed = SCHEMA[agent].safeParse(plan);
+  if (!parsed.success) return { error: `Plan invalid: ${parsed.error.issues.map((i) => `${i.path.join(".")} ${i.message}`).join("; ")}` };
+  let ctx: Awaited<ReturnType<typeof context>>;
+  if (agent === "inso") {
+    const tickers = (parsed.data as z.infer<typeof InsoPlan>).eventTickers;
+    const found = await Promise.allSettled(tickers.map((t) => gemini.getEvent(t)));
+    const events = found.flatMap((f) => (f.status === "fulfilled" && f.value.contracts.length ? [f.value] : []));
+    const missing = tickers.filter((t) => !events.some((e) => e.ticker === t));
+    if (missing.length) return { error: `Unknown or inactive event tickers: ${missing.join(", ")}. Use browse_options to find real ones.` };
+    ctx = { text: "", events };
+  } else ctx = await context(agent, "");
+  const options = toOptions(agent, parsed.data, ctx);
+  return options ? { options } : { error: "Plan names symbols or places that aren't available. Use browse_options." };
+}
+
+export { marketCandidates, spotSymbols };

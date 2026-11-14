@@ -189,7 +189,7 @@ function materialize(ctl: Ctl, raw: PlanDraft) {
   return { cards: [...draft.cards, priceCard(lines, cap, threshold, fees)], lines, phases, cap: cap.toString(), estFees: fees.toString() };
 }
 
-export async function createRun(input: { agent: AgentId; task: string; mode?: "demo" | "live"; faults?: FailureCode[] }) {
+export async function createRun(input: { agent: AgentId; task: string; mode?: "demo" | "live"; faults?: FailureCode[]; options?: Record<string, unknown>; plannedBy?: string }) {
   const agent = AGENTS[input.agent];
   if (!agent) throw new Error("unknown agent");
   const mode = input.mode === "live" && liveReady() ? "live" : "demo";
@@ -232,7 +232,13 @@ export async function createRun(input: { agent: AgentId; task: string; mode?: "d
   };
   runs.set(run.id, ctl);
   // The model drafts options from the task; code validates, prices and can always fall back to rules.
-  const drafted = aiEnabled() ? await aiPlan(run.agent, run.task) : null;
+  // A plan from an outside AI (already validated) wins; otherwise the built-in planner drafts one.
+  const drafted = input.options ? null : aiEnabled() ? await aiPlan(run.agent, run.task) : null;
+  if (input.options) {
+    ctl.options = { ...ctl.options, ...input.options };
+    run.planner = "ai";
+    run.ai = { model: input.plannedBy ?? "your AI (MCP)", calls: 0, promptTokens: 0, completionTokens: 0 };
+  }
   if (drafted) {
     ctl.options = { ...ctl.options, ...drafted.options };
     run.planner = "ai";

@@ -75,6 +75,28 @@ Measured network fee per `authorize` call, paid by the agent: about 0.0026 USDC.
 
 The policy engine runs before any signature. The vault enforces the same rules onchain, so a bug in the app fails closed.
 
+## Use it from your own AI (MCP)
+
+The app is also an MCP server at `/api/mcp`, so Claude Code, Claude Desktop, Cursor or any MCP client can drive the agents. Your AI does the planning and analysis on your own subscription; the app handles pricing, the vault and payments.
+
+| Tool | What it does |
+| ---- | ------------ |
+| `list_agents` | Agents, unit prices, plan shapes, rules |
+| `browse_options` | Real active markets (Inso) or tradable symbols (Trado). Free |
+| `draft_work_order` | Priced draft from your AI's own plan (validated by the server) or the built-in planner |
+| `edit_work_order` | Change a card by request; re-priced or refused with a reason |
+| `get_job`, `list_jobs` | Status, cost, steps, what it is waiting for |
+| `get_job_data`, `get_receipt` | Results for your AI to analyse; itemized receipt |
+| `cancel_job` | Stop and return unspent funds |
+
+There is no approve tool. Every draft returns a link, and only the user approves spending in the app; the vault enforces it onchain. Data from markets is marked as untrusted.
+
+```bash
+claude mcp add --transport http agento http://localhost:3000/api/mcp
+```
+
+Set `MCP_TOKEN` when the app is reachable by others; clients then send `Authorization: Bearer <token>`. `node scripts/mcp-demo.mjs http://localhost:3000` plays the client side end to end.
+
 ## Run it
 
 ```bash
