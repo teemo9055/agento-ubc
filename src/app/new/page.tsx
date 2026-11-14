@@ -28,6 +28,7 @@ interface Config {
   explorer: string;
   faultsEnabled: boolean;
   liveNeedsCode?: boolean;
+  setup?: string[];
   agents: { id: AgentId; examples: string[] }[];
 }
 
@@ -208,7 +209,7 @@ export default function Home() {
                 aria-checked={mode === m}
                 disabled={m === "live" && !cfg?.live}
                 onClick={() => setMode(m)}
-                title={m === "live" && !cfg?.live ? "Live mode needs funded wallets and a deployed factory" : undefined}
+                title={m === "live" && !cfg?.live ? (cfg?.setup?.join(" · ") ?? "Arc testnet isn't set up on this machine") : undefined}
                 className={`tap relative rounded-lg px-3 py-1.5 transition-colors ${mode === m ? "text-white" : "text-ink-2 disabled:text-ink-3/60"}`}
               >
                 {mode === m && <motion.span layoutId="rail" className="absolute inset-0 rounded-lg bg-ink" transition={{ type: "spring", duration: 0.35 }} />}
@@ -250,6 +251,17 @@ export default function Home() {
           />
         )}
         {err && <p className="mt-3 text-sm text-bad">{err}</p>}
+        {cfg?.setup && cfg.setup.length > 0 && (
+          <div className="mt-3 rounded-lg border border-warn bg-warn/10 px-3 py-2 text-[12.5px] text-[#7a5000]" data-testid="setup-problems">
+            <b>Setup on this machine:</b>
+            <ul className="mt-1 list-disc pl-4">
+              {cfg.setup.map((x) => (
+                <li key={x}>{x}</li>
+              ))}
+            </ul>
+            <span className="mt-1 block text-ink-3">Add these to .env.local and restart the app.</span>
+          </div>
+        )}
       </form>
       <p className="mt-3 text-xs text-ink-3">
         {mode === "demo" ? "Demo rail: real market data, simulated settlement, no transaction hashes." : "Arc testnet: real USDC payments from a fresh vault per work order."}

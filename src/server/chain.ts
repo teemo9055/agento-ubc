@@ -1,5 +1,6 @@
 import { createPublicClient, createWalletClient, encodeFunctionData, http, parseAbi, type Hex } from "viem";
 import { circleExecute, circleWallets } from "./circle";
+// setupProblems reads process.env directly so it works before any wallet call.
 import { privateKeyToAccount } from "viem/accounts";
 import { arcTestnet } from "viem/chains";
 
@@ -36,7 +37,30 @@ export const addresses = {
 
 export const signerKind = (who: keyof typeof accounts) => (who !== "client" && circleWallets[who] ? "circle" : accounts[who] ? "key" : "none");
 
-export const liveReady = () => Boolean(FACTORY && addresses.agent && addresses.client && addresses.seller);
+export const liveReady = () => Boolean(FACTORY && addresses.agent && addresses.client && addresses.seller) && setupProblems().length === 0;
+
+/** Plain-language list of what stops Arc testnet mode or the AI from working on this machine. */
+export function setupProblems(): string[] {
+  const out: string[] = [];
+  // Behind an injecting proxy (cloud sessions) a placeholder key is fine; on a laptop it isn't.
+  const placeholder = (v?: string) => !process.env.HTTPS_PROXY && (!v || /proxy|injected/i.test(v));
+  if (!FACTORY) out.push("FACTORY_ADDRESS is not set");
+  if (!addresses.client) out.push("CLIENT_PRIVATE_KEY is not set");
+  if (!addresses.agent) out.push("No agent wallet: set the CIRCLE_AGENT_* values or AGENT_PRIVATE_KEY");
+  if (!addresses.seller) out.push("No seller wallet: set the CIRCLE_SELLER_* values or SELLER_PRIVATE_KEY");
+  if ((process.env.CIRCLE_AGENT_WALLET_ID || process.env.CIRCLE_SELLER_WALLET_ID) && placeholder(process.env.CIRCLE_API_KEY))
+    out.push("CIRCLE_API_KEY is missing (needed to sign with the Circle agent and seller wallets)");
+  if ((process.env.CIRCLE_AGENT_WALLET_ID || process.env.CIRCLE_SELLER_WALLET_ID) && !process.env.CIRCLE_ENTITY_SECRET) out.push("CIRCLE_ENTITY_SECRET is not set");
+  return out;
+}
+
+/** The AI key is a placeholder in cloud sessions, where a proxy adds the real one. */
+export const aiKeyProblem = () => {
+  const k = process.env.AI_API_KEY ?? process.env.GEMINI_API_KEY;
+  if (!k) return "AI_API_KEY is not set, so agents use simple rules instead of Gemini";
+  if (/proxy|injected/i.test(k) && !process.env.HTTPS_PROXY) return "AI_API_KEY is a placeholder; put your real Gemini API key in .env.local";
+  return null;
+};
 
 export const usdcAbi = parseAbi([
   "function balanceOf(address) view returns (uint256)",
