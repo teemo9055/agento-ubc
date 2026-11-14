@@ -1,6 +1,6 @@
 "use client";
 import { useEffect, useMemo, useState } from "react";
-import { ReactFlow, Handle, Position, BaseEdge, getSmoothStepPath, type Edge, type EdgeProps, type Node, type NodeProps } from "@xyflow/react";
+import { ReactFlow, Handle, Position, BaseEdge, getSmoothStepPath, useReactFlow, type Edge, type EdgeProps, type Node, type NodeProps } from "@xyflow/react";
 import { useReducedMotion } from "framer-motion";
 import "@xyflow/react/dist/style.css";
 import { fmt } from "@/lib/money";
@@ -95,6 +95,16 @@ function FlowEdge(props: EdgeProps<Edge<FlowEdgeData>>) {
 
 const edgeTypes = { flow: FlowEdge };
 
+/** Steps grow as payments appear; keep the whole graph in view when they do. */
+function FitOnChange({ signature }: { signature: string }) {
+  const { fitView } = useReactFlow();
+  useEffect(() => {
+    const t = setTimeout(() => fitView({ padding: 0.1, maxZoom: 1, duration: 180 }), 80);
+    return () => clearTimeout(t);
+  }, [signature, fitView]);
+  return null;
+}
+
 function useNarrow() {
   const [narrow, set] = useState(false);
   useEffect(() => {
@@ -117,7 +127,7 @@ export function PhaseGraph({ phases, lines, simulated }: { phases: Phase[]; line
     const cols: Record<number, string[]> = {};
     phases.forEach((p) => (cols[depth[p.id]] ??= []).push(p.id));
     const maxRows = Math.max(...Object.values(cols).map((c) => c.length));
-    const GAP_MAIN = vertical ? 190 : 250;
+    const GAP_MAIN = vertical ? 225 : 250;
     const GAP_CROSS = vertical ? 230 : 170;
 
     const nodes: Node<PhaseNodeData>[] = phases.map((p, i) => {
@@ -145,7 +155,7 @@ export function PhaseGraph({ phases, lines, simulated }: { phases: Phase[]; line
       }),
     );
     const cols_n = Object.keys(cols).length;
-    const size = vertical ? { h: cols_n * GAP_MAIN + 40 } : { h: maxRows * GAP_CROSS + 30 };
+    const size = vertical ? { h: cols_n * GAP_MAIN + 70 } : { h: maxRows * GAP_CROSS + 40 };
     return { nodes, edges, size };
   }, [phases, lines, vertical, simulated]);
 
@@ -167,7 +177,9 @@ export function PhaseGraph({ phases, lines, simulated }: { phases: Phase[]; line
         zoomOnDoubleClick={false}
         preventScrolling={false}
         proOptions={{ hideAttribution: true }}
-      />
+      >
+        <FitOnChange signature={`${vertical}|${phases.map((p) => `${p.status}:${p.payments.length}:${p.error ? 1 : 0}`).join(",")}`} />
+      </ReactFlow>
     </div>
   );
 }
