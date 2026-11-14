@@ -20,7 +20,7 @@ import type {
 } from "@/lib/types";
 import { AGENTS } from "./agents";
 import { PhaseFailure, type AgentCtx, type PlanDraft } from "./agents/types";
-import { accounts, liveReady } from "./chain";
+import { addresses, liveReady } from "./chain";
 import { adapterFor, PaymentError } from "./payments";
 import { SELLERS } from "./sellers";
 import { PRODUCTS } from "./x402";
@@ -192,8 +192,8 @@ export async function createRun(input: { agent: AgentId; task: string; mode?: "d
     decisions: [],
     threshold: DEFAULT_THRESHOLD.toString(),
     cap: "0",
-    client: accounts.client?.address ?? "0x0000000000000000000000000000000000000000",
-    agentWallet: accounts.agent?.address ?? "0x0000000000000000000000000000000000000000",
+    client: addresses.client ?? "0x0000000000000000000000000000000000000000",
+    agentWallet: addresses.agent ?? "0x0000000000000000000000000000000000000000",
     pendingReapprovals: [],
     pendingFailures: [],
     createdAt: now(),

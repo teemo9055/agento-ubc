@@ -1,6 +1,6 @@
 import { decodeEventLog, toHex, type Hex } from "viem";
 import { randomBytes } from "node:crypto";
-import { FACTORY, USDC, accounts, factoryAbi, publicClient, send, usdcAbi, vaultAbi } from "../chain";
+import { FACTORY, USDC, accounts, addresses, factoryAbi, publicClient, send, usdcAbi, vaultAbi } from "../chain";
 import { decodeHeader, encodeHeader, type PaymentPayload, type PaymentRequirements } from "../x402";
 import type { PaymentAdapter, X402Request } from "./index";
 import { PaymentError } from "./index";
@@ -32,7 +32,7 @@ export const arcAdapter: PaymentAdapter = {
   live: true,
 
   async open(run, planHash) {
-    if (!FACTORY || !accounts.client || !accounts.agent) throw new Error("live mode is not configured");
+    if (!FACTORY || !accounts.client || !addresses.agent) throw new Error("live mode is not configured");
     const lines = usdcLines(run.lines);
     const cap = BigInt(run.cap);
     const allowance = await publicClient.readContract({
@@ -46,7 +46,7 @@ export const arcAdapter: PaymentAdapter = {
       address: FACTORY,
       abi: factoryAbi,
       functionName: "open",
-      args: [accounts.agent.address, planHash, lines.map((l) => l.payee), lines.map((l) => BigInt(l.approved)), cap],
+      args: [addresses.agent, planHash, lines.map((l) => l.payee), lines.map((l) => BigInt(l.approved)), cap],
     });
     const vault = await publicClient.readContract({
       address: FACTORY,

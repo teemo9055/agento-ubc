@@ -1,5 +1,5 @@
 import type { Hex } from "viem";
-import { accounts, publicClient, send, USDC, usdcAbi } from "./chain";
+import { addresses, publicClient, send, USDC, usdcAbi } from "./chain";
 import * as gemini from "./gemini";
 import * as geo from "./geo";
 
@@ -106,7 +106,7 @@ export async function verifyAndSettle(pay: PaymentPayload, req: PaymentRequireme
   if (BigInt(a.validBefore) <= now) throw new Error("authorization expired");
   const used = await publicClient.readContract({ address: USDC, abi: usdcAbi, functionName: "authorizationState", args: [a.from, a.nonce] });
   if (used) throw new Error("authorization already used");
-  if (!accounts.seller) throw new Error("settler key missing");
+  if (!addresses.seller) throw new Error("settler wallet missing");
   return send("seller", {
     address: USDC,
     abi: usdcAbi,

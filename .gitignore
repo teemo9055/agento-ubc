@@ -13,3 +13,6 @@ test-results/
 playwright-report/
 *.tsbuildinfo
 next-env.d.ts
+
+# Circle secrets
+.circle-recovery/

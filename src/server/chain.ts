@@ -1,4 +1,5 @@
-import { createPublicClient, createWalletClient, http, parseAbi, type Hex } from "viem";
+import { createPublicClient, createWalletClient, encodeFunctionData, http, parseAbi, type Hex } from "viem";
+import { circleExecute, circleWallets } from "./circle";
 import { privateKeyToAccount } from "viem/accounts";
 import { arcTestnet } from "viem/chains";
 
@@ -26,7 +27,16 @@ export const wallet = (who: keyof typeof accounts) => {
   return createWalletClient({ account, chain: arcTestnet, transport: rpc });
 };
 
-export const liveReady = () => Boolean(FACTORY && accounts.agent && accounts.client && accounts.seller);
+/** Addresses of the app's roles: a Circle wallet when configured, else the local key. */
+export const addresses = {
+  agent: circleWallets.agent?.address ?? accounts.agent?.address,
+  client: accounts.client?.address,
+  seller: circleWallets.seller?.address ?? accounts.seller?.address,
+};
+
+export const signerKind = (who: keyof typeof accounts) => (who !== "client" && circleWallets[who] ? "circle" : accounts[who] ? "key" : "none");
+
+export const liveReady = () => Boolean(FACTORY && addresses.agent && addresses.client && addresses.seller);
 
 export const usdcAbi = parseAbi([
   "function balanceOf(address) view returns (uint256)",
@@ -88,6 +98,18 @@ async function sendNow(
   who: keyof typeof accounts,
   req: { address: Hex; abi: readonly unknown[]; functionName: string; args: readonly unknown[] },
 ) {
+  const cw = who !== "client" ? circleWallets[who] : undefined;
+  if (cw) {
+    // Simulate first so reverts surface with decoded errors, then let Circle sign and send.
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    await publicClient.simulateContract({ ...(req as any), account: cw.address });
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const data = encodeFunctionData(req as any);
+    const hash = await circleExecute(cw.id, req.address, data);
+    const receipt = await publicClient.waitForTransactionReceipt({ hash });
+    if (receipt.status !== "success") throw new Error(`tx reverted ${hash}`);
+    return { hash, fee: (receipt.gasUsed * receipt.effectiveGasPrice).toString(), receipt };
+  }
   const w = wallet(who);
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const { request } = await publicClient.simulateContract({ ...(req as any), account: w.account });
