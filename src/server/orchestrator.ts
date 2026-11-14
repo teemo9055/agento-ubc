@@ -3,7 +3,8 @@ import { randomUUID } from "node:crypto";
 import type { RunEvent, SeqEvent } from "@/lib/events";
 import { fmt, fmtFee, sum } from "@/lib/money";
 import { checkSpend } from "@/lib/policy";
-import { reduce } from "@/lib/reducer";
+import { reduce, reduceAll } from "@/lib/reducer";
+import { appendEvent, loadAll } from "./store";
 import type {
   AgentId,
   Card,
@@ -67,6 +68,11 @@ function emit(ctl: Ctl, e: RunEvent) {
   const se = { ...e, seq: ctl.events.length } as SeqEvent;
   ctl.events.push(se);
   ctl.run = reduce(ctl.run, se)!;
+  try {
+    appendEvent(ctl.run.id, se, { options: ctl.options, funded: ctl.funded.toString(), seller: ctl.seller }, ctl.run.createdAt);
+  } catch (err) {
+    console.warn("persist failed", (err as Error).message);
+  }
   for (const l of ctl.listeners) l(se);
 }
 
@@ -691,3 +697,55 @@ export async function cancel(runId: string) {
   emit(ctl, { type: "run.cancelled", refunded: refunded.toString(), refundTx: txHash, at: now() });
   return ctl.run;
 }
+
+// ---------- restart recovery ----------
+
+/** Rebuilds runs from the event log. Runs cut off mid-flight close their vault and return funds. */
+function restore() {
+  const gg = globalThis as unknown as { __agentoRestored?: boolean };
+  if (gg.__agentoRestored) return;
+  gg.__agentoRestored = true;
+  for (const saved of loadAll()) {
+    if (runs.has(saved.runId) || !saved.events.length) continue;
+    const run = reduceAll(saved.events);
+    if (!run) continue;
+    const ctl: Ctl = {
+      run,
+      events: saved.events,
+      listeners: new Set(),
+      waiters: new Map(),
+      options: saved.meta.options,
+      memory: {},
+      cache: new Map(),
+      usedFaults: new Set(),
+      seller: saved.meta.seller ?? {},
+      funded: BigInt(saved.meta.funded ?? "0"),
+      cancelled: false,
+      overrides: new Map(),
+      previews: new Map(),
+    };
+    runs.set(run.id, ctl);
+    if (run.status === "running" || run.status === "funding") void recover(ctl);
+  }
+}
+
+async function recover(ctl: Ctl) {
+  ctl.cancelled = true;
+  const spent = sum(ctl.run.lines.map((l) => l.actual));
+  let refunded = ctl.funded > spent ? ctl.funded - spent : 0n;
+  let refundTx: Hex | undefined;
+  if (ctl.run.mode === "live" && ctl.run.vault) {
+    try {
+      const r = await adapterFor(ctl.run).close(ctl.run);
+      refunded = r.refunded;
+      refundTx = r.txHash;
+    } catch (e) {
+      console.warn(`recover ${ctl.run.id}: close failed`, (e as Error).message);
+      return;
+    }
+  }
+  log(ctl, { kind: "failure", what: "Server restarted mid-run", why: "Job stopped and vault closed so funds return", outcome: "cancelled", by: "system", amount: refunded.toString(), tx: refundTx });
+  emit(ctl, { type: "run.cancelled", refunded: refunded.toString(), refundTx, at: now() });
+}
+
+if (process.env.NEXT_PHASE !== "phase-production-build") restore();
