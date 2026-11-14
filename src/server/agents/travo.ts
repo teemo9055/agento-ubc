@@ -30,7 +30,7 @@ export function stopsIn(text: string): string[] {
 export const travo: AgentDef = {
   id: "travo",
   name: "Travo",
-  tagline: "Gets you there, snacks not included.",
+  tagline: "Plans driving routes and day trips.",
   examples: ["Road trip from Vancouver to San Francisco via Portland", "Drive from Calgary to Banff", "From Toronto to Montreal via Ottawa"],
   defaults: { stops: [], hoursPerDay: 6 } satisfies Opts,
   faultPhase: "route",

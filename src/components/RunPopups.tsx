@@ -66,11 +66,11 @@ export function ReapprovalModal({ run, req, onClose }: { run: Run; req: Reapprov
           <div className="font-mono text-[10.5px] text-ink-3">{short(req.from.payee)}</div>
         </div>
         <div className="rounded-lg border border-warn bg-warn/10 p-3">
-          <div className="text-[11px] uppercase tracking-wide text-[#7a5000]">Requested</div>
+          <div className="text-[11px] uppercase tracking-wide text-warn-ink">Requested</div>
           <div className="num mt-1 text-lg font-semibold">{fmt(req.to.amount)}</div>
           <div className={newPayee ? "font-medium" : "text-ink-2"}>
             {req.to.payeeName}
-            {newPayee && <span className="ml-1 text-[11px] text-[#7a5000]">new payee</span>}
+            {newPayee && <span className="ml-1 text-[11px] text-warn-ink">new payee</span>}
           </div>
           <div className="font-mono text-[10.5px] text-ink-3">{short(req.to.payee)}</div>
         </div>
@@ -101,7 +101,7 @@ export function ReapprovalModal({ run, req, onClose }: { run: Run; req: Reapprov
           Deny
         </Button>
         {editing ? (
-          <Button onClick={() => custom != null && decide("approved", custom)} disabled={busy || custom == null || tooLow} data-testid="reapprove-edited" className="bg-agent hover:opacity-90">
+          <Button onClick={() => custom != null && decide("approved", custom)} disabled={busy || custom == null || tooLow} data-testid="reapprove-edited" variant="agent">
             Approve {custom != null ? fmt(custom) : "…"}
           </Button>
         ) : (
@@ -109,7 +109,7 @@ export function ReapprovalModal({ run, req, onClose }: { run: Run; req: Reapprov
             <Button variant="ghost" onClick={() => setEditing(true)} disabled={busy} data-testid="reapprove-edit">
               Edit amount
             </Button>
-            <Button onClick={() => decide("approved")} disabled={busy} data-testid="reapprove" className="bg-agent hover:opacity-90">
+            <Button onClick={() => decide("approved")} disabled={busy} data-testid="reapprove" variant="agent">
               Approve {fmt(req.to.amount)}
             </Button>
           </>

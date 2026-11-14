@@ -1,5 +1,8 @@
 import type { Metadata, Viewport } from "next";
-import { AppShell } from "@/components/AppShell";
+import "@fontsource-variable/inter";
+import "@fontsource-variable/jetbrains-mono";
+import { AppShell, MainNav } from "@/components/AppShell";
+import { Icon } from "@/components/Icon";
 import Link from "next/link";
 import "./globals.css";
 
@@ -12,37 +15,32 @@ export const viewport: Viewport = {
   width: "device-width",
   initialScale: 1,
   viewportFit: "cover",
-  themeColor: "#fcfcfb",
+  themeColor: "#fafaf8",
 };
 
 export default function RootLayout({ children }: { children: React.ReactNode }) {
   return (
     <html lang="en">
       <body className="min-h-screen font-sans antialiased">
-        <header className="sticky top-0 z-30 border-b border-line/70 bg-surface/75 backdrop-blur-md">
-          <div className="mx-auto flex min-h-14 max-w-6xl items-center justify-between px-5 pt-[env(safe-area-inset-top)]">
-            <Link href="/" className="group flex items-center gap-2 text-[15px] font-semibold tracking-tight">
-              <span className="relative inline-flex h-6 w-6 items-center justify-center rounded-lg bg-ink text-[11px] font-bold text-white transition-transform group-hover:-rotate-6">
+        <header className="sticky top-0 z-30 border-b border-line bg-surface/85 backdrop-blur-md">
+          <div className="mx-auto flex min-h-16 max-w-6xl items-center gap-4 px-4 pt-[env(safe-area-inset-top)] sm:px-6">
+            <Link href="/" className="group flex items-center gap-2.5 text-[16px] font-bold tracking-tight">
+              <span className="relative inline-flex h-7 w-7 items-center justify-center rounded-[7px] bg-ink font-pixel text-[14px] text-white transition-transform group-hover:-rotate-6">
                 a
-                <span className="absolute -right-0.5 -top-0.5 h-2 w-2 rounded-full bg-agent ring-2 ring-panel" />
+                <span className="absolute -right-[3px] -top-[3px] h-[9px] w-[9px] rounded-[2px] border-2 border-surface bg-agent" />
               </span>
               agento
             </Link>
-            <nav className="hidden items-center gap-4 text-sm text-ink-2 sm:flex">
-              <Link href="/" className="hover:text-ink">
-                Jobs
-              </Link>
-              <Link href="/agents" className="hover:text-ink">
-                Agents
-              </Link>
-              <Link href="/new" className="pix-press rounded-lg border border-ink bg-ink px-3 py-1.5 text-white">
-                + New job
-              </Link>
-            </nav>
+            <MainNav />
+            <div className="flex-1" />
+            <Link href="/new" className="pix-press hidden h-10 items-center gap-2 rounded-lg border-[1.5px] border-ink bg-ink px-4 text-sm font-semibold text-white sm:inline-flex">
+              <Icon name="plus" size={16} stroke={2.2} />
+              New job
+            </Link>
           </div>
         </header>
-        <main className="mx-auto max-w-6xl px-4 py-6 sm:px-5 sm:py-8">{children}</main>
-        <footer className="mx-auto max-w-6xl px-5 pb-[calc(var(--tabbar-h)+24px)] pt-4 text-[12px] text-ink-3 sm:pb-10">
+        <main className="mx-auto max-w-6xl px-4 py-6 sm:px-6 sm:py-8">{children}</main>
+        <footer className="mx-auto max-w-6xl px-4 sm:px-6 pb-[calc(var(--tabbar-h)+24px)] pt-4 text-[12px] text-ink-3 sm:pb-10">
           Runs on Arc testnet · USDC for value and gas · x402 pay-per-request · spend rules enforced by a vault contract
         </footer>
         <AppShell />

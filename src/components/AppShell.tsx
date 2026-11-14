@@ -6,6 +6,7 @@ import { THEMES } from "@/lib/themes";
 import { Toaster } from "./Toaster";
 import { useRuns } from "./runsStore";
 import { TransitionResolver } from "./transitions";
+import { Icon, type IconName } from "./Icon";
 
 const NOTIFY_KEY = "agento:notify";
 
@@ -57,11 +58,35 @@ export function NotifyToggle() {
         localStorage.setItem(NOTIFY_KEY, ok ? "on" : "off");
         setOn(ok);
       }}
-      className={`pressable tap inline-flex h-9 items-center gap-1.5 rounded-xl border px-3 text-[12.5px] ${on ? "border-ink bg-ink text-white" : "border-line bg-panel text-ink-2"}`}
+      className={`pressable tap inline-flex h-10 items-center gap-2 rounded-lg border px-3 text-[13px] font-medium transition-colors ${on ? "border-ink bg-ink text-white" : "border-line bg-panel text-ink-2 hover:border-[#c9c8c2]"}`}
       title="Get a notification when a job needs your approval"
     >
-      <span aria-hidden>{on ? "◉" : "○"}</span> {on ? "Notifying you" : "Notify me"}
+      <Icon name="bell" size={16} /> {on ? "Notifications on" : "Notify me"}
     </button>
+  );
+}
+
+/** Desktop: Jobs / Agents as a segmented control in the header. */
+export function MainNav() {
+  const path = usePathname();
+  const items: { href: string; label: string; icon: IconName; active: boolean }[] = [
+    { href: "/", label: "Jobs", icon: "jobs", active: path === "/" || path.startsWith("/runs") },
+    { href: "/agents", label: "Agents", icon: "agents", active: path === "/agents" },
+  ];
+  return (
+    <nav aria-label="Main" className="hidden gap-0.5 rounded-[9px] bg-[#f1f0ec] p-[3px] sm:flex">
+      {items.map((t) => (
+        <Link
+          key={t.href}
+          href={t.href}
+          aria-current={t.active ? "page" : undefined}
+          className={`inline-flex h-[34px] items-center gap-1.5 rounded-[7px] px-3 text-sm font-medium transition-colors ${t.active ? "bg-panel text-ink shadow-[0_0_0_1px_var(--color-line)]" : "text-ink-2 hover:text-ink"}`}
+        >
+          <Icon name={t.icon} size={16} />
+          {t.label}
+        </Link>
+      ))}
+    </nav>
   );
 }
 
@@ -69,30 +94,31 @@ function TabBar() {
   const path = usePathname();
   const { runs } = useRuns();
   const needs = (runs ?? []).reduce((a, r) => a + r.needsYou, 0);
-  const tabs = [
-    { href: "/", label: "Jobs", icon: "▤", active: path === "/" || path.startsWith("/runs") },
-    { href: "/new", label: "New", icon: "+", active: path === "/new", primary: true },
-    { href: "/agents", label: "Agents", icon: "☺", active: path === "/agents" },
+  const tabs: { href: string; label: string; icon: IconName; active: boolean; primary?: boolean }[] = [
+    { href: "/", label: "Jobs", icon: "jobs", active: path === "/" || path.startsWith("/runs") },
+    { href: "/new", label: "New job", icon: "plus", active: path === "/new", primary: true },
+    { href: "/agents", label: "Agents", icon: "agents", active: path === "/agents" },
   ];
   return (
-    <nav aria-label="Main" className="fixed inset-x-0 bottom-0 z-40 border-t border-ink/15 bg-surface/95 pb-[env(safe-area-inset-bottom)] backdrop-blur-md sm:hidden">
+    <nav aria-label="Main" className="fixed inset-x-0 bottom-0 z-40 border-t border-line bg-surface/95 pb-[env(safe-area-inset-bottom)] backdrop-blur-md sm:hidden">
       <div className="grid h-[60px] grid-cols-3">
-        {tabs.map((t) => (
-          <Link key={t.href} href={t.href} aria-current={t.active ? "page" : undefined} className="pressable relative flex flex-col items-center justify-center gap-0.5 text-[11px]">
-            <span
-              className={`flex h-7 min-w-7 items-center justify-center px-1.5 font-pixel text-[15px] leading-none ${
-                t.primary ? "pix-shadow border border-ink bg-agent text-white" : t.active ? "text-ink" : "text-ink-3"
-              }`}
-              aria-hidden
-            >
-              {t.icon}
-            </span>
-            <span className={t.active ? "font-medium text-ink" : "text-ink-3"}>{t.label}</span>
-            {t.label === "Jobs" && needs > 0 && (
-              <span className="absolute right-[calc(50%-22px)] top-1.5 min-w-4 border border-ink bg-warn px-1 text-center font-pixel text-[9px] leading-[14px] text-ink">{needs}</span>
-            )}
-          </Link>
-        ))}
+        {tabs.map((t) =>
+          t.primary ? (
+            <Link key={t.href} href={t.href} aria-label={t.label} aria-current={t.active ? "page" : undefined} className="pressable flex items-center justify-center">
+              <span className="pix-shadow inline-flex h-10 w-[52px] items-center justify-center rounded-[10px] border-[1.5px] border-ink bg-agent text-agent-on" aria-hidden>
+                <Icon name="plus" size={22} stroke={2.4} />
+              </span>
+            </Link>
+          ) : (
+            <Link key={t.href} href={t.href} aria-current={t.active ? "page" : undefined} className={`pressable relative flex flex-col items-center justify-center gap-0.5 text-[11px] ${t.active ? "font-semibold text-ink" : "font-medium text-ink-3"}`}>
+              <Icon name={t.icon} size={22} />
+              {t.label}
+              {t.label === "Jobs" && needs > 0 && (
+                <span className="absolute left-[calc(50%+6px)] top-1.5 inline-flex h-4 min-w-4 items-center justify-center rounded-[4px] border-[1.5px] border-ink bg-warn px-0.5 text-[9px] font-bold text-ink">{needs}</span>
+              )}
+            </Link>
+          ),
+        )}
       </div>
     </nav>
   );

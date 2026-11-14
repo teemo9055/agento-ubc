@@ -50,7 +50,7 @@ const pct = (x: number) => `${x >= 0 ? "+" : ""}${(x * 100).toFixed(1)}%`;
 export const trado: AgentDef = {
   id: "trado",
   name: "Trado",
-  tagline: "Charts first, feelings later.",
+  tagline: "Reads price charts and calls the trend.",
   examples: ["Is BTC trending this week?", "Compare ETH and SOL momentum", "BTC trend plus what prediction markets think"],
   defaults: { symbols: [], odds: true } satisfies Opts,
   faultPhase: "candles",

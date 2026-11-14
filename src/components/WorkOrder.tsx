@@ -9,6 +9,7 @@ import { Amount, Button, Spinner } from "./ui";
 import { post } from "./useRun";
 import { toast } from "./Toaster";
 import { AgentIcon } from "./AgentIcon";
+import { Icon } from "./Icon";
 import { WalletPanel } from "./passkey/WalletPanel";
 import { usePasskeyWallet } from "./passkey/usePasskey";
 import { fundCalls, sendCalls } from "./passkey/wallet";
@@ -16,7 +17,6 @@ import type { Hex } from "viem";
 
 const CARD_ORDER: Card["kind"][] = ["price", "deliverable", "method", "risk"];
 const CARD_LABEL: Record<Card["kind"], string> = { price: "Price", deliverable: "Deliverable", method: "Method", risk: "Risk" };
-const CARD_ICON: Record<Card["kind"], string> = { price: "◎", deliverable: "◇", method: "↯", risk: "△" };
 
 export function Cards({ run, onEdit }: { run: Run; onEdit?: (k: Card["kind"]) => void }) {
   const cards = CARD_ORDER.map((k) => run.cards.find((c) => c.kind === k)).filter(Boolean) as Card[];
@@ -32,26 +32,27 @@ export function Cards({ run, onEdit }: { run: Run; onEdit?: (k: Card["kind"]) =>
           disabled={!onEdit}
           onClick={() => onEdit?.(c.kind)}
           data-testid={`card-${c.kind}`}
-          className={`pressable group relative overflow-hidden rounded-2xl border p-4 text-left transition-colors disabled:cursor-default ${
-            c.kind === "price" ? "border-agent/30 bg-agent-soft/60" : "border-line bg-panel enabled:hover:border-ink/25"
+          className={`pix-edit pressable group relative overflow-hidden rounded-2xl border p-4 text-left disabled:cursor-default ${
+            c.kind === "price" ? "border-agent/30 bg-agent-soft" : "border-line bg-panel"
           }`}
         >
-          <div className="flex items-center justify-between text-[11px] font-medium uppercase tracking-wide text-ink-3">
-            <span>
-              <span className="mr-1 text-agent">{CARD_ICON[c.kind]}</span>
-              {CARD_LABEL[c.kind]}
-            </span>
-            {onEdit && <span className="rounded-full bg-ink/5 px-2 py-0.5 reveal normal-case tracking-normal opacity-0 transition-opacity group-hover:opacity-100 group-focus-visible:opacity-100">Edit ✎</span>}
+          <div className={`flex items-center justify-between text-[12px] font-semibold uppercase tracking-wide ${c.kind === "price" ? "text-agent-ink" : "text-ink-3"}`}>
+            <span>{CARD_LABEL[c.kind]}</span>
+            {onEdit && (
+              <span className="reveal inline-flex items-center gap-1 font-medium normal-case tracking-normal text-ink-2 opacity-0 transition-opacity group-hover:opacity-100 group-focus-visible:opacity-100">
+                <Icon name="edit" size={13} /> Edit
+              </span>
+            )}
           </div>
           <AnimatePresence mode="popLayout" initial={false}>
-            <motion.div key={c.title} initial={{ opacity: 0, y: 4 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0, y: -4 }} className="num mt-1.5 text-[16px] font-semibold">
+            <motion.div key={c.title} initial={{ opacity: 0, y: 4 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0, y: -4 }} className="num mt-1.5 text-[17px] font-semibold">
               {c.title}
             </motion.div>
           </AnimatePresence>
-          <ul className="mt-2 space-y-1 text-[12.5px] text-ink-2">
+          <ul className="mt-2 space-y-1 text-[13px] leading-snug text-ink-2">
             {c.points.map((p) => (
               <li key={p} className="flex gap-1.5">
-                <span className="text-ink-3">·</span>
+                <span aria-hidden className="text-ink-3">·</span>
                 {p}
               </li>
             ))}
@@ -73,7 +74,7 @@ const ANALYSIS: { id: Method["analysis"]; name: string; note: string }[] = [
 
 function Segment<T extends string>({ value, options, onChange, disabled, label }: { value: T; options: { id: T; name: string; note: string }[]; onChange: (v: T) => void; disabled?: boolean; label: string }) {
   return (
-    <div role="radiogroup" aria-label={label} className="grid grid-cols-2 gap-1 rounded-xl border border-line bg-surface p-1">
+    <div role="radiogroup" aria-label={label} className="grid grid-cols-2 gap-1 rounded-[10px] bg-[#f1f0ec] p-1">
       {options.map((o) => {
         const on = o.id === value;
         return (
@@ -85,9 +86,9 @@ function Segment<T extends string>({ value, options, onChange, disabled, label }
             onClick={() => !on && onChange(o.id)}
             className="pressable tap relative rounded-lg px-3 py-2 text-left disabled:cursor-not-allowed"
           >
-            {on && <motion.span layoutId={`seg-${label}`} className="absolute inset-0 rounded-lg border border-line bg-panel shadow-sm" transition={{ type: "spring", duration: 0.35 }} />}
-            <span className="relative block text-[13px] font-medium">{o.name}</span>
-            <span className="relative block text-[11px] text-ink-3">{o.note}</span>
+            {on && <motion.span layoutId={`seg-${label}`} className="absolute inset-0 rounded-lg bg-panel shadow-[0_1px_2px_rgb(11_11_11/0.12)]" transition={{ type: "spring", duration: 0.35 }} />}
+            <span className="relative block text-[13px] font-semibold">{o.name}</span>
+            <span className="relative block text-[12px] text-ink-3">{o.note}</span>
           </button>
         );
       })}
@@ -110,7 +111,7 @@ export function MethodPicker({ run }: { run: Run }) {
   return (
     <section className="rounded-2xl border border-line bg-panel p-4" aria-label="How it gets done">
       <div className="mb-3 flex items-center justify-between">
-        <h2 className="text-[13px] font-semibold">How it gets done</h2>
+        <h2 className="text-[15px] font-semibold">How it gets done</h2>
         {busy && (
           <span className="flex items-center gap-1.5 text-[12px] text-ink-3">
             <Spinner /> Repricing
@@ -119,11 +120,11 @@ export function MethodPicker({ run }: { run: Run }) {
       </div>
       <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
         <div>
-          <div className="mb-1.5 text-[11px] font-medium uppercase tracking-wide text-ink-3">Data</div>
+          <div className="mb-1.5 text-[12px] font-semibold uppercase tracking-wide text-ink-3">Data</div>
           <Segment label="Data seller" value={run.method.seller} options={SELLERS} onChange={(seller) => set({ seller })} disabled={disabled} />
         </div>
         <div>
-          <div className="mb-1.5 text-[11px] font-medium uppercase tracking-wide text-ink-3">Analysis</div>
+          <div className="mb-1.5 text-[12px] font-semibold uppercase tracking-wide text-ink-3">Analysis</div>
           <Segment label="Analysis" value={run.method.analysis} options={ANALYSIS} onChange={(analysis) => set({ analysis })} disabled={disabled} />
         </div>
       </div>
@@ -154,14 +155,14 @@ export function CostTable({ run, compact = false }: { run: Run; compact?: boolea
               <span className="font-semibold text-ink">{fmt(actual)}</span> / {fmt(approved)} USDC
             </span>
           </div>
-          <div className="mt-2 h-1.5 pix-bar overflow-hidden bg-line">
-            <motion.div className="h-full rounded-full bg-agent" animate={{ width: `${Math.min(100, pct)}%` }} transition={{ duration: 0.5 }} />
+          <div className="mt-2 h-2 overflow-hidden rounded-[2px] bg-[#f1f0ec]">
+            <motion.div className="h-full rounded-[2px] bg-agent" animate={{ width: `${Math.min(100, pct)}%` }} transition={{ duration: 0.5 }} />
           </div>
         </div>
       )}
       <div className="overflow-x-auto">
       <table className="w-full min-w-[340px] text-[13px]">
-        <thead className="border-b border-line text-left text-[11px] uppercase tracking-wide text-ink-3">
+        <thead className="border-b border-line text-left text-[12px] text-ink-3">
           <tr>
             <th className="px-4 py-2.5 font-medium">Step</th>
             <th className="px-2 py-2.5 font-medium">Payee</th>
@@ -187,7 +188,7 @@ export function CostTable({ run, compact = false }: { run: Run; compact?: boolea
                 >
                   <td className="px-4 py-2.5">
                     <div className="font-medium">{l.purpose}</div>
-                    {l.bigSpend && <span className="mt-0.5 inline-block rounded-md bg-warn/20 px-1.5 py-px text-[10.5px] font-medium text-[#7a5000]">Big spend · approved up front</span>}
+                    {l.bigSpend && <span className="mt-0.5 inline-block rounded-md bg-warn/20 px-1.5 py-px text-[10.5px] font-medium text-warn-ink">Big spend · approved up front</span>}
                   </td>
                   <td className="px-2 py-2.5 text-ink-2">
                     {l.payeeName}
@@ -309,7 +310,7 @@ export function EditCardModal({ run, kind, onClose }: { run: Run; kind: Card["ki
         }}
       >
         <div className="ring-agent flex items-center gap-2 rounded-xl border border-line bg-panel px-3">
-          <span className="text-agent">✎</span>
+          <Icon name="edit" size={15} className="text-agent-ink" />
           <input
             autoFocus
             value={prompt}
@@ -375,7 +376,7 @@ export function EditCardModal({ run, kind, onClose }: { run: Run; kind: Card["ki
             Cancel
           </Button>
           {preview?.ok && preview.prompt === prompt ? (
-            <Button type="button" onClick={apply} disabled={busy} className="bg-agent hover:opacity-90" data-testid="apply-edit">
+            <Button type="button" onClick={apply} disabled={busy} variant="agent" data-testid="apply-edit">
               {busy ? "Applying…" : "Apply change"}
             </Button>
           ) : (
@@ -438,7 +439,7 @@ export function ApproveModal({ run, open, onClose }: { run: Run; open: boolean; 
             <span>
               {l.purpose}
               <span className="text-ink-3"> · {l.payeeName}</span>
-              {l.bigSpend && <span className="ml-2 rounded-md bg-warn/20 px-1.5 py-0.5 text-[10.5px] font-medium text-[#7a5000]">Big spend</span>}
+              {l.bigSpend && <span className="ml-2 rounded-md bg-warn/20 px-1.5 py-0.5 text-[10.5px] font-medium text-warn-ink">Big spend</span>}
             </span>
             <span className="num">{fmt(l.approved)}</span>
           </motion.li>
@@ -446,18 +447,18 @@ export function ApproveModal({ run, open, onClose }: { run: Run; open: boolean; 
       </ul>
 
       <div className="mt-4 grid gap-2 text-[12.5px] text-ink-2">
-        <div className="flex gap-2 rounded-xl bg-surface p-3">
-          <span className="text-agent">✓</span>
+        <div className="flex gap-2.5 rounded-xl bg-surface p-3">
+          <Icon name="check" size={16} className="mt-px text-agent-ink" />
           <span>
             {big.length ? `${big.length} big spend${big.length > 1 ? "s" : ""} over ${fmt(run.threshold)} USDC approved now. No pause mid-run.` : `No spend over the ${fmt(run.threshold)} USDC threshold.`}
           </span>
         </div>
-        <div className="flex gap-2 rounded-xl bg-surface p-3">
-          <span className="text-agent">↺</span>
+        <div className="flex gap-2.5 rounded-xl bg-surface p-3">
+          <Icon name="refund" size={16} className="mt-px text-agent-ink" />
           <span>You&apos;re asked again only if a price, payee or step changes.</span>
         </div>
-        <div className="flex gap-2 rounded-xl bg-surface p-3">
-          <span className="text-agent">⛨</span>
+        <div className="flex gap-2.5 rounded-xl bg-surface p-3">
+          <Icon name="shield" size={16} className="mt-px text-agent-ink" />
           <span>
             Vault rule: up to <b className="num">{fmt(total)}</b> across {run.lines.filter((l) => l.rail !== "subscription").length} lines, only to{" "}
             {[...new Set(run.lines.filter((l) => l.rail !== "subscription").map((l) => l.payeeName))].join(", ")}. Enforced onchain.
@@ -485,7 +486,7 @@ export function ApproveModal({ run, open, onClose }: { run: Run; open: boolean; 
           onClick={approve}
           disabled={!!busy || (passkey && (!pk.wallet || (pk.balance != null && pk.balance < BigInt(run.cap))))}
           data-testid="approve"
-          className="bg-agent hover:opacity-90"
+          variant="agent"
         >
           {busy === "sign" ? (
             <>

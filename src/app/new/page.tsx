@@ -7,7 +7,8 @@ import { Button } from "@/components/ui";
 import { post, useAgentTheme } from "@/components/useRun";
 import { THEMES } from "@/lib/themes";
 import type { AgentId, FailureCode, Run } from "@/lib/types";
-import { OUTFIT_LABEL, outfitFor } from "@/lib/outfit";
+import { outfitFor } from "@/lib/outfit";
+import { Icon } from "@/components/Icon";
 import { WalletPanel } from "@/components/passkey/WalletPanel";
 import { usePasskeyWallet } from "@/components/passkey/usePasskey";
 
@@ -31,38 +32,30 @@ interface Config {
   agents: { id: AgentId; examples: string[] }[];
 }
 
-const STEPS = [
-  { k: "Task", v: "you ask" },
-  { k: "Work order", v: "priced up front" },
-  { k: "Vault", v: "funded once" },
-  { k: "Payees", v: "only approved" },
-];
+const STEPS = ["You ask", "Priced up front", "Vault funded once", "Unspent comes back"];
+
+const ASK: Record<AgentId, string> = {
+  inso: "What should Inso look into?",
+  trado: "What should Trado chart?",
+  travo: "Where should Travo route you?",
+};
 
 function FlowStrip() {
   return (
-    <div className="mt-8 hidden items-center gap-2 sm:flex" aria-hidden>
+    <ol className="flex flex-wrap items-center justify-center gap-2 text-[13px] text-ink-2" aria-label="How it works">
       {STEPS.map((s, i) => (
-        <div key={s.k} className="flex items-center gap-2">
-          <motion.div
-            initial={{ opacity: 0, y: 6 }}
-            animate={{ opacity: 1, y: 0 }}
-            transition={{ delay: 0.15 + i * 0.08 }}
-            className="rounded-xl border border-line bg-panel/80 px-3 py-2"
-          >
-            <div className="text-[12.5px] font-semibold">{s.k}</div>
-            <div className="text-[11px] text-ink-3">{s.v}</div>
-          </motion.div>
+        <motion.li key={s} initial={{ opacity: 0, y: 4 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: 0.1 + i * 0.06 }} className="flex items-center gap-2">
+          <span className="inline-flex items-center gap-1.5 rounded-lg border border-line bg-panel px-2.5 py-1.5">
+            <b className="text-ink">{i + 1}</b> {s}
+          </span>
           {i < STEPS.length - 1 && (
-            <svg width="44" height="10" className="text-agent">
-              <line x1="0" y1="5" x2="44" y2="5" stroke="var(--color-line)" strokeWidth="1.5" />
-              <circle r="2.5" cy="5" fill="currentColor" className="motion-reduce:hidden">
-                <animate attributeName="cx" from="0" to="44" dur="1.6s" begin={`${i * 0.4}s`} repeatCount="indefinite" />
-              </circle>
-            </svg>
+            <span aria-hidden className="text-[#c9c8c2]">
+              →
+            </span>
           )}
-        </div>
+        </motion.li>
       ))}
-    </div>
+    </ol>
   );
 }
 
@@ -114,7 +107,8 @@ export default function Home() {
   }
 
   return (
-    <div className="mx-auto max-w-3xl pt-2 sm:pt-8">
+    <div className="grid-paper -mx-4 -mt-6 px-4 pb-6 pt-8 sm:-mx-6 sm:-mt-8 sm:px-6 sm:pt-14">
+    <div className="mx-auto flex max-w-3xl flex-col gap-6">
       <AnimatePresence>
         {testMode && faults.length > 0 && (
           <motion.div
@@ -122,24 +116,32 @@ export default function Home() {
             animate={{ opacity: 1, height: "auto" }}
             exit={{ opacity: 0, height: 0 }}
             role="status"
-            className="mb-6 overflow-hidden rounded-xl border border-warn bg-warn/15 px-4 py-2 text-sm text-[#7a5000]"
+            className="overflow-hidden rounded-xl border border-warn bg-warn/15 px-4 py-2 text-sm text-warn-ink"
           >
             <b>Test mode on.</b> {faults.length} fault {faults.length === 1 ? "switch" : "switches"} will fire once during the run.
           </motion.div>
         )}
       </AnimatePresence>
 
-      <motion.h1 initial={{ opacity: 0, y: 8 }} animate={{ opacity: 1, y: 0 }} className="text-[34px] font-semibold leading-[1.05] tracking-tight sm:text-5xl">
-        Agents that only spend
-        <br />
-        <span className="text-agent transition-colors duration-500">what you approved.</span>
-      </motion.h1>
-      <p className="mt-4 max-w-xl text-[15px] text-ink-2">
-        Bring a task. Get a priced work order. Approve once and the agent pays per request in USDC on Arc, from a vault that only pays the lines you approved.
-      </p>
-      <FlowStrip />
+      <div className="flex flex-col items-center gap-4 text-center">
+        <AnimatePresence mode="popLayout" initial={false}>
+          <motion.span
+            key={agent}
+            initial={{ opacity: 0, scale: 0.85, rotate: -6 }}
+            animate={{ opacity: 1, scale: 1, rotate: 0 }}
+            exit={{ opacity: 0, scale: 0.9 }}
+            transition={{ type: "spring", stiffness: 420, damping: 22 }}
+          >
+            <AgentIcon agent={agent} size={76} outfit={outfitFor(agent, task)} mood={busy ? "working" : "idle"} />
+          </motion.span>
+        </AnimatePresence>
+        <h1 className="font-pixel text-[30px] leading-tight sm:text-[40px]">{ASK[agent]}</h1>
+        <p className="max-w-xl text-[15px] leading-relaxed text-ink-2">
+          You get a priced work order first. Nothing is spent until you approve it, and the vault only pays the lines you approved.
+        </p>
+      </div>
 
-      <div className="mt-10 grid grid-cols-3 gap-2 sm:gap-3" role="tablist" aria-label="Agent">
+      <div className="grid grid-cols-3 gap-2 sm:gap-3" role="tablist" aria-label="Agent">
         {(Object.keys(THEMES) as AgentId[]).map((id) => {
           const on = agent === id;
           return (
@@ -151,28 +153,22 @@ export default function Home() {
               whileHover={{ y: -2 }}
               whileTap={{ scale: 0.98 }}
               data-agent={id}
-              className={`pressable relative rounded-2xl border p-3 text-left transition-colors sm:p-4 ${on ? "border-agent bg-panel shadow-[0_8px_30px_-12px_var(--agent)]" : "border-line bg-panel/60 hover:bg-panel"}`}
+              className={`pressable flex items-center gap-2.5 rounded-[10px] border-[1.5px] px-3 py-3 text-left transition-colors sm:px-4 ${on ? "border-ink bg-panel shadow-[3px_3px_0_0_var(--agent)]" : "border-line bg-panel/60 hover:bg-panel"}`}
             >
-              <AgentIcon agent={id} size={36} className={on ? "float" : ""} />
-              <div className="mt-3 font-semibold">{THEMES[id].name}</div>
-              <div className="text-[11.5px] text-ink-3">{THEMES[id].domain}</div>
-              {on && <motion.span layoutId="agent-dot" className="absolute right-3 top-3 h-2 w-2 rounded-full bg-agent" />}
+              <span aria-hidden className="h-2.5 w-2.5 shrink-0 rounded-[2px] border border-ink bg-agent" />
+              <span className="min-w-0">
+                <span className="block font-pixel text-[14px]">{THEMES[id].name}</span>
+                <span className="block truncate text-[12px] text-ink-3">{THEMES[id].domain}</span>
+              </span>
             </motion.button>
           );
         })}
       </div>
 
-      <form onSubmit={submit} className="ring-agent mt-3 rounded-2xl border border-line bg-panel p-4 shadow-sm transition-shadow sm:p-5">
-        <AnimatePresence mode="wait">
-          <motion.div key={agent} initial={{ opacity: 0, y: -4 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0, y: 4 }} className="flex items-center gap-3">
-            <AgentIcon agent={agent} size={52} outfit={outfitFor(agent, task)} mood={busy ? "working" : "idle"} />
-            <label htmlFor="task" className="block text-[12.5px] font-medium text-ink-3">
-              <span className="font-pixel text-[13px] text-agent">{theme.name}</span>
-              <span className="block">{theme.tagline}</span>
-              {OUTFIT_LABEL[outfitFor(agent, task)] && <span className="block text-[11px] text-ink-3">Dressed for it: {OUTFIT_LABEL[outfitFor(agent, task)].toLowerCase()}</span>}
-            </label>
-          </motion.div>
-        </AnimatePresence>
+      <form onSubmit={submit} className="rounded-[14px] border-[1.5px] border-ink bg-panel p-4 shadow-[4px_4px_0_0_var(--color-ink)] transition-shadow focus-within:shadow-[4px_4px_0_0_var(--agent)] sm:p-5">
+        <label htmlFor="task" className="sr-only">
+          Task for {theme.name}
+        </label>
         <textarea
           id="task"
           value={task}
@@ -181,7 +177,7 @@ export default function Home() {
           rows={3}
           maxLength={280}
           placeholder={examples[0] ?? "Describe the task"}
-          className="mt-2 w-full resize-none bg-transparent text-[16px] outline-none placeholder:text-ink-3"
+          className="w-full resize-none bg-transparent text-[17px] leading-relaxed outline-none placeholder:text-ink-3"
         />
         <div className="mt-1 flex flex-wrap gap-2">
           {examples.map((x, i) => (
@@ -192,14 +188,14 @@ export default function Home() {
               transition={{ delay: i * 0.05 }}
               type="button"
               onClick={() => setTask(x)}
-              className="pressable tap rounded-full border border-line px-3 py-1 text-xs text-ink-2 transition-colors hover:border-agent hover:text-ink"
+              className="pressable tap rounded-lg border border-line bg-panel px-3 py-1.5 text-left text-[13px] text-ink-2 transition-colors hover:border-agent hover:bg-agent-soft hover:text-ink"
             >
               {x}
             </motion.button>
           ))}
         </div>
-        <div className="mt-4 flex flex-wrap items-center justify-between gap-3 border-t border-line pt-4">
-          <div className="flex items-center gap-1 rounded-xl border border-line bg-surface p-0.5 text-xs" role="radiogroup" aria-label="Payment rail">
+        <div className="mt-4 flex flex-wrap items-center justify-between gap-3 border-t border-[#f1f0ec] pt-4">
+          <div className="flex items-center gap-0.5 rounded-[9px] bg-[#f1f0ec] p-[3px] text-[13px] font-medium" role="radiogroup" aria-label="Payment rail">
             {(["live", "demo"] as const).map((m) => (
               <button
                 key={m}
@@ -209,15 +205,21 @@ export default function Home() {
                 disabled={m === "live" && !cfg?.live}
                 onClick={() => setMode(m)}
                 title={m === "live" && !cfg?.live ? "Live mode needs funded wallets and a deployed factory" : undefined}
-                className={`tap relative rounded-lg px-3 py-1.5 transition-colors ${mode === m ? "text-white" : "text-ink-2 disabled:text-ink-3/60"}`}
+                className={`tap relative rounded-[7px] px-3 py-1.5 transition-colors ${mode === m ? "text-ink" : "text-ink-2 disabled:text-ink-3/60"}`}
               >
-                {mode === m && <motion.span layoutId="rail" className="absolute inset-0 rounded-lg bg-ink" transition={{ type: "spring", duration: 0.35 }} />}
+                {mode === m && <motion.span layoutId="rail" className="absolute inset-0 rounded-[7px] bg-panel shadow-[0_1px_2px_rgb(11_11_11/0.12)]" transition={{ type: "spring", duration: 0.35 }} />}
                 <span className="relative">{m === "live" ? "Arc testnet" : "Demo rail"}</span>
               </button>
             ))}
           </div>
-          <Button type="submit" disabled={busy || task.trim().length < 3 || (usePasskey && !pk.wallet)} className="bg-agent hover:opacity-90">
-            {busy ? "Planning…" : "Get work order →"}
+          <Button type="submit" disabled={busy || task.trim().length < 3 || (usePasskey && !pk.wallet)} variant="agent">
+            {busy ? (
+              "Planning…"
+            ) : (
+              <>
+                Get work order <Icon name="arrow" size={16} stroke={2.2} />
+              </>
+            )}
           </Button>
         </div>
         {mode === "live" && pk.supported && (
@@ -230,7 +232,7 @@ export default function Home() {
                   role="radio"
                   aria-checked={payFrom === p}
                   onClick={() => setPayFrom(p)}
-                  className={`pressable tap rounded-lg border px-3 py-1.5 ${payFrom === p ? "border-ink bg-ink text-white" : "border-line bg-panel text-ink-2"}`}
+                  className={`pressable tap rounded-lg border px-3 py-1.5 font-medium ${payFrom === p ? "border-ink bg-ink text-white" : "border-line bg-panel text-ink-2"}`}
                 >
                   {p === "passkey" ? "Pay from my passkey wallet" : "App wallet"}
                 </button>
@@ -246,12 +248,13 @@ export default function Home() {
             onChange={(e) => setAccessCode(e.target.value)}
             placeholder="Access code for Arc testnet jobs"
             aria-label="Access code"
-            className="mt-3 h-9 w-full rounded-xl border border-line bg-surface px-3 text-sm outline-none focus:border-ink/40"
+            className="mt-3 h-10 w-full rounded-lg border border-line bg-surface px-3 text-sm outline-none focus:border-ink/40"
           />
         )}
         {err && <p className="mt-3 text-sm text-bad">{err}</p>}
       </form>
-      <p className="mt-3 text-xs text-ink-3">
+      <FlowStrip />
+      <p className="-mt-2 text-center text-xs text-ink-3">
         {mode === "demo" ? "Demo rail: real market data, simulated settlement, no transaction hashes." : "Arc testnet: real USDC payments from a fresh vault per work order."}
         {cfg?.factory && (
           <>
@@ -265,14 +268,14 @@ export default function Home() {
       </p>
 
       {cfg?.faultsEnabled && (
-        <div className="mt-10 rounded-2xl border border-line bg-panel/70 p-4">
+        <div className="rounded-2xl border border-line bg-panel/80 p-4">
           <button type="button" onClick={() => setTestMode((v) => !v)} aria-expanded={testMode} className="flex w-full items-center justify-between text-left">
             <span>
               <span className="text-sm font-semibold">Test mode</span>
               <span className="ml-2 text-xs text-ink-3">Inject failures and watch the agent ask before anything changes.</span>
             </span>
-            <span className={`relative h-5 w-9 rounded-full transition-colors ${testMode ? "bg-warn" : "bg-line"}`}>
-              <motion.span layout className={`absolute top-0.5 h-4 w-4 rounded-full bg-white shadow ${testMode ? "right-0.5" : "left-0.5"}`} />
+            <span className={`relative h-5 w-9 shrink-0 rounded-[6px] transition-colors ${testMode ? "bg-warn" : "bg-line"}`}>
+              <motion.span layout className={`absolute top-0.5 h-4 w-4 rounded-[4px] bg-white shadow ${testMode ? "right-0.5" : "left-0.5"}`} />
             </span>
           </button>
           <AnimatePresence initial={false}>
@@ -284,7 +287,7 @@ export default function Home() {
                     return (
                       <label
                         key={f.code}
-                        className={`pressable tap inline-flex cursor-pointer select-none items-center rounded-full border px-3 py-1.5 text-[12.5px] transition-colors ${on ? "border-warn bg-warn/15 text-[#7a5000]" : "border-line text-ink-2 hover:border-ink/30"}`}
+                        className={`pressable tap inline-flex cursor-pointer select-none items-center gap-1.5 rounded-lg border px-3 py-1.5 text-[13px] transition-colors ${on ? "border-warn bg-warn/15 text-warn-ink" : "border-line text-ink-2 hover:border-ink/30"}`}
                       >
                         <input
                           type="checkbox"
@@ -292,7 +295,7 @@ export default function Home() {
                           checked={on}
                           onChange={(e) => setFaults((xs) => (e.target.checked ? [...xs, f.code] : xs.filter((x) => x !== f.code)))}
                         />
-                        {on ? "✓ " : ""}
+                        {on && <Icon name="check" size={13} stroke={2.4} />}
                         {f.label}
                       </label>
                     );
@@ -303,6 +306,7 @@ export default function Home() {
           </AnimatePresence>
         </div>
       )}
+    </div>
     </div>
   );
 }

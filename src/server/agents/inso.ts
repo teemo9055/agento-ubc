@@ -52,7 +52,7 @@ const pp = (x: number) => `${x >= 0 ? "+" : ""}${Math.round(x * 100)} pts`;
 export const inso: AgentDef = {
   id: "inso",
   name: "Inso",
-  tagline: "Reads the odds so you don't have to.",
+  tagline: "Tracks prediction-market odds and explains what moved.",
   examples: ["How have BTC odds moved today?", "Track ETH and SOL price markets", "What's moving in gold markets?"],
   defaults: { markets: 3, tape: true, tf: "15m" } satisfies Opts,
   faultPhase: "history",
