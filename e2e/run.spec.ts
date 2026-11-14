@@ -1,7 +1,7 @@
 import { expect, test, type Page } from "@playwright/test";
 
 async function start(page: Page, faults: string[] = [], task = "How have BTC odds moved today?", agent = "Inso") {
-  await page.goto("/");
+  await page.goto("/new");
   await page.getByRole("tab", { name: new RegExp(agent) }).click();
   await page.fill("#task", task);
   await page.getByRole("radio", { name: "Demo rail" }).click();
@@ -28,7 +28,7 @@ test("pre-approved big spend runs with no popup", async ({ page }) => {
 });
 
 test("impossible card edit explains why and offers alternatives", async ({ page }) => {
-  await page.goto("/");
+  await page.goto("/new");
   await page.fill("#task", "BTC odds");
   await page.getByRole("radio", { name: "Demo rail" }).click();
   await page.getByRole("button", { name: /Get work order/ }).click();
@@ -44,7 +44,7 @@ test("impossible card edit explains why and offers alternatives", async ({ page 
 });
 
 test("method picker re-prices and AI IDE adds a 0 USDC subscription line", async ({ page }) => {
-  await page.goto("/");
+  await page.goto("/new");
   await page.fill("#task", "BTC odds");
   await page.getByRole("radio", { name: "Demo rail" }).click();
   await page.getByRole("button", { name: /Get work order/ }).click();
@@ -145,4 +145,20 @@ test("trado and travo run end to end", async ({ page }) => {
   await start(page, [], "Drive from Vancouver to Seattle", "Travo");
   await receipt(page);
   await expect(page.getByRole("img", { name: "Route map" })).toBeVisible();
+});
+
+test("dashboard lists jobs by folder and status, and opens them", async ({ page }) => {
+  await start(page, [], "BTC odds dashboard check", "Inso");
+  await receipt(page);
+  const url = page.url();
+  await page.goto("/?folder=inso");
+  await expect(page.getByRole("heading", { name: "Inso jobs" })).toBeVisible();
+  const card = page.getByText("BTC odds dashboard check").first();
+  await expect(card).toBeVisible();
+  await page.goto("/?folder=travo");
+  await expect(page.getByText("BTC odds dashboard check")).toHaveCount(0);
+  await page.goto("/");
+  await page.getByLabel("Search jobs").fill("dashboard check");
+  await page.getByText("BTC odds dashboard check").first().click();
+  await expect(page).toHaveURL(url);
 });

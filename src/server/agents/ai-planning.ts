@@ -144,7 +144,7 @@ export async function aiEdit(agent: AgentId, task: string, card: string, prompt:
 export async function aiSummary(agent: AgentId, task: string, facts: unknown): Promise<{ summary: Summary; usage: AiUsage } | null> {
   const r = await aiJson(Summary, {
     name: `${agent}_summary`,
-    system: `${SHARED_RULES}\nWrite the result for the user: a one-line headline answering their task, then up to 4 short findings. Use only numbers present in the DATA. Say plainly when data is thin. No advice to trade or bet.`,
+    system: `${SHARED_RULES}\nWrite the result for the user: a one-line headline answering their task, then up to 4 short findings. Use only numbers present in the DATA, rounded sensibly (e.g. 124 km, 2.1 h, 37 pts). Say plainly when data is thin. No advice to trade or bet.`,
     user: `TASK: ${task}\n\nDATA (computed results):\n${JSON.stringify(facts).slice(0, 12_000)}`,
     maxTokens: 2000,
   });

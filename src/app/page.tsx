@@ -1,268 +1,307 @@
 "use client";
-import { useEffect, useState } from "react";
-import { useRouter } from "next/navigation";
+import { Suspense, useEffect, useMemo, useRef, useState } from "react";
+import Link from "next/link";
+import { useRouter, useSearchParams } from "next/navigation";
 import { AnimatePresence, motion } from "framer-motion";
 import { AgentIcon } from "@/components/AgentIcon";
-import { Button } from "@/components/ui";
-import { post, useAgentTheme } from "@/components/useRun";
+import { Spinner } from "@/components/ui";
+import { useAgentTheme } from "@/components/useRun";
+import { fmt } from "@/lib/money";
 import { THEMES } from "@/lib/themes";
-import type { AgentId, FailureCode, Run } from "@/lib/types";
+import type { RunSummary } from "@/lib/summary";
+import type { AgentId } from "@/lib/types";
 
-const FAULTS: { code: FailureCode; label: string }[] = [
-  { code: "price_increase", label: "Seller raises price" },
-  { code: "seller_402_timeout", label: "Seller times out" },
-  { code: "payment_rejected", label: "Payment rejected" },
-  { code: "settle_fails", label: "Settlement fails" },
-  { code: "insufficient_balance", label: "Vault runs dry" },
-  { code: "policy_block", label: "Agent tries off-plan spend" },
-  { code: "model_error", label: "Analysis crashes" },
-  { code: "approval_timeout", label: "Re-approval times out" },
+type Folder = "all" | AgentId;
+type Section = "needs" | "running" | "drafts" | "finished";
+
+const SECTIONS: { key: Section; title: string; match: (r: RunSummary) => boolean }[] = [
+  { key: "needs", title: "Needs you", match: (r) => r.needsYou > 0 },
+  { key: "running", title: "Running", match: (r) => (r.status === "running" || r.status === "funding") && r.needsYou === 0 },
+  { key: "drafts", title: "Drafts awaiting approval", match: (r) => r.status === "draft" },
+  { key: "finished", title: "Finished", match: (r) => r.status === "done" || r.status === "cancelled" },
 ];
 
-interface Config {
-  live: boolean;
-  factory: string | null;
-  explorer: string;
-  faultsEnabled: boolean;
-  agents: { id: AgentId; examples: string[] }[];
+function ago(iso?: string) {
+  if (!iso) return "";
+  const s = Math.max(0, (Date.now() - Date.parse(iso)) / 1000);
+  if (s < 60) return "just now";
+  if (s < 3600) return `${Math.floor(s / 60)}m ago`;
+  if (s < 86400) return `${Math.floor(s / 3600)}h ago`;
+  return new Date(iso).toLocaleDateString();
 }
 
-const STEPS = [
-  { k: "Task", v: "you ask" },
-  { k: "Work order", v: "priced up front" },
-  { k: "Vault", v: "funded once" },
-  { k: "Payees", v: "only approved" },
-];
+function StatusPill({ r }: { r: RunSummary }) {
+  if (r.needsYou > 0) return <span className="rounded-full border border-warn bg-warn/15 px-2 py-0.5 text-[11px] font-medium text-[#7a5000]">! Needs you</span>;
+  if (r.status === "running" || r.status === "funding")
+    return (
+      <span className="inline-flex items-center gap-1 rounded-full border border-agent/40 bg-agent-soft px-2 py-0.5 text-[11px] font-medium text-agent">
+        <Spinner /> {r.status === "funding" ? "Funding" : "Running"}
+      </span>
+    );
+  if (r.status === "done") return <span className="rounded-full border border-good/40 bg-good/5 px-2 py-0.5 text-[11px] font-medium text-good">✓ Done</span>;
+  if (r.status === "cancelled") return <span className="rounded-full border border-line px-2 py-0.5 text-[11px] font-medium text-ink-3">– Cancelled</span>;
+  return <span className="rounded-full border border-line bg-panel px-2 py-0.5 text-[11px] font-medium text-ink-2">○ Draft</span>;
+}
 
-function FlowStrip() {
+function JobCard({ r }: { r: RunSummary }) {
+  const pct = r.stepsTotal ? (r.stepsDone / r.stepsTotal) * 100 : 0;
+  const live = r.status === "running" || r.status === "funding";
   return (
-    <div className="mt-8 hidden items-center gap-2 sm:flex" aria-hidden>
-      {STEPS.map((s, i) => (
-        <div key={s.k} className="flex items-center gap-2">
-          <motion.div
-            initial={{ opacity: 0, y: 6 }}
-            animate={{ opacity: 1, y: 0 }}
-            transition={{ delay: 0.15 + i * 0.08 }}
-            className="rounded-xl border border-line bg-panel/80 px-3 py-2"
-          >
-            <div className="text-[12.5px] font-semibold">{s.k}</div>
-            <div className="text-[11px] text-ink-3">{s.v}</div>
-          </motion.div>
-          {i < STEPS.length - 1 && (
-            <svg width="44" height="10" className="text-agent">
-              <line x1="0" y1="5" x2="44" y2="5" stroke="var(--color-line)" strokeWidth="1.5" />
-              <circle r="2.5" cy="5" fill="currentColor" className="motion-reduce:hidden">
-                <animate attributeName="cx" from="0" to="44" dur="1.6s" begin={`${i * 0.4}s`} repeatCount="indefinite" />
-              </circle>
-            </svg>
-          )}
+    <motion.li layout initial={{ opacity: 0, y: 6 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0 }} data-agent={r.agent}>
+      <Link
+        href={`/runs/${r.id}`}
+        className={`group block rounded-2xl border bg-panel p-4 transition-[transform,box-shadow,border-color] hover:-translate-y-0.5 hover:shadow-[0_10px_30px_-16px_var(--agent)] ${r.needsYou ? "border-warn" : "border-line hover:border-agent/40"}`}
+        data-testid={`job-${r.id}`}
+      >
+        <div className="flex items-start gap-3">
+          <AgentIcon agent={r.agent} size={36} className={live ? "float" : ""} />
+          <div className="min-w-0 flex-1">
+            <div className="flex flex-wrap items-center gap-1.5 text-[11.5px] text-ink-3">
+              <span className="font-medium text-agent">{THEMES[r.agent].name}</span>
+              <span>· {r.mode === "live" ? "Arc testnet" : "demo"}</span>
+              {r.planner === "ai" && <span>· AI plan</span>}
+              <span>· {ago(r.finishedAt ?? r.createdAt)}</span>
+            </div>
+            <div className="mt-0.5 line-clamp-2 font-medium leading-snug">{r.task}</div>
+          </div>
+          <StatusPill r={r} />
         </div>
-      ))}
+
+        {live || r.needsYou ? (
+          <div className="mt-3">
+            <div className="flex justify-between text-[11.5px] text-ink-3">
+              <span>{r.activeStep ?? "Starting"}</span>
+              <span className="num">
+                {r.stepsDone}/{r.stepsTotal} steps
+              </span>
+            </div>
+            <div className="mt-1 h-1 overflow-hidden rounded-full bg-line">
+              <motion.div className="h-full rounded-full bg-agent" animate={{ width: `${pct}%` }} transition={{ duration: 0.5 }} />
+            </div>
+          </div>
+        ) : r.headline ? (
+          <p className="mt-2 line-clamp-2 text-[12.5px] text-ink-2">{r.headline}</p>
+        ) : null}
+
+        <div className="num mt-3 flex items-center justify-between border-t border-line pt-2 text-[12px] text-ink-3">
+          <span>
+            {r.status === "draft" ? "Quoted" : "Spent"} <b className="font-semibold text-ink">{fmt(r.status === "draft" ? r.approved : r.spent)}</b>
+            {r.status !== "draft" && <> / {fmt(r.approved)}</>} USDC
+          </span>
+          {r.refunded && BigInt(r.refunded) > 0n ? <span>{fmt(r.refunded)} returned</span> : <span className="opacity-0 transition-opacity group-hover:opacity-100">Open →</span>}
+        </div>
+      </Link>
+    </motion.li>
+  );
+}
+
+function Dashboard() {
+  const router = useRouter();
+  const params = useSearchParams();
+  const folder = (params.get("folder") as Folder) ?? "all";
+  const status = params.get("status") as Section | null;
+  const [q, setQ] = useState(params.get("q") ?? "");
+  const [runs, setRuns] = useState<RunSummary[] | null>(null);
+  const search = useRef<HTMLInputElement>(null);
+  useAgentTheme(folder === "all" ? "inso" : folder);
+
+  useEffect(() => {
+    let stop = false;
+    const load = () =>
+      fetch("/api/runs", { cache: "no-store" })
+        .then((r) => r.json())
+        .then((x: RunSummary[]) => !stop && setRuns(x))
+        .catch(() => {});
+    load();
+    const t = setInterval(load, 2500);
+    return () => {
+      stop = true;
+      clearInterval(t);
+    };
+  }, []);
+
+  useEffect(() => {
+    const h = (e: KeyboardEvent) => {
+      if ((e.target as HTMLElement).closest("input,textarea")) return;
+      if (e.key === "/") {
+        e.preventDefault();
+        search.current?.focus();
+      }
+      if (e.key.toLowerCase() === "n") router.push(folder === "all" ? "/new" : `/new?agent=${folder}`);
+    };
+    window.addEventListener("keydown", h);
+    return () => window.removeEventListener("keydown", h);
+  }, [router, folder]);
+
+  const setParam = (k: string, v: string | null) => {
+    const p = new URLSearchParams(params.toString());
+    if (v) p.set(k, v);
+    else p.delete(k);
+    router.replace(`/?${p}`, { scroll: false });
+  };
+
+  const inFolder = useMemo(() => (runs ?? []).filter((r) => folder === "all" || r.agent === folder), [runs, folder]);
+  const visible = useMemo(() => inFolder.filter((r) => !q || r.task.toLowerCase().includes(q.toLowerCase())), [inFolder, q]);
+  const count = (f: Folder) => (runs ?? []).filter((r) => f === "all" || r.agent === f).length;
+  const tiles = useMemo(() => {
+    const live = inFolder.filter((r) => r.mode === "live");
+    return [
+      { label: "Running", value: String(inFolder.filter((r) => r.status === "running" || r.status === "funding").length) },
+      { label: "Needs you", value: String(inFolder.filter((r) => r.needsYou > 0).length), warn: inFolder.some((r) => r.needsYou > 0) },
+      { label: "Spent on Arc", value: fmt(live.reduce((a, r) => a + BigInt(r.spent), 0n)), unit: "USDC" },
+      { label: "Returned to you", value: fmt(live.reduce((a, r) => a + BigInt(r.refunded ?? 0), 0n)), unit: "USDC" },
+    ];
+  }, [inFolder]);
+
+  const folders: { key: Folder; label: string; sub: string }[] = [
+    { key: "all", label: "All jobs", sub: "Every agent" },
+    ...(Object.keys(THEMES) as AgentId[]).map((a) => ({ key: a, label: THEMES[a].name, sub: THEMES[a].domain })),
+  ];
+
+  return (
+    <div className="grid gap-6 lg:grid-cols-[220px_minmax(0,1fr)]">
+      <aside className="lg:sticky lg:top-20 lg:self-start">
+        <div className="mb-2 hidden text-[11px] font-medium uppercase tracking-wide text-ink-3 lg:block">Folders</div>
+        <nav aria-label="Folders" className="-mx-1 flex gap-1 overflow-x-auto px-1 pb-1 lg:flex-col lg:overflow-visible">
+          {folders.map((f) => {
+            const on = folder === f.key;
+            return (
+              <button
+                key={f.key}
+                onClick={() => setParam("folder", f.key === "all" ? null : f.key)}
+                aria-current={on ? "page" : undefined}
+                data-agent={f.key === "all" ? undefined : f.key}
+                className={`relative flex shrink-0 items-center gap-2.5 rounded-xl px-2.5 py-2 text-left transition-colors ${on ? "bg-panel shadow-sm ring-1 ring-line" : "hover:bg-panel/70"}`}
+              >
+                {f.key === "all" ? (
+                  <span className="inline-flex h-7 w-7 items-center justify-center rounded-[30%] bg-ink text-[13px] text-white" aria-hidden>
+                    ▤
+                  </span>
+                ) : (
+                  <AgentIcon agent={f.key} size={28} />
+                )}
+                <span className="pr-6">
+                  <span className="block text-[13px] font-medium leading-tight">{f.label}</span>
+                  <span className="hidden text-[11px] text-ink-3 lg:block">{f.sub}</span>
+                </span>
+                <span className="num absolute right-2 top-1/2 -translate-y-1/2 text-[11px] text-ink-3">{count(f.key)}</span>
+              </button>
+            );
+          })}
+        </nav>
+        <Link
+          href={folder === "all" ? "/new" : `/new?agent=${folder}`}
+          className="mt-3 hidden h-9 items-center justify-center gap-2 rounded-xl bg-agent text-sm font-medium text-white transition-opacity hover:opacity-90 lg:flex"
+        >
+          + New job <kbd className="rounded border border-white/30 px-1 text-[10px]">N</kbd>
+        </Link>
+      </aside>
+
+      <section className="min-w-0">
+        <div className="flex flex-wrap items-end justify-between gap-3">
+          <div>
+            <h1 className="text-2xl font-semibold tracking-tight">{folder === "all" ? "Your jobs" : `${THEMES[folder].name} jobs`}</h1>
+            <p className="mt-0.5 text-sm text-ink-2">{folder === "all" ? "Everything your agents are doing, in one place." : THEMES[folder].tagline}</p>
+          </div>
+          <Link href={folder === "all" ? "/new" : `/new?agent=${folder}`} className="inline-flex h-9 items-center rounded-xl bg-agent px-4 text-sm font-medium text-white lg:hidden">
+            + New job
+          </Link>
+        </div>
+
+        <div className="mt-5 grid grid-cols-2 gap-2 sm:grid-cols-4">
+          {tiles.map((t) => (
+            <div key={t.label} className={`rounded-2xl border bg-panel px-4 py-3 ${t.warn ? "border-warn" : "border-line"}`}>
+              <div className="text-[11.5px] text-ink-3">{t.label}</div>
+              <div className="num mt-0.5 text-xl font-semibold">
+                {t.value}
+                {t.unit && <span className="ml-1 text-[11px] font-normal text-ink-3">{t.unit}</span>}
+              </div>
+            </div>
+          ))}
+        </div>
+
+        <div className="mt-5 flex flex-wrap items-center gap-2">
+          <div className="ring-agent flex h-9 min-w-[220px] flex-1 items-center gap-2 rounded-xl border border-line bg-panel px-3">
+            <span className="text-ink-3" aria-hidden>
+              ⌕
+            </span>
+            <input
+              ref={search}
+              value={q}
+              onChange={(e) => setQ(e.target.value)}
+              onBlur={() => setParam("q", q || null)}
+              placeholder="Search jobs"
+              aria-label="Search jobs"
+              className="w-full bg-transparent text-sm outline-none"
+            />
+            <kbd className="hidden rounded border border-line px-1 text-[10px] text-ink-3 sm:inline">/</kbd>
+          </div>
+          <div className="flex gap-1 overflow-x-auto" role="tablist" aria-label="Status">
+            {[{ key: null, title: "All" }, ...SECTIONS.map((s) => ({ key: s.key, title: s.key === "drafts" ? "Drafts" : s.title }))].map((s) => (
+              <button
+                key={s.title}
+                role="tab"
+                aria-selected={status === s.key}
+                onClick={() => setParam("status", s.key)}
+                className={`shrink-0 rounded-full border px-3 py-1.5 text-[12.5px] transition-colors ${status === s.key ? "border-ink bg-ink text-white" : "border-line bg-panel text-ink-2 hover:border-ink/30"}`}
+              >
+                {s.title}
+              </button>
+            ))}
+          </div>
+        </div>
+
+        {!runs && (
+          <div className="mt-6 grid gap-3 sm:grid-cols-2" aria-busy="true">
+            {[0, 1, 2, 3].map((i) => (
+              <div key={i} className="h-36 animate-pulse rounded-2xl bg-line/60 motion-reduce:animate-none" />
+            ))}
+          </div>
+        )}
+
+        {runs && visible.length === 0 && (
+          <div className="mt-8 rounded-2xl border border-dashed border-line bg-panel/60 p-10 text-center">
+            <div className="mx-auto flex w-fit gap-2">
+              {(Object.keys(THEMES) as AgentId[]).map((a) => (
+                <AgentIcon key={a} agent={a} size={34} className="float" />
+              ))}
+            </div>
+            <div className="mt-4 font-medium">{q ? "No jobs match that search" : "No jobs here yet"}</div>
+            <p className="mt-1 text-sm text-ink-2">Bring a task. The agent prices it before it spends anything.</p>
+            <Link href={folder === "all" ? "/new" : `/new?agent=${folder}`} className="mt-4 inline-block rounded-xl bg-agent px-4 py-2 text-sm font-medium text-white">
+              Start a job
+            </Link>
+          </div>
+        )}
+
+        {runs &&
+          SECTIONS.filter((s) => !status || s.key === status).map((s) => {
+            const items = visible.filter(s.match);
+            if (!items.length) return null;
+            return (
+              <section key={s.key} className="mt-7" aria-label={s.title}>
+                <h2 className={`mb-2 text-[12px] font-medium uppercase tracking-wide ${s.key === "needs" ? "text-[#7a5000]" : "text-ink-3"}`}>
+                  {s.title} <span className="num">· {items.length}</span>
+                </h2>
+                <ul className="grid gap-3 sm:grid-cols-2">
+                  <AnimatePresence initial={false}>
+                    {items.map((r) => (
+                      <JobCard key={r.id} r={r} />
+                    ))}
+                  </AnimatePresence>
+                </ul>
+              </section>
+            );
+          })}
+      </section>
     </div>
   );
 }
 
 export default function Home() {
-  const router = useRouter();
-  const [cfg, setCfg] = useState<Config | null>(null);
-  const [agent, setAgent] = useState<AgentId>("inso");
-  const [task, setTask] = useState("");
-  const [mode, setMode] = useState<"demo" | "live">("demo");
-  const [testMode, setTestMode] = useState(false);
-  const [faults, setFaults] = useState<FailureCode[]>([]);
-  const [busy, setBusy] = useState(false);
-  const [err, setErr] = useState("");
-  useAgentTheme(agent);
-
-  useEffect(() => {
-    fetch("/api/config")
-      .then((r) => r.json())
-      .then((c: Config) => {
-        setCfg(c);
-        if (c.live) setMode("live");
-      });
-  }, []);
-
-  const examples = cfg?.agents.find((a) => a.id === agent)?.examples ?? [];
-  const theme = THEMES[agent];
-
-  async function submit(e?: React.FormEvent) {
-    e?.preventDefault();
-    if (task.trim().length < 3) return;
-    setBusy(true);
-    setErr("");
-    try {
-      const run = await post<Run>("/api/runs", { agent, task, mode, faults: testMode ? faults : [] });
-      router.push(`/runs/${run.id}`);
-    } catch (x) {
-      setErr((x as Error).message);
-      setBusy(false);
-    }
-  }
-
   return (
-    <div className="mx-auto max-w-3xl pt-2 sm:pt-8">
-      <AnimatePresence>
-        {testMode && faults.length > 0 && (
-          <motion.div
-            initial={{ opacity: 0, height: 0 }}
-            animate={{ opacity: 1, height: "auto" }}
-            exit={{ opacity: 0, height: 0 }}
-            role="status"
-            className="mb-6 overflow-hidden rounded-xl border border-warn bg-warn/15 px-4 py-2 text-sm text-[#7a5000]"
-          >
-            <b>Test mode on.</b> {faults.length} fault {faults.length === 1 ? "switch" : "switches"} will fire once during the run.
-          </motion.div>
-        )}
-      </AnimatePresence>
-
-      <motion.h1 initial={{ opacity: 0, y: 8 }} animate={{ opacity: 1, y: 0 }} className="text-[34px] font-semibold leading-[1.05] tracking-tight sm:text-5xl">
-        Agents that only spend
-        <br />
-        <span className="text-agent transition-colors duration-500">what you approved.</span>
-      </motion.h1>
-      <p className="mt-4 max-w-xl text-[15px] text-ink-2">
-        Bring a task. Get a priced work order. Approve once and the agent pays per request in USDC on Arc, from a vault that only pays the lines you approved.
-      </p>
-      <FlowStrip />
-
-      <div className="mt-10 grid grid-cols-3 gap-2 sm:gap-3" role="tablist" aria-label="Agent">
-        {(Object.keys(THEMES) as AgentId[]).map((id) => {
-          const on = agent === id;
-          return (
-            <motion.button
-              key={id}
-              role="tab"
-              aria-selected={on}
-              onClick={() => setAgent(id)}
-              whileHover={{ y: -2 }}
-              whileTap={{ scale: 0.98 }}
-              data-agent={id}
-              className={`relative rounded-2xl border p-3 text-left transition-colors sm:p-4 ${on ? "border-agent bg-panel shadow-[0_8px_30px_-12px_var(--agent)]" : "border-line bg-panel/60 hover:bg-panel"}`}
-            >
-              <AgentIcon agent={id} size={36} className={on ? "float" : ""} />
-              <div className="mt-3 font-semibold">{THEMES[id].name}</div>
-              <div className="text-[11.5px] text-ink-3">{THEMES[id].domain}</div>
-              {on && <motion.span layoutId="agent-dot" className="absolute right-3 top-3 h-2 w-2 rounded-full bg-agent" />}
-            </motion.button>
-          );
-        })}
-      </div>
-
-      <form onSubmit={submit} className="ring-agent mt-3 rounded-2xl border border-line bg-panel p-4 shadow-sm transition-shadow sm:p-5">
-        <AnimatePresence mode="wait">
-          <motion.label
-            key={agent}
-            htmlFor="task"
-            initial={{ opacity: 0, y: -4 }}
-            animate={{ opacity: 1, y: 0 }}
-            exit={{ opacity: 0, y: 4 }}
-            className="block text-[12.5px] font-medium text-ink-3"
-          >
-            <span className="text-agent">{theme.name}</span> · {theme.tagline}
-          </motion.label>
-        </AnimatePresence>
-        <textarea
-          id="task"
-          value={task}
-          onChange={(e) => setTask(e.target.value)}
-          onKeyDown={(e) => e.key === "Enter" && (e.metaKey || e.ctrlKey) && submit()}
-          rows={3}
-          maxLength={280}
-          placeholder={examples[0] ?? "Describe the task"}
-          className="mt-2 w-full resize-none bg-transparent text-[16px] outline-none placeholder:text-ink-3"
-        />
-        <div className="mt-1 flex flex-wrap gap-2">
-          {examples.map((x, i) => (
-            <motion.button
-              key={x}
-              initial={{ opacity: 0 }}
-              animate={{ opacity: 1 }}
-              transition={{ delay: i * 0.05 }}
-              type="button"
-              onClick={() => setTask(x)}
-              className="rounded-full border border-line px-3 py-1 text-xs text-ink-2 transition-colors hover:border-agent hover:text-ink"
-            >
-              {x}
-            </motion.button>
-          ))}
-        </div>
-        <div className="mt-4 flex flex-wrap items-center justify-between gap-3 border-t border-line pt-4">
-          <div className="flex items-center gap-1 rounded-xl border border-line bg-surface p-0.5 text-xs" role="radiogroup" aria-label="Payment rail">
-            {(["live", "demo"] as const).map((m) => (
-              <button
-                key={m}
-                type="button"
-                role="radio"
-                aria-checked={mode === m}
-                disabled={m === "live" && !cfg?.live}
-                onClick={() => setMode(m)}
-                title={m === "live" && !cfg?.live ? "Live mode needs funded wallets and a deployed factory" : undefined}
-                className={`relative rounded-lg px-3 py-1.5 transition-colors ${mode === m ? "text-white" : "text-ink-2 disabled:text-ink-3/60"}`}
-              >
-                {mode === m && <motion.span layoutId="rail" className="absolute inset-0 rounded-lg bg-ink" transition={{ type: "spring", duration: 0.35 }} />}
-                <span className="relative">{m === "live" ? "Arc testnet" : "Demo rail"}</span>
-              </button>
-            ))}
-          </div>
-          <Button type="submit" disabled={busy || task.trim().length < 3} className="bg-agent hover:opacity-90">
-            {busy ? "Planning…" : "Get work order →"}
-          </Button>
-        </div>
-        {err && <p className="mt-3 text-sm text-bad">{err}</p>}
-      </form>
-      <p className="mt-3 text-xs text-ink-3">
-        {mode === "demo" ? "Demo rail: real market data, simulated settlement, no transaction hashes." : "Arc testnet: real USDC payments from a fresh vault per work order."}
-        {cfg?.factory && (
-          <>
-            {" "}
-            Factory{" "}
-            <a className="font-mono underline decoration-line underline-offset-2 hover:text-ink" href={`${cfg.explorer}/address/${cfg.factory}`} target="_blank" rel="noreferrer">
-              {cfg.factory.slice(0, 8)}…
-            </a>
-          </>
-        )}
-      </p>
-
-      {cfg?.faultsEnabled && (
-        <div className="mt-10 rounded-2xl border border-line bg-panel/70 p-4">
-          <button type="button" onClick={() => setTestMode((v) => !v)} aria-expanded={testMode} className="flex w-full items-center justify-between text-left">
-            <span>
-              <span className="text-sm font-semibold">Test mode</span>
-              <span className="ml-2 text-xs text-ink-3">Inject failures and watch the agent ask before anything changes.</span>
-            </span>
-            <span className={`relative h-5 w-9 rounded-full transition-colors ${testMode ? "bg-warn" : "bg-line"}`}>
-              <motion.span layout className={`absolute top-0.5 h-4 w-4 rounded-full bg-white shadow ${testMode ? "right-0.5" : "left-0.5"}`} />
-            </span>
-          </button>
-          <AnimatePresence initial={false}>
-            {testMode && (
-              <motion.div initial={{ height: 0, opacity: 0 }} animate={{ height: "auto", opacity: 1 }} exit={{ height: 0, opacity: 0 }} className="overflow-hidden">
-                <div className="mt-4 flex flex-wrap gap-2">
-                  {FAULTS.map((f) => {
-                    const on = faults.includes(f.code);
-                    return (
-                      <label
-                        key={f.code}
-                        className={`cursor-pointer select-none rounded-full border px-3 py-1.5 text-[12.5px] transition-colors ${on ? "border-warn bg-warn/15 text-[#7a5000]" : "border-line text-ink-2 hover:border-ink/30"}`}
-                      >
-                        <input
-                          type="checkbox"
-                          className="sr-only"
-                          checked={on}
-                          onChange={(e) => setFaults((xs) => (e.target.checked ? [...xs, f.code] : xs.filter((x) => x !== f.code)))}
-                        />
-                        {on ? "✓ " : ""}
-                        {f.label}
-                      </label>
-                    );
-                  })}
-                </div>
-              </motion.div>
-            )}
-          </AnimatePresence>
-        </div>
-      )}
-    </div>
+    <Suspense>
+      <Dashboard />
+    </Suspense>
   );
 }

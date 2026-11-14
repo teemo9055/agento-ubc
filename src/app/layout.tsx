@@ -20,12 +20,12 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
               </span>
               agento
             </Link>
-            <nav className="flex gap-5 text-sm text-ink-2">
+            <nav className="flex items-center gap-4 text-sm text-ink-2">
               <Link href="/" className="hover:text-ink">
-                New job
+                Jobs
               </Link>
-              <Link href="/history" className="hover:text-ink">
-                History
+              <Link href="/new" className="rounded-lg bg-ink px-3 py-1.5 text-white transition-opacity hover:opacity-85">
+                + New job
               </Link>
             </nav>
           </div>

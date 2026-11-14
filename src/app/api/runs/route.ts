@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { z } from "zod";
 import { createRun, listRuns } from "@/server/orchestrator";
+import { summarize } from "@/lib/summary";
 
 export const dynamic = "force-dynamic";
 
@@ -13,8 +14,9 @@ const Body = z.object({
   faults: z.array(z.enum(FAULTS)).default([]),
 });
 
-export async function GET() {
-  return NextResponse.json(listRuns());
+export async function GET(req: NextRequest) {
+  const runs = listRuns();
+  return NextResponse.json(req.nextUrl.searchParams.get("full") ? runs : runs.map(summarize));
 }
 
 export async function POST(req: NextRequest) {
