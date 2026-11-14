@@ -17,6 +17,7 @@ Three agents share one core:
 - **x402 from the vault.** Data is sold per request over x402 (`exact` scheme, `eip155:5042002`). The agent calls `vault.authorize(line, proof, payee, amount, …)`. The vault checks the proof, the payee and the line's cap, then approves that exact EIP-3009 `transferWithAuthorization` digest. USDC verifies it through ERC-1271 (`isValidSignature`), so the money moves from the vault straight to the seller. No agent-held balance is ever spent.
 - **Re-approval onchain.** When you approve a change (new price, new payee, extra step), the client wallet calls `vault.setPlan(newRoot)`, and adds funds with `topUp` if needed.
 - **Circle wallets.** The agent and the data sellers are Circle developer-controlled wallets on Arc testnet; their transactions are signed through Circle.
+- **Your own passkey wallet.** Users can pay from a Circle modular smart account unlocked with Face ID, Touch ID or a security key (gas sponsored by Circle's paymaster). Funding (`approve` + `open`), plan changes (`setPlan`) and top-ups are signed in the browser; the server only verifies onchain that the vault was opened by that wallet with exactly the approved plan before the agent spends.
 - **Refunds.** `vault.close()` returns the unspent balance to the client and invalidates any unsettled authorization. An authorization that expires unused can be `release`d to free its cap for a retry.
 - **USDC as gas.** Every fee is in USDC. Receipts show the network fee measured from each transaction receipt (`gasUsed × effectiveGasPrice`, 18 decimals).
 
@@ -145,6 +146,8 @@ cd contracts && forge script script/Deploy.s.sol --rpc-url https://rpc.testnet.a
 ```
 
 4. Put the factory address in `FACTORY_ADDRESS`, then run `npm run dev`.
+
+For passkey wallets, create a Circle client key bound to your domain (`localhost` locally) and set the same domain under Console → Modular Wallets → Configurator → Passkey. Put the key in `NEXT_PUBLIC_CIRCLE_CLIENT_KEY`.
 
 ### Deploy (Railway)
 
