@@ -165,3 +165,49 @@ describe("edit alternatives", () => {
     }
   });
 });
+
+describe("method, preview and edited re-approval", () => {
+  it("mirror seller re-prices lines; AI IDE adds a 0 USDC subscription line and a context pack", async () => {
+    const r = await orch.createRun({ agent: "inso", task: "BTC odds" });
+    const base = BigInt(r.lines.find((l) => l.id === "history")!.approved);
+    const m = await orch.setMethod(r.id, { seller: "mirror", analysis: "ide" });
+    expect(BigInt(m.lines.find((l) => l.id === "history")!.approved)).toBe((base * 150n) / 100n);
+    expect(m.lines.find((l) => l.id === "ide")).toMatchObject({ rail: "subscription", approved: "0", payeeName: "Your subscription" });
+    expect(BigInt(m.estFees)).toBeGreaterThan(0n);
+    await orch.approve(r.id);
+    for (let i = 0; i < 300 && orch.getRun(r.id)!.status !== "done"; i++) await tick();
+    const done = orch.getRun(r.id)!;
+    expect(done.status).toBe("done");
+    expect(done.deliverable?.contextPack?.prompt).toMatch(/BTC odds/);
+    expect(done.phases.flatMap((p) => p.payments).every((p) => p.lineId !== "ide")).toBe(true);
+  });
+
+  it("preview shows the new total without changing the work order", async () => {
+    const r = await orch.createRun({ agent: "inso", task: "BTC odds" });
+    const p = await orch.previewEdit(r.id, "deliverable", "drop the trade tape");
+    expect(p.ok).toBe(true);
+    expect(BigInt(p.after!.total)).toBeLessThan(BigInt(p.before!.total));
+    expect(orch.getRun(r.id)!.lines.some((l) => l.id === "tape")).toBe(true);
+  });
+
+  it("re-approval with an edited amount uses it, never below one request", async () => {
+    const r = await orch.createRun({ agent: "inso", task: "BTC odds", faults: ["price_increase"] });
+    await orch.approve(r.id);
+    const answered = new Set<string>();
+    for (let i = 0; i < 600; i++) {
+      const run = orch.getRun(r.id)!;
+      const q = run.pendingReapprovals.find((x) => !answered.has(x.id));
+      if (q) {
+        answered.add(q.id);
+        // First time: approve just one request's worth; later asks get the default.
+        orch.decideReapproval(r.id, q.id, "approved", answered.size === 1 ? "1" : undefined);
+      }
+      if (run.status === "done") break;
+      await tick();
+    }
+    expect(answered.size).toBeGreaterThan(1);
+    const run = orch.getRun(r.id)!;
+    expect(run.status).toBe("done");
+    expect(run.decisions.some((d) => d.kind === "reapproval" && d.outcome === "edited")).toBe(true);
+  });
+});

@@ -34,6 +34,7 @@ export const travo: AgentDef = {
   examples: ["Road trip from Vancouver to San Francisco via Portland", "Drive from Calgary to Banff", "From Toronto to Montreal via Ottawa"],
   defaults: { stops: [], hoursPerDay: 6 } satisfies Opts,
   faultPhase: "route",
+  analysisPhase: "days",
 
   async plan(task, o) {
     const opts = o as unknown as Opts;

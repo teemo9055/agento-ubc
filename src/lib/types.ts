@@ -89,6 +89,7 @@ export interface ReapprovalRequest {
   from: { amount: string; payeeName: string; payee: Hex };
   to: { amount: string; payeeName: string; payee: Hex; service: string };
   budgetLeft: string;
+  minAmount: string;
   expiresAt: string;
 }
 
@@ -106,6 +107,12 @@ export interface Deliverable {
   summary: string;
   method: string;
   data?: unknown;
+  contextPack?: { prompt: string; data: unknown };
+}
+
+export interface Method {
+  seller: "primary" | "mirror";
+  analysis: "builtin" | "ide";
 }
 
 export type RunStatus = "draft" | "funding" | "running" | "done" | "cancelled";
@@ -138,4 +145,6 @@ export interface Run {
   finishedAt?: string;
   editNote?: { ok: boolean; message: string; alternatives?: string[] };
   feed?: Record<string, { product: string; data: unknown }>;
+  method: Method;
+  estFees: string; // 18-decimal native USDC
 }

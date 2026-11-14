@@ -1,14 +1,15 @@
 import { NextRequest, NextResponse } from "next/server";
 import { z } from "zod";
 import type { SeqEvent } from "@/lib/events";
-import { approve, cancel, decideReapproval, editCard, resolveFailure, subscribe } from "@/server/orchestrator";
+import { approve, cancel, decideReapproval, editCard, previewEdit, resolveFailure, setMethod, subscribe } from "@/server/orchestrator";
 
 export const dynamic = "force-dynamic";
 
 type Ctx = { params: Promise<{ id: string; action: string }> };
 
 const Edit = z.object({ card: z.enum(["deliverable", "risk", "method", "price"]), prompt: z.string().min(1).max(200) });
-const Reapproval = z.object({ requestId: z.string(), outcome: z.enum(["approved", "denied"]) });
+const Reapproval = z.object({ requestId: z.string(), outcome: z.enum(["approved", "denied"]), amount: z.string().regex(/^\d+$/).optional() });
+const Method = z.object({ seller: z.enum(["primary", "mirror"]).optional(), analysis: z.enum(["builtin", "ide"]).optional() });
 const Failure = z.object({ failureId: z.string(), action: z.enum(["retry", "skip", "switch", "edit", "cancel", "topup"]) });
 
 export async function POST(req: NextRequest, ctx: Ctx) {
@@ -19,11 +20,17 @@ export async function POST(req: NextRequest, ctx: Ctx) {
         const b = Edit.parse(await req.json());
         return NextResponse.json(await editCard(id, b.card, b.prompt));
       }
+      case "preview": {
+        const b = Edit.parse(await req.json());
+        return NextResponse.json(await previewEdit(id, b.card, b.prompt));
+      }
+      case "method":
+        return NextResponse.json(await setMethod(id, Method.parse(await req.json())));
       case "approve":
         return NextResponse.json(await approve(id));
       case "reapproval": {
         const b = Reapproval.parse(await req.json());
-        decideReapproval(id, b.requestId, b.outcome);
+        decideReapproval(id, b.requestId, b.outcome, b.amount);
         return NextResponse.json({ ok: true });
       }
       case "failure": {

@@ -54,6 +54,7 @@ export const inso: AgentDef = {
   examples: ["How have BTC odds moved today?", "Track ETH and SOL price markets", "What's moving in gold markets?"],
   defaults: { markets: 3, tape: true, tf: "15m" } satisfies Opts,
   faultPhase: "history",
+  analysisPhase: "analyze",
 
   async plan(task, o) {
     const opts = o as unknown as Opts;

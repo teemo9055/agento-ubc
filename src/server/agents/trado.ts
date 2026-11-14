@@ -54,6 +54,7 @@ export const trado: AgentDef = {
   examples: ["Is BTC trending this week?", "Compare ETH and SOL momentum", "BTC trend plus what prediction markets think"],
   defaults: { symbols: [], odds: true } satisfies Opts,
   faultPhase: "candles",
+  analysisPhase: "signal",
 
   async plan(task, o) {
     const opts = o as unknown as Opts;
