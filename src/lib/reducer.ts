@@ -39,8 +39,11 @@ export function reduce(run: Run | null, e: SeqEvent): Run | null {
         ...mapPhase(run, e.request.phaseId, (p) => ({ ...p, status: "awaiting_reapproval" })),
         pendingReapprovals: [...run.pendingReapprovals, e.request],
       };
-    case "reapproval.decided":
-      return { ...run, pendingReapprovals: run.pendingReapprovals.filter((r) => r.id !== e.requestId) };
+    case "reapproval.decided": {
+      const req = run.pendingReapprovals.find((r) => r.id === e.requestId);
+      const next = { ...run, pendingReapprovals: run.pendingReapprovals.filter((r) => r.id !== e.requestId) };
+      return req ? mapPhase(next, req.phaseId, (p) => (p.status === "awaiting_reapproval" ? { ...p, status: "active" } : p)) : next;
+    }
     case "failure.raised":
       return {
         ...mapPhase(run, e.failure.phaseId, (p) => ({

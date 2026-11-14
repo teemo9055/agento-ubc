@@ -17,6 +17,8 @@ export function checkSpend(run: Run, req: SpendRequest): PolicyResult {
   if (line.rail === "subscription") return { ok: false, reason: "off_plan", detail: "line is not paid in USDC" };
   if (line.payee.toLowerCase() !== req.payee.toLowerCase())
     return { ok: false, reason: "new_payee", detail: `approved payee is ${line.payeeName}` };
+  if (line.calls && req.amount > BigInt(line.calls.unitPrice))
+    return { ok: false, reason: "over_amount", detail: "price per request is above the approved price" };
   if (BigInt(line.actual) + req.amount > BigInt(line.approved))
     return { ok: false, reason: "over_amount", detail: "would exceed the approved amount" };
   return { ok: true };

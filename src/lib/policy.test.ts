@@ -18,6 +18,11 @@ describe("checkSpend", () => {
   it("blocks going over the approved amount", () => {
     expect(checkSpend(run, { lineId: "l1", payee: seller, amount: 600001n })).toMatchObject({ ok: false, reason: "over_amount" });
   });
+  it("blocks a per-request price above the approved unit price", () => {
+    const withCalls = { ...run, lines: [{ ...run.lines[0], calls: { max: 5, unitPrice: "100000" } }] } as Run;
+    expect(checkSpend(withCalls, { lineId: "l1", payee: seller, amount: 100000n })).toEqual({ ok: true });
+    expect(checkSpend(withCalls, { lineId: "l1", payee: seller, amount: 200000n })).toMatchObject({ ok: false, reason: "over_amount" });
+  });
   it("blocks a different payee", () => {
     const r = checkSpend(run, { lineId: "l1", payee: "0x00000000000000000000000000000000000000bb", amount: 1n });
     expect(r).toMatchObject({ ok: false, reason: "new_payee" });

@@ -1,6 +1,7 @@
 import type { Hex } from "viem";
 import { accounts, publicClient, send, USDC, usdcAbi } from "./chain";
 import * as gemini from "./gemini";
+import * as geo from "./geo";
 
 export const NETWORK = "eip155:5042002";
 
@@ -35,6 +36,18 @@ export const PRODUCTS: Record<string, Product> = {
     description: "Spot price candles",
     price: 20_000n,
     run: (q) => gemini.spotCandles(q.get("symbol") ?? "btcusd", (q.get("tf") as "1hr") ?? "1hr"),
+  },
+  "places.geocode": {
+    id: "places.geocode",
+    description: "Find a place by name",
+    price: 5_000n,
+    run: (q) => geo.geocode(q.get("q") ?? ""),
+  },
+  "routes.drive": {
+    id: "routes.drive",
+    description: "Driving route through stops",
+    price: 30_000n,
+    run: (q) => geo.drive(JSON.parse(q.get("stops") ?? "[]")),
   },
 };
 
