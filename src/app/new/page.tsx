@@ -8,6 +8,8 @@ import { post, useAgentTheme } from "@/components/useRun";
 import { THEMES } from "@/lib/themes";
 import type { AgentId, FailureCode, Run } from "@/lib/types";
 import { OUTFIT_LABEL, outfitFor } from "@/lib/outfit";
+import { WalletPanel } from "@/components/passkey/WalletPanel";
+import { usePasskeyWallet } from "@/components/passkey/usePasskey";
 
 const FAULTS: { code: FailureCode; label: string }[] = [
   { code: "price_increase", label: "Seller raises price" },
@@ -74,6 +76,9 @@ export default function Home() {
   const [faults, setFaults] = useState<FailureCode[]>([]);
   const [busy, setBusy] = useState(false);
   const [accessCode, setAccessCode] = useState("");
+  const [payFrom, setPayFrom] = useState<"passkey" | "app">("passkey");
+  const pk = usePasskeyWallet();
+  const usePasskey = mode === "live" && pk.supported && payFrom === "passkey";
   const [err, setErr] = useState("");
   useAgentTheme(agent);
 
@@ -100,7 +105,7 @@ export default function Home() {
     setBusy(true);
     setErr("");
     try {
-      const run = await post<Run>("/api/runs", { agent, task, mode, faults: testMode ? faults : [], accessCode: mode === "live" ? accessCode : undefined });
+      const run = await post<Run>("/api/runs", { agent, task, mode, faults: testMode ? faults : [], accessCode: mode === "live" && !usePasskey ? accessCode : undefined, payerAddress: usePasskey ? pk.wallet?.address : undefined });
       router.push(`/runs/${run.id}`);
     } catch (x) {
       setErr((x as Error).message);
@@ -211,11 +216,30 @@ export default function Home() {
               </button>
             ))}
           </div>
-          <Button type="submit" disabled={busy || task.trim().length < 3} className="bg-agent hover:opacity-90">
+          <Button type="submit" disabled={busy || task.trim().length < 3 || (usePasskey && !pk.wallet)} className="bg-agent hover:opacity-90">
             {busy ? "Planning…" : "Get work order →"}
           </Button>
         </div>
-        {mode === "live" && cfg?.liveNeedsCode && (
+        {mode === "live" && pk.supported && (
+          <div className="mt-3 space-y-3 rounded-xl border border-line bg-surface p-3">
+            <div className="flex gap-1 text-[12px]" role="radiogroup" aria-label="Pay from">
+              {(["passkey", "app"] as const).map((p) => (
+                <button
+                  key={p}
+                  type="button"
+                  role="radio"
+                  aria-checked={payFrom === p}
+                  onClick={() => setPayFrom(p)}
+                  className={`pressable tap rounded-lg border px-3 py-1.5 ${payFrom === p ? "border-ink bg-ink text-white" : "border-line bg-panel text-ink-2"}`}
+                >
+                  {p === "passkey" ? "Pay from my passkey wallet" : "App wallet"}
+                </button>
+              ))}
+            </div>
+            {payFrom === "passkey" && <WalletPanel />}
+          </div>
+        )}
+        {mode === "live" && !usePasskey && cfg?.liveNeedsCode && (
           <input
             type="password"
             value={accessCode}

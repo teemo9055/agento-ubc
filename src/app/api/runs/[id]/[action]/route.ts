@@ -1,16 +1,18 @@
 import { NextRequest, NextResponse } from "next/server";
 import { z } from "zod";
 import type { SeqEvent } from "@/lib/events";
-import { approve, cancel, decideReapproval, editCard, previewEdit, resolveFailure, setMethod, subscribe } from "@/server/orchestrator";
+import { approve, cancel, decideReapproval, editCard, fundingInfo, previewEdit, reapprovalPlan, resolveFailure, setMethod, subscribe } from "@/server/orchestrator";
 
 export const dynamic = "force-dynamic";
 
 type Ctx = { params: Promise<{ id: string; action: string }> };
 
 const Edit = z.object({ card: z.enum(["deliverable", "risk", "method", "price"]), prompt: z.string().min(1).max(200) });
-const Reapproval = z.object({ requestId: z.string(), outcome: z.enum(["approved", "denied"]), amount: z.string().regex(/^\d+$/).optional() });
+const Hash = z.string().regex(/^0x[0-9a-fA-F]{64}$/);
+const Reapproval = z.object({ requestId: z.string(), outcome: z.enum(["approved", "denied"]), amount: z.string().regex(/^\d+$/).optional(), txHash: Hash.optional() });
 const Method = z.object({ seller: z.enum(["primary", "mirror"]).optional(), analysis: z.enum(["builtin", "ide"]).optional() });
-const Failure = z.object({ failureId: z.string(), action: z.enum(["retry", "skip", "switch", "edit", "cancel", "topup"]) });
+const Failure = z.object({ failureId: z.string(), action: z.enum(["retry", "skip", "switch", "edit", "cancel", "topup"]), txHash: Hash.optional() });
+const Approve = z.object({ txHash: Hash.optional() });
 
 export async function POST(req: NextRequest, ctx: Ctx) {
   const { id, action } = await ctx.params;
@@ -26,16 +28,18 @@ export async function POST(req: NextRequest, ctx: Ctx) {
       }
       case "method":
         return NextResponse.json(await setMethod(id, Method.parse(await req.json())));
-      case "approve":
-        return NextResponse.json(await approve(id));
+      case "approve": {
+        const b = Approve.parse(await req.json().catch(() => ({})));
+        return NextResponse.json(await approve(id, { txHash: b.txHash as `0x${string}` | undefined }));
+      }
       case "reapproval": {
         const b = Reapproval.parse(await req.json());
-        decideReapproval(id, b.requestId, b.outcome, b.amount);
+        decideReapproval(id, b.requestId, b.outcome, b.amount, b.txHash as `0x${string}` | undefined);
         return NextResponse.json({ ok: true });
       }
       case "failure": {
         const b = Failure.parse(await req.json());
-        resolveFailure(id, b.failureId, b.action);
+        resolveFailure(id, b.failureId, b.action, b.txHash as `0x${string}` | undefined);
         return NextResponse.json({ ok: true });
       }
       case "cancel":
@@ -50,6 +54,15 @@ export async function POST(req: NextRequest, ctx: Ctx) {
 /** Server-sent events: the full event log, then live events. */
 export async function GET(req: NextRequest, ctx: Ctx) {
   const { id, action } = await ctx.params;
+  try {
+    if (action === "funding") return NextResponse.json(fundingInfo(id));
+    if (action === "reapproval-plan") {
+      const q = req.nextUrl.searchParams;
+      return NextResponse.json(reapprovalPlan(id, q.get("requestId") ?? "", q.get("amount") ?? undefined));
+    }
+  } catch (e) {
+    return NextResponse.json({ error: (e as Error).message }, { status: 400 });
+  }
   if (action !== "events") return NextResponse.json({ error: "unknown" }, { status: 404 });
   const enc = new TextEncoder();
   let unsub: (() => void) | null = null;

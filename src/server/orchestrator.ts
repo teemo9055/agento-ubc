@@ -23,7 +23,8 @@ import { AGENTS } from "./agents";
 import { aiEdit, aiPlan, aiSummary } from "./agents/ai-planning";
 import { aiEnabled, type AiUsage } from "./ai";
 import { PhaseFailure, type AgentCtx, type PlanDraft } from "./agents/types";
-import { addresses, liveReady } from "./chain";
+import { FACTORY, USDC, addresses, factoryAbi, liveReady, publicClient, vaultAbi } from "./chain";
+import { planTree } from "./merkle";
 import { adapterFor, PaymentError } from "./payments";
 import { SELLERS } from "./sellers";
 import { PRODUCTS } from "./x402";
@@ -50,6 +51,8 @@ interface Ctl {
   seller: Record<string, "primary" | "mirror">;
   overrides: Map<string, bigint>;
   previews: Map<string, { ok: boolean; message: string; options?: Record<string, unknown>; alternatives?: string[] }>;
+  requests: Map<string, ReqCtx>;
+  signedTx: Map<string, Hex>;
   funded: bigint;
   cancelled: boolean;
 }
@@ -198,7 +201,7 @@ function materialize(ctl: Ctl, raw: PlanDraft) {
   return { cards: [...draft.cards, priceCard(lines, cap, threshold, fees)], lines, phases, cap: cap.toString(), estFees: fees.toString() };
 }
 
-type CreateInput = { agent: AgentId; task: string; mode?: "demo" | "live"; faults?: FailureCode[]; options?: Record<string, unknown>; plannedBy?: string };
+type CreateInput = { agent: AgentId; task: string; mode?: "demo" | "live"; faults?: FailureCode[]; options?: Record<string, unknown>; plannedBy?: string; payerAddress?: Hex };
 
 /**
  * Creates a job. With `wait: false` it returns at once with `planning: true` and the
@@ -221,13 +224,14 @@ export async function createRun(input: CreateInput, opts: { wait?: boolean } = {
     decisions: [],
     threshold: DEFAULT_THRESHOLD.toString(),
     cap: "0",
-    client: addresses.client ?? "0x0000000000000000000000000000000000000000",
+    client: (input.payerAddress && mode === "live" ? input.payerAddress : addresses.client) ?? "0x0000000000000000000000000000000000000000",
     agentWallet: addresses.agent ?? "0x0000000000000000000000000000000000000000",
     pendingReapprovals: [],
     pendingFailures: [],
     createdAt: now(),
     method: { seller: "primary", analysis: "builtin" },
     planner: "rules",
+    payer: input.payerAddress && mode === "live" ? "passkey" : "server",
     estFees: "0",
   };
   const ctl: Ctl = {
@@ -242,6 +246,8 @@ export async function createRun(input: CreateInput, opts: { wait?: boolean } = {
     seller: {},
     overrides: new Map(),
     previews: new Map(),
+    requests: new Map(),
+    signedTx: new Map(),
     funded: 0n,
     cancelled: false,
   };
@@ -339,15 +345,56 @@ function compact(v: unknown, depth = 0): unknown {
 
 // ---------- approval + execution ----------
 
-export async function approve(runId: string) {
+/** What the user's own wallet needs to sign to fund this work order. */
+export function fundingInfo(runId: string) {
+  const ctl = ctlOf(runId);
+  if (ctl.run.payer !== "passkey") throw new Error("this job is funded by the server wallet");
+  return {
+    factory: FACTORY,
+    usdc: USDC,
+    agent: addresses.agent,
+    planRoot: planTree(ctl.run.lines).root as Hex,
+    orderId: planHash(ctl.run),
+    cap: ctl.run.cap,
+    payer: ctl.run.client,
+  };
+}
+
+/** Confirms onchain that the user's wallet opened the right vault for this plan. */
+async function verifyUserFunding(run: Run, orderId: Hex) {
+  if (!FACTORY) throw new Error("live mode is not configured");
+  const vault = await publicClient.readContract({ address: FACTORY, abi: factoryAbi, functionName: "vaultFor", args: [run.client, orderId] });
+  const read = (functionName: "payer" | "agent" | "planRoot" | "funded" | "closed") =>
+    publicClient.readContract({ address: vault, abi: vaultAbi, functionName } as never) as Promise<unknown>;
+  for (let i = 0; i < 6; i++) {
+    try {
+      const [payer, agent, root, funded, closed] = await Promise.all([read("payer"), read("agent"), read("planRoot"), read("funded"), read("closed")]);
+      const ok =
+        String(payer).toLowerCase() === run.client.toLowerCase() &&
+        String(agent).toLowerCase() === String(addresses.agent).toLowerCase() &&
+        root === planTree(run.lines).root &&
+        BigInt(funded as bigint) >= BigInt(run.cap) &&
+        !closed;
+      if (ok) return vault;
+    } catch {
+      // not deployed yet: wait for the chain
+    }
+    await new Promise((r) => setTimeout(r, 1500));
+  }
+  throw new Error("Couldn't find a funded vault for this plan onchain");
+}
+
+export async function approve(runId: string, signed?: { txHash?: Hex }) {
   const ctl = ctlOf(runId);
   if (ctl.run.status !== "draft") throw new Error("already approved");
   if (ctl.run.planning) throw new Error("still planning");
+  if (ctl.run.payer === "passkey" && !signed?.txHash) throw new Error("sign the funding with your passkey wallet first");
   emit(ctl, { type: "run.funding" });
   const hash = planHash(ctl.run);
   const adapter = adapterFor(ctl.run);
   try {
-    const { vault, fundingTx } = await adapter.open(ctl.run, hash);
+    const { vault, fundingTx } =
+      ctl.run.payer === "passkey" ? { vault: await verifyUserFunding(ctl.run, hash), fundingTx: signed!.txHash } : await adapter.open(ctl.run, hash);
     ctl.funded = BigInt(ctl.run.cap);
     emit(ctl, { type: "run.approved", planHash: hash, vault, fundingTx, at: now() });
     const big = ctl.run.lines.filter((l) => l.bigSpend);
@@ -466,9 +513,14 @@ async function runPhase(ctl: Ctl, phaseId: string): Promise<void> {
       }
       if (action === "switch") ctl.seller[phaseId] = (ctl.seller[phaseId] ?? ctl.run.method.seller) === "mirror" ? "primary" : "mirror";
       if (action === "topup") {
-        const amount = BigInt(ctl.run.cap) / 2n || 1_000_000n;
-        await adapterFor(ctl.run).topUp(ctl.run, amount);
-        ctl.funded += amount;
+        if (ctl.run.payer === "passkey" && ctl.run.mode === "live") {
+          // The user's wallet signed the top-up; read the new balance from the vault.
+          ctl.funded = BigInt(await publicClient.readContract({ address: ctl.run.vault!, abi: vaultAbi, functionName: "funded" }));
+        } else {
+          const amount = BigInt(ctl.run.cap) / 2n || 1_000_000n;
+          await adapterFor(ctl.run).topUp(ctl.run, amount);
+          ctl.funded += amount;
+        }
       }
       // retry / switch / topup: loop and run the phase again; settled purchases are cached
     }
@@ -579,6 +631,7 @@ async function requestReapproval(
     minAmount: minAmount.toString(),
     expiresAt: new Date(Date.now() + (forceTimeout ? FAULT_TIMEOUT_MS : REAPPROVAL_TIMEOUT_MS)).toISOString(),
   };
+  ctl.requests.set(request.id, { existing, lineId, phaseId, product, payee, unit, minAmount, newApproved, payeeName: request.to.payeeName });
   emit(ctl, { type: "reapproval.requested", request });
 
   const timer = setTimeout(() => ctl.waiters.get(request.id)?.("timed_out"), forceTimeout ? FAULT_TIMEOUT_MS : REAPPROVAL_TIMEOUT_MS);
@@ -605,39 +658,24 @@ async function requestReapproval(
   // Approved (maybe with an edited amount): apply onchain, then update the plan.
   const override = ctl.overrides.get(request.id);
   ctl.overrides.delete(request.id);
-  const approvedAmount = override != null ? (override < minAmount ? minAmount : override) : newApproved;
-  const shortfall = sum(ctl.run.lines.filter((l) => l.id !== lineId).map((l) => l.approved)) + approvedAmount - ctl.funded;
-  const adapter = adapterFor(ctl.run);
-  if (shortfall > 0n) {
-    await adapter.topUp(ctl.run, shortfall);
-    ctl.funded += shortfall;
+  const change = planChange(ctl, request.id, override);
+  const { line, approvedAmount } = change;
+  let tx: Hex | undefined;
+  if (ctl.run.payer === "passkey") {
+    // The user's wallet already signed setPlan (and any top-up); confirm it onchain.
+    tx = ctl.signedTx.get(request.id);
+    ctl.signedTx.delete(request.id);
+    const onchain = await publicClient.readContract({ address: ctl.run.vault!, abi: vaultAbi, functionName: "planRoot" });
+    if (onchain !== change.root) throw new PhaseFailure("policy_block", "The plan change wasn't found onchain, so nothing extra was spent");
+    ctl.funded = BigInt(await publicClient.readContract({ address: ctl.run.vault!, abi: vaultAbi, functionName: "funded" }));
+  } else {
+    const adapter = adapterFor(ctl.run);
+    if (change.shortfall > 0n) {
+      await adapter.topUp(ctl.run, change.shortfall);
+      ctl.funded += change.shortfall;
+    }
+    tx = await adapter.setLine({ ...ctl.run, lines: change.nextLines }, line, planHash({ ...ctl.run, lines: change.nextLines }));
   }
-  const line: CostLine = existing
-    ? {
-        ...existing,
-        payee,
-        payeeName: request.to.payeeName,
-        approved: approvedAmount.toString(),
-        bigSpend: approvedAmount >= BigInt(ctl.run.threshold),
-        calls: existing.calls ? { ...existing.calls, unitPrice: (unit > BigInt(existing.calls.unitPrice) ? unit : BigInt(existing.calls.unitPrice)).toString() } : undefined,
-      }
-    : {
-        id: lineId,
-        index: Math.max(-1, ...ctl.run.lines.map((l) => l.index)) + 1,
-        phaseId,
-        purpose: PRODUCTS[product]?.description ?? product,
-        service: product,
-        payeeName: request.to.payeeName,
-        payee,
-        rail: "x402",
-        approved: approvedAmount.toString(),
-        actual: "0",
-        bigSpend: approvedAmount >= BigInt(ctl.run.threshold),
-        calls: { max: 1, unitPrice: unit.toString() },
-      };
-  const nextLines = existing ? ctl.run.lines.map((l) => (l.id === lineId ? line : l)) : [...ctl.run.lines, line];
-  const hash = planHash({ ...ctl.run, lines: nextLines });
-  const tx = await adapter.setLine({ ...ctl.run, lines: nextLines }, line, hash);
   emit(ctl, { type: "line.updated", line });
   log(ctl, {
     kind: "reapproval",
@@ -653,6 +691,58 @@ async function requestReapproval(
   });
 }
 
+interface ReqCtx {
+  existing?: CostLine;
+  lineId: string;
+  phaseId: string;
+  product: string;
+  payee: Hex;
+  unit: bigint;
+  minAmount: bigint;
+  newApproved: bigint;
+  payeeName: string;
+}
+
+/** The plan after a re-approval: new line, new Merkle root and any top-up needed. Same math for server and user wallets. */
+function planChange(ctl: Ctl, requestId: string, override?: bigint) {
+  const r = ctl.requests.get(requestId);
+  if (!r) throw new Error("unknown request");
+  const approvedAmount = override != null ? (override < r.minAmount ? r.minAmount : override) : r.newApproved;
+  const shortfall = sum(ctl.run.lines.filter((l) => l.id !== r.lineId).map((l) => l.approved)) + approvedAmount - ctl.funded;
+  const line: CostLine = r.existing
+    ? {
+        ...r.existing,
+        payee: r.payee,
+        payeeName: r.payeeName,
+        approved: approvedAmount.toString(),
+        bigSpend: approvedAmount >= BigInt(ctl.run.threshold),
+        calls: r.existing.calls ? { ...r.existing.calls, unitPrice: (r.unit > BigInt(r.existing.calls.unitPrice) ? r.unit : BigInt(r.existing.calls.unitPrice)).toString() } : undefined,
+      }
+    : {
+        id: r.lineId,
+        index: Math.max(-1, ...ctl.run.lines.map((l) => l.index)) + 1,
+        phaseId: r.phaseId,
+        purpose: PRODUCTS[r.product]?.description ?? r.product,
+        service: r.product,
+        payeeName: r.payeeName,
+        payee: r.payee,
+        rail: "x402",
+        approved: approvedAmount.toString(),
+        actual: "0",
+        bigSpend: approvedAmount >= BigInt(ctl.run.threshold),
+        calls: { max: 1, unitPrice: r.unit.toString() },
+      };
+  const nextLines = r.existing ? ctl.run.lines.map((l) => (l.id === r.lineId ? line : l)) : [...ctl.run.lines, line];
+  return { line, nextLines, approvedAmount, shortfall: shortfall > 0n ? shortfall : 0n, root: planTree(nextLines).root as Hex };
+}
+
+/** What the user's wallet signs to approve a change: the new plan root, plus a top-up if the vault is short. */
+export function reapprovalPlan(runId: string, requestId: string, amount?: string) {
+  const ctl = ctlOf(runId);
+  const c = planChange(ctl, requestId, amount ? BigInt(amount) : undefined);
+  return { vault: ctl.run.vault, usdc: USDC, planRoot: c.root, topUp: c.shortfall.toString(), approvedAmount: c.approvedAmount.toString() };
+}
+
 function waitFor(ctl: Ctl, key: string): Promise<string> {
   return new Promise((resolve) => {
     ctl.waiters.set(key, (v) => {
@@ -664,11 +754,13 @@ function waitFor(ctl: Ctl, key: string): Promise<string> {
 
 // ---------- user decisions ----------
 
-export function decideReapproval(runId: string, requestId: string, outcome: "approved" | "denied", amount?: string) {
+export function decideReapproval(runId: string, requestId: string, outcome: "approved" | "denied", amount?: string, txHash?: Hex) {
   const ctl = ctlOf(runId);
   const w = ctl.waiters.get(requestId);
   if (!w) throw new Error("no pending request");
+  if (outcome === "approved" && ctl.run.payer === "passkey" && !txHash) throw new Error("sign the change with your passkey wallet first");
   if (outcome === "approved" && amount) ctl.overrides.set(requestId, BigInt(amount));
+  if (txHash) ctl.signedTx.set(requestId, txHash);
   w(outcome);
 }
 
@@ -709,8 +801,9 @@ export async function previewEdit(runId: string, card: Card["kind"], prompt: str
   };
 }
 
-export function resolveFailure(runId: string, failureId: string, action: FailureAction) {
+export function resolveFailure(runId: string, failureId: string, action: FailureAction, txHash?: Hex) {
   const ctl = ctlOf(runId);
+  if (action === "topup" && ctl.run.payer === "passkey" && ctl.run.mode === "live" && !txHash) throw new Error("sign the top-up with your passkey wallet first");
   const f = ctl.run.pendingFailures.find((x) => x.id === failureId);
   if (!f || !f.options.includes(action)) throw new Error("action not offered");
   ctl.waiters.get(failureId)?.(action);
@@ -756,7 +849,10 @@ function restore() {
       cancelled: false,
       overrides: new Map(),
       previews: new Map(),
+      requests: new Map(),
+      signedTx: new Map(),
     };
+    run.payer ??= "server";
     runs.set(run.id, ctl);
     if (run.planning) ctl.run = { ...run, planning: false, editNote: { ok: false, message: "Planning was interrupted by a restart. Start the job again." } };
     if (run.status === "running" || run.status === "funding") void recover(ctl);

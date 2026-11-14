@@ -14,6 +14,7 @@ const Body = z.object({
   mode: z.enum(["demo", "live"]).default("demo"),
   faults: z.array(z.enum(FAULTS)).default([]),
   accessCode: z.string().max(200).optional(),
+  payerAddress: z.string().regex(/^0x[0-9a-fA-F]{40}$/).optional(),
 });
 
 /** Live (Arc testnet) jobs spend the funded wallets, so a public deployment gates them with a code. */
@@ -35,9 +36,10 @@ export async function POST(req: NextRequest) {
   if (!parsed.success) return NextResponse.json({ error: parsed.error.issues[0].message }, { status: 400 });
   const body = parsed.data;
   if (process.env.ALLOW_FAULTS === "false") body.faults = [];
-  if (body.mode === "live" && !liveAllowed(body.accessCode)) return NextResponse.json({ error: "Arc testnet jobs need the access code. Use the demo rail, or ask the owner for the code." }, { status: 403 });
+  // Jobs paid by the user's own passkey wallet spend their money, not the app's, so they need no code.
+  if (body.mode === "live" && !body.payerAddress && !liveAllowed(body.accessCode)) return NextResponse.json({ error: "Arc testnet jobs need the access code. Use the demo rail, or ask the owner for the code." }, { status: 403 });
   try {
-    return NextResponse.json(await createRun(body, { wait: false }));
+    return NextResponse.json(await createRun({ ...body, payerAddress: body.payerAddress as `0x${string}` | undefined }, { wait: false }));
   } catch (e) {
     return NextResponse.json({ error: (e as Error).message }, { status: 400 });
   }

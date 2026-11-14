@@ -9,6 +9,10 @@ import { Amount, Button, Spinner } from "./ui";
 import { post } from "./useRun";
 import { toast } from "./Toaster";
 import { AgentIcon } from "./AgentIcon";
+import { WalletPanel } from "./passkey/WalletPanel";
+import { usePasskeyWallet } from "./passkey/usePasskey";
+import { fundCalls, sendCalls } from "./passkey/wallet";
+import type { Hex } from "viem";
 
 const CARD_ORDER: Card["kind"][] = ["price", "deliverable", "method", "risk"];
 const CARD_LABEL: Record<Card["kind"], string> = { price: "Price", deliverable: "Deliverable", method: "Method", risk: "Risk" };
@@ -386,17 +390,38 @@ export function EditCardModal({ run, kind, onClose }: { run: Run; kind: Card["ki
 }
 
 export function ApproveModal({ run, open, onClose }: { run: Run; open: boolean; onClose: () => void }) {
-  const busy = false;
+  const [busy, setBusy] = useState<"" | "sign" | "fund">("");
+  const passkey = run.payer === "passkey" && run.mode === "live";
+  const pk = usePasskeyWallet();
   const [err, setErr] = useState("");
   const total = sum(run.lines.map((l) => l.approved));
   const big = run.lines.filter((l) => l.bigSpend);
 
-  // Optimistic: close at once; the step graph shows "Funding vault" from the server's own event.
-  function approve() {
+  // Server-signed: optimistic, close at once; the step graph shows "Funding vault" from the server's own event.
+  // Passkey: the user signs approve + open in one batched operation, then the server verifies it onchain.
+  async function approve() {
     setErr("");
-    onClose();
-    toast(`Approved · funding vault with ${fmt(run.cap)} USDC`, "good");
-    post(`/api/runs/${run.id}/approve`).catch((e) => toast(`Funding failed: ${(e as Error).message}`, "bad"));
+    if (!passkey) {
+      onClose();
+      toast(`Approved · funding vault with ${fmt(run.cap)} USDC`, "good");
+      post(`/api/runs/${run.id}/approve`).catch((e) => toast(`Funding failed: ${(e as Error).message}`, "bad"));
+      return;
+    }
+    try {
+      setBusy("sign");
+      const info = await fetch(`/api/runs/${run.id}/funding`).then((r) => r.json());
+      if (info.error) throw new Error(info.error);
+      const txHash: Hex = await sendCalls(fundCalls(info));
+      setBusy("fund");
+      onClose();
+      toast(`Signed with your passkey · vault funded with ${fmt(run.cap)} USDC`, "good");
+      post(`/api/runs/${run.id}/approve`, { txHash }).catch((e) => toast(`Couldn't confirm funding: ${(e as Error).message}`, "bad"));
+      void pk.refresh();
+    } catch (e) {
+      setErr((e as Error).message.split("\n")[0].slice(0, 200));
+    } finally {
+      setBusy("");
+    }
   }
 
   return (
@@ -446,16 +471,32 @@ export function ApproveModal({ run, open, onClose }: { run: Run; open: boolean; 
         </div>
       </div>
 
+      {passkey && (
+        <div className="mt-4 rounded-xl border border-line p-3">
+          <WalletPanel need={BigInt(run.cap)} />
+        </div>
+      )}
       {err && <p className="mt-3 text-sm text-bad">{err}</p>}
       <div className="mt-5 flex justify-end gap-2">
         <Button variant="ghost" onClick={onClose}>
           Not yet
         </Button>
-        <Button onClick={approve} disabled={busy} data-testid="approve" className="bg-agent hover:opacity-90">
-          {busy ? (
+        <Button
+          onClick={approve}
+          disabled={!!busy || (passkey && (!pk.wallet || (pk.balance != null && pk.balance < BigInt(run.cap))))}
+          data-testid="approve"
+          className="bg-agent hover:opacity-90"
+        >
+          {busy === "sign" ? (
+            <>
+              <Spinner /> Confirm with your passkey…
+            </>
+          ) : busy === "fund" ? (
             <>
               <Spinner /> Funding vault…
             </>
+          ) : passkey ? (
+            `Approve with passkey · fund ${fmt(run.cap)}`
           ) : (
             `Approve & fund ${fmt(run.cap)}`
           )}

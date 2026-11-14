@@ -155,6 +155,8 @@ export interface Run {
   feed?: Record<string, { product: string; data: unknown }>;
   method: Method;
   planner: "ai" | "rules";
+  /** Who signs approvals: the app's server wallet, or the user's own passkey wallet. */
+  payer: "server" | "passkey";
   /** True while the plan is being drafted in the background. */
   planning?: boolean;
   ai?: AiStats;

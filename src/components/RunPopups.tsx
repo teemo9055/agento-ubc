@@ -7,6 +7,8 @@ import { Modal } from "./Modal";
 import { Amount, Button } from "./ui";
 import { post } from "./useRun";
 import { toast } from "./Toaster";
+import { changePlanCalls, sendCalls, topUpCalls } from "./passkey/wallet";
+import type { Hex } from "viem";
 
 function Countdown({ until }: { until: string }) {
   const [left, setLeft] = useState(() => Math.max(0, Math.round((Date.parse(until) - Date.now()) / 1000)));
@@ -29,11 +31,23 @@ export function ReapprovalModal({ run, req, onClose }: { run: Run; req: Reapprov
     custom = null;
   }
   const tooLow = custom != null && custom < BigInt(req.minAmount);
+  const passkey = run.payer === "passkey" && run.mode === "live";
   const decide = async (outcome: "approved" | "denied", value?: bigint) => {
     setBusy(true);
     try {
-      await post(`/api/runs/${run.id}/reapproval`, { requestId: req.id, outcome, amount: value?.toString() });
+      let txHash: Hex | undefined;
+      if (outcome === "approved" && passkey) {
+        // Your wallet signs the new plan root (and any top-up); the server then checks it onchain.
+        const q = new URLSearchParams({ requestId: req.id, ...(value != null ? { amount: value.toString() } : {}) });
+        const plan = await fetch(`/api/runs/${run.id}/reapproval-plan?${q}`).then((r) => r.json());
+        if (plan.error) throw new Error(plan.error);
+        toast("Confirm the change with your passkey");
+        txHash = await sendCalls(changePlanCalls(plan));
+      }
+      await post(`/api/runs/${run.id}/reapproval`, { requestId: req.id, outcome, amount: value?.toString(), txHash });
       toast(outcome === "approved" ? `Approved ${fmt(value ?? BigInt(req.to.amount))} USDC · continuing` : "Denied · nothing extra spent", outcome === "approved" ? "good" : "default");
+    } catch (e) {
+      toast((e as Error).message.split("\n")[0].slice(0, 160), "bad");
     } finally {
       setBusy(false);
     }
@@ -133,8 +147,15 @@ export function FailureModal({ run, failure, onClose }: { run: Run; failure: Fai
   const act = async (action: FailureAction) => {
     setBusy(action);
     try {
-      await post(`/api/runs/${run.id}/failure`, { failureId: failure.id, action });
+      let txHash: Hex | undefined;
+      if (action === "topup" && run.payer === "passkey" && run.mode === "live" && run.vault) {
+        toast("Confirm the top-up with your passkey");
+        txHash = await sendCalls(topUpCalls("0x3600000000000000000000000000000000000000", run.vault, BigInt(run.cap) / 2n || 1_000_000n));
+      }
+      await post(`/api/runs/${run.id}/failure`, { failureId: failure.id, action, txHash });
       toast(ACTION[action].label === "Cancel job" ? "Cancelling · unspent funds return to you" : `${ACTION[action].label} · on it`);
+    } catch (e) {
+      toast((e as Error).message.split("\n")[0].slice(0, 160), "bad");
     } finally {
       setBusy(null);
     }

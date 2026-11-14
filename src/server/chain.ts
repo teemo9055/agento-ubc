@@ -64,6 +64,8 @@ export const vaultAbi = parseAbi([
   "function topUp(uint256 amount)",
   "function close()",
   "function funded() view returns (uint256)",
+  "function payer() view returns (address)",
+  "function agent() view returns (address)",
   "function closed() view returns (bool)",
   "function usedRef(bytes32) view returns (bool)",
   "event Closed(address indexed by, uint256 spent, uint256 refunded)",
