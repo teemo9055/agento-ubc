@@ -4,6 +4,7 @@ export default defineConfig({
   testDir: "e2e",
   timeout: 90_000,
   fullyParallel: true,
+  retries: 1, // tests use live third-party market data
   use: { baseURL: "http://localhost:3100", trace: "off" },
   webServer: {
     command: "npm run build && npx next start -p 3100",

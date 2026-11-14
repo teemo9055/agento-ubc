@@ -36,3 +36,11 @@ export async function post<T = unknown>(url: string, body?: unknown): Promise<T>
   if (!r.ok) throw new Error(j.error ?? "request failed");
   return j as T;
 }
+
+/** Sets the page accent to the agent's colour. */
+export function useAgentTheme(agent?: string) {
+  useEffect(() => {
+    if (!agent) return;
+    document.body.dataset.agent = agent;
+  }, [agent]);
+}

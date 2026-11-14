@@ -1,8 +1,10 @@
 "use client";
 import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
+import { AnimatePresence, motion } from "framer-motion";
+import { AgentIcon } from "@/components/AgentIcon";
 import { Button } from "@/components/ui";
-import { post } from "@/components/useRun";
+import { post, useAgentTheme } from "@/components/useRun";
 import { THEMES } from "@/lib/themes";
 import type { AgentId, FailureCode, Run } from "@/lib/types";
 
@@ -19,8 +21,45 @@ const FAULTS: { code: FailureCode; label: string }[] = [
 
 interface Config {
   live: boolean;
+  factory: string | null;
+  explorer: string;
   faultsEnabled: boolean;
   agents: { id: AgentId; examples: string[] }[];
+}
+
+const STEPS = [
+  { k: "Task", v: "you ask" },
+  { k: "Work order", v: "priced up front" },
+  { k: "Vault", v: "funded once" },
+  { k: "Payees", v: "only approved" },
+];
+
+function FlowStrip() {
+  return (
+    <div className="mt-8 hidden items-center gap-2 sm:flex" aria-hidden>
+      {STEPS.map((s, i) => (
+        <div key={s.k} className="flex items-center gap-2">
+          <motion.div
+            initial={{ opacity: 0, y: 6 }}
+            animate={{ opacity: 1, y: 0 }}
+            transition={{ delay: 0.15 + i * 0.08 }}
+            className="rounded-xl border border-line bg-panel/80 px-3 py-2"
+          >
+            <div className="text-[12.5px] font-semibold">{s.k}</div>
+            <div className="text-[11px] text-ink-3">{s.v}</div>
+          </motion.div>
+          {i < STEPS.length - 1 && (
+            <svg width="44" height="10" className="text-agent">
+              <line x1="0" y1="5" x2="44" y2="5" stroke="var(--color-line)" strokeWidth="1.5" />
+              <circle r="2.5" cy="5" fill="currentColor" className="motion-reduce:hidden">
+                <animate attributeName="cx" from="0" to="44" dur="1.6s" begin={`${i * 0.4}s`} repeatCount="indefinite" />
+              </circle>
+            </svg>
+          )}
+        </div>
+      ))}
+    </div>
+  );
 }
 
 export default function Home() {
@@ -33,6 +72,7 @@ export default function Home() {
   const [faults, setFaults] = useState<FailureCode[]>([]);
   const [busy, setBusy] = useState(false);
   const [err, setErr] = useState("");
+  useAgentTheme(agent);
 
   useEffect(() => {
     fetch("/api/config")
@@ -61,35 +101,67 @@ export default function Home() {
   }
 
   return (
-    <div className="mx-auto max-w-2xl pt-6">
-      {testMode && (
-        <div role="status" className="mb-6 rounded-lg border border-warn bg-warn/15 px-4 py-2 text-sm text-[#7a5000]">
-          <b>Test mode on.</b> Fault switches fire once each during the run.
-        </div>
-      )}
-
-      <h1 className="text-3xl font-semibold tracking-tight">Bring a task.</h1>
-      <p className="mt-2 text-ink-2">Get a priced work order. Approve it once. The agent spends only what you approved, then hands you a receipt.</p>
-
-      <div className="mt-8 grid grid-cols-3 gap-2" role="tablist" aria-label="Agent">
-        {(Object.keys(THEMES) as AgentId[]).map((id) => (
-          <button
-            key={id}
-            role="tab"
-            aria-selected={agent === id}
-            onClick={() => setAgent(id)}
-            className={`rounded-xl border px-4 py-3 text-left transition-colors ${agent === id ? "border-ink bg-panel shadow-sm" : "border-line bg-transparent hover:bg-panel"}`}
+    <div className="mx-auto max-w-3xl pt-2 sm:pt-8">
+      <AnimatePresence>
+        {testMode && faults.length > 0 && (
+          <motion.div
+            initial={{ opacity: 0, height: 0 }}
+            animate={{ opacity: 1, height: "auto" }}
+            exit={{ opacity: 0, height: 0 }}
+            role="status"
+            className="mb-6 overflow-hidden rounded-xl border border-warn bg-warn/15 px-4 py-2 text-sm text-[#7a5000]"
           >
-            <div className="font-semibold">{THEMES[id].name}</div>
-            <div className="text-xs text-ink-3">{THEMES[id].domain}</div>
-          </button>
-        ))}
+            <b>Test mode on.</b> {faults.length} fault {faults.length === 1 ? "switch" : "switches"} will fire once during the run.
+          </motion.div>
+        )}
+      </AnimatePresence>
+
+      <motion.h1 initial={{ opacity: 0, y: 8 }} animate={{ opacity: 1, y: 0 }} className="text-[34px] font-semibold leading-[1.05] tracking-tight sm:text-5xl">
+        Agents that only spend
+        <br />
+        <span className="text-agent transition-colors duration-500">what you approved.</span>
+      </motion.h1>
+      <p className="mt-4 max-w-xl text-[15px] text-ink-2">
+        Bring a task. Get a priced work order. Approve once and the agent pays per request in USDC on Arc, from a vault that only pays the lines you approved.
+      </p>
+      <FlowStrip />
+
+      <div className="mt-10 grid grid-cols-3 gap-2 sm:gap-3" role="tablist" aria-label="Agent">
+        {(Object.keys(THEMES) as AgentId[]).map((id) => {
+          const on = agent === id;
+          return (
+            <motion.button
+              key={id}
+              role="tab"
+              aria-selected={on}
+              onClick={() => setAgent(id)}
+              whileHover={{ y: -2 }}
+              whileTap={{ scale: 0.98 }}
+              data-agent={id}
+              className={`relative rounded-2xl border p-3 text-left transition-colors sm:p-4 ${on ? "border-agent bg-panel shadow-[0_8px_30px_-12px_var(--agent)]" : "border-line bg-panel/60 hover:bg-panel"}`}
+            >
+              <AgentIcon agent={id} size={36} className={on ? "float" : ""} />
+              <div className="mt-3 font-semibold">{THEMES[id].name}</div>
+              <div className="text-[11.5px] text-ink-3">{THEMES[id].domain}</div>
+              {on && <motion.span layoutId="agent-dot" className="absolute right-3 top-3 h-2 w-2 rounded-full bg-agent" />}
+            </motion.button>
+          );
+        })}
       </div>
 
-      <form onSubmit={submit} className="mt-4 rounded-2xl border border-line bg-panel p-4 shadow-sm">
-        <label htmlFor="task" className="text-xs font-medium text-ink-3">
-          {theme.name} · {theme.tagline}
-        </label>
+      <form onSubmit={submit} className="ring-agent mt-3 rounded-2xl border border-line bg-panel p-4 shadow-sm transition-shadow sm:p-5">
+        <AnimatePresence mode="wait">
+          <motion.label
+            key={agent}
+            htmlFor="task"
+            initial={{ opacity: 0, y: -4 }}
+            animate={{ opacity: 1, y: 0 }}
+            exit={{ opacity: 0, y: 4 }}
+            className="block text-[12.5px] font-medium text-ink-3"
+          >
+            <span className="text-agent">{theme.name}</span> · {theme.tagline}
+          </motion.label>
+        </AnimatePresence>
         <textarea
           id="task"
           value={task}
@@ -98,17 +170,25 @@ export default function Home() {
           rows={3}
           maxLength={280}
           placeholder={examples[0] ?? "Describe the task"}
-          className="mt-2 w-full resize-none bg-transparent text-[15px] outline-none placeholder:text-ink-3"
+          className="mt-2 w-full resize-none bg-transparent text-[16px] outline-none placeholder:text-ink-3"
         />
-        <div className="mt-2 flex flex-wrap gap-2">
-          {examples.map((x) => (
-            <button key={x} type="button" onClick={() => setTask(x)} className="rounded-full border border-line px-3 py-1 text-xs text-ink-2 hover:bg-surface">
+        <div className="mt-1 flex flex-wrap gap-2">
+          {examples.map((x, i) => (
+            <motion.button
+              key={x}
+              initial={{ opacity: 0 }}
+              animate={{ opacity: 1 }}
+              transition={{ delay: i * 0.05 }}
+              type="button"
+              onClick={() => setTask(x)}
+              className="rounded-full border border-line px-3 py-1 text-xs text-ink-2 transition-colors hover:border-agent hover:text-ink"
+            >
               {x}
-            </button>
+            </motion.button>
           ))}
         </div>
-        <div className="mt-4 flex items-center justify-between gap-3 border-t border-line pt-4">
-          <div className="flex items-center gap-1 rounded-lg border border-line p-0.5 text-xs" role="radiogroup" aria-label="Payment rail">
+        <div className="mt-4 flex flex-wrap items-center justify-between gap-3 border-t border-line pt-4">
+          <div className="flex items-center gap-1 rounded-xl border border-line bg-surface p-0.5 text-xs" role="radiogroup" aria-label="Payment rail">
             {(["live", "demo"] as const).map((m) => (
               <button
                 key={m}
@@ -118,38 +198,70 @@ export default function Home() {
                 disabled={m === "live" && !cfg?.live}
                 onClick={() => setMode(m)}
                 title={m === "live" && !cfg?.live ? "Live mode needs funded wallets and a deployed factory" : undefined}
-                className={`rounded-md px-2.5 py-1 ${mode === m ? "bg-ink text-white" : "text-ink-2 disabled:text-ink-3/60"}`}
+                className={`relative rounded-lg px-3 py-1.5 transition-colors ${mode === m ? "text-white" : "text-ink-2 disabled:text-ink-3/60"}`}
               >
-                {m === "live" ? "Arc testnet" : "Demo rail"}
+                {mode === m && <motion.span layoutId="rail" className="absolute inset-0 rounded-lg bg-ink" transition={{ type: "spring", duration: 0.35 }} />}
+                <span className="relative">{m === "live" ? "Arc testnet" : "Demo rail"}</span>
               </button>
             ))}
           </div>
-          <Button type="submit" disabled={busy || task.trim().length < 3}>
-            {busy ? "Pricing…" : "Get work order"}
+          <Button type="submit" disabled={busy || task.trim().length < 3} className="bg-agent hover:opacity-90">
+            {busy ? "Pricing…" : "Get work order →"}
           </Button>
         </div>
         {err && <p className="mt-3 text-sm text-bad">{err}</p>}
       </form>
-
-      {mode === "demo" && <p className="mt-3 text-xs text-ink-3">Demo rail: real market data, simulated settlement, no transaction hashes.</p>}
+      <p className="mt-3 text-xs text-ink-3">
+        {mode === "demo" ? "Demo rail: real market data, simulated settlement, no transaction hashes." : "Arc testnet: real USDC payments from a fresh vault per work order."}
+        {cfg?.factory && (
+          <>
+            {" "}
+            Factory{" "}
+            <a className="font-mono underline decoration-line underline-offset-2 hover:text-ink" href={`${cfg.explorer}/address/${cfg.factory}`} target="_blank" rel="noreferrer">
+              {cfg.factory.slice(0, 8)}…
+            </a>
+          </>
+        )}
+      </p>
 
       {cfg?.faultsEnabled && (
-        <details className="mt-8 rounded-xl border border-line bg-panel px-4 py-3" open={testMode} onToggle={(e) => setTestMode((e.target as HTMLDetailsElement).open)}>
-          <summary className="cursor-pointer text-sm font-medium">Test mode</summary>
-          <p className="mt-2 text-xs text-ink-3">Inject failures to see how the agent asks you before anything changes.</p>
-          <div className="mt-3 grid grid-cols-2 gap-2">
-            {FAULTS.map((f) => (
-              <label key={f.code} className="flex items-center gap-2 text-sm">
-                <input
-                  type="checkbox"
-                  checked={faults.includes(f.code)}
-                  onChange={(e) => setFaults((xs) => (e.target.checked ? [...xs, f.code] : xs.filter((x) => x !== f.code)))}
-                />
-                {f.label}
-              </label>
-            ))}
-          </div>
-        </details>
+        <div className="mt-10 rounded-2xl border border-line bg-panel/70 p-4">
+          <button type="button" onClick={() => setTestMode((v) => !v)} aria-expanded={testMode} className="flex w-full items-center justify-between text-left">
+            <span>
+              <span className="text-sm font-semibold">Test mode</span>
+              <span className="ml-2 text-xs text-ink-3">Inject failures and watch the agent ask before anything changes.</span>
+            </span>
+            <span className={`relative h-5 w-9 rounded-full transition-colors ${testMode ? "bg-warn" : "bg-line"}`}>
+              <motion.span layout className={`absolute top-0.5 h-4 w-4 rounded-full bg-white shadow ${testMode ? "right-0.5" : "left-0.5"}`} />
+            </span>
+          </button>
+          <AnimatePresence initial={false}>
+            {testMode && (
+              <motion.div initial={{ height: 0, opacity: 0 }} animate={{ height: "auto", opacity: 1 }} exit={{ height: 0, opacity: 0 }} className="overflow-hidden">
+                <div className="mt-4 flex flex-wrap gap-2">
+                  {FAULTS.map((f) => {
+                    const on = faults.includes(f.code);
+                    return (
+                      <label
+                        key={f.code}
+                        className={`cursor-pointer select-none rounded-full border px-3 py-1.5 text-[12.5px] transition-colors ${on ? "border-warn bg-warn/15 text-[#7a5000]" : "border-line text-ink-2 hover:border-ink/30"}`}
+                      >
+                        <input
+                          type="checkbox"
+                          className="sr-only"
+                          checked={on}
+                          onChange={(e) => setFaults((xs) => (e.target.checked ? [...xs, f.code] : xs.filter((x) => x !== f.code)))}
+                        />
+                        {on ? "✓ " : ""}
+                        {f.label}
+                      </label>
+                    );
+                  })}
+                </div>
+              </motion.div>
+            )}
+          </AnimatePresence>
+        </div>
       )}
     </div>
   );

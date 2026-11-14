@@ -35,14 +35,15 @@ export function Modal({
             </Dialog.Overlay>
             <Dialog.Content asChild forceMount aria-describedby={undefined}>
               <motion.div
-                className="fixed left-1/2 top-1/2 z-50 max-h-[88vh] w-[calc(100vw-2rem)] -translate-x-1/2 -translate-y-1/2 overflow-auto rounded-2xl border border-line bg-panel shadow-2xl outline-none"
+                className="fixed inset-x-0 bottom-0 z-50 max-h-[92vh] w-full overflow-auto rounded-t-3xl border border-line bg-panel shadow-2xl outline-none sm:inset-x-auto sm:bottom-auto sm:left-1/2 sm:top-1/2 sm:w-[calc(100vw-2rem)] sm:-translate-x-1/2 sm:-translate-y-1/2 sm:rounded-2xl"
                 style={{ maxWidth: width }}
                 initial={reduce ? { opacity: 0 } : { opacity: 0, scale: 0.96 }}
                 animate={reduce ? { opacity: 1 } : { opacity: 1, scale: 1 }}
                 exit={reduce ? { opacity: 0, transition: { duration: 0.1 } } : { opacity: 0, scale: 0.97, transition: { duration: 0.12 } }}
-                transition={{ duration: 0.2, ease: [0.2, 0.8, 0.2, 1] }}
+                transition={{ duration: 0.22, ease: [0.23, 1, 0.32, 1] }}
               >
                 <div className={`h-1 w-full ${bar}`} />
+                <div className="mx-auto mt-2 h-1 w-10 rounded-full bg-line sm:hidden" aria-hidden />
                 <div className="p-6">
                   <div className="mb-4 flex items-start justify-between gap-4">
                     <Dialog.Title className="text-lg font-semibold tracking-tight">{title}</Dialog.Title>

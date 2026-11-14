@@ -35,7 +35,7 @@ export function Amount({ value, className = "", unit = true }: { value?: string 
 
 const statusMeta: Record<PhaseStatus, { label: string; cls: string; icon: string }> = {
   planned: { label: "Planned", cls: "text-ink-3 border-line", icon: "○" },
-  active: { label: "Running", cls: "text-accent border-accent/40", icon: "◐" },
+  active: { label: "Running", cls: "text-agent border-agent/40 bg-agent-soft", icon: "●" },
   awaiting_reapproval: { label: "Needs you", cls: "text-[#8a5a00] border-warn bg-warn/15", icon: "!" },
   failed_waiting: { label: "Needs you", cls: "text-bad border-bad/40 bg-bad/5", icon: "!" },
   done: { label: "Done", cls: "text-good border-good/40 bg-good/5", icon: "✓" },
@@ -74,5 +74,5 @@ export function TxChip({ state, hash, simulated }: { state: TxState; hash?: stri
 }
 
 export function Spinner() {
-  return <span aria-hidden className="inline-block h-3 w-3 animate-spin rounded-full border-[1.5px] border-accent border-t-transparent motion-reduce:animate-none" />;
+  return <span aria-hidden className="inline-block h-3 w-3 animate-spin rounded-full border-[1.5px] border-current border-t-transparent motion-reduce:animate-none" />;
 }

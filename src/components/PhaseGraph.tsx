@@ -1,6 +1,7 @@
 "use client";
 import { useEffect, useMemo, useState } from "react";
-import { ReactFlow, Handle, Position, type Edge, type Node, type NodeProps } from "@xyflow/react";
+import { ReactFlow, Handle, Position, BaseEdge, getSmoothStepPath, type Edge, type EdgeProps, type Node, type NodeProps } from "@xyflow/react";
+import { useReducedMotion } from "framer-motion";
 import "@xyflow/react/dist/style.css";
 import { fmt } from "@/lib/money";
 import type { CostLine, Phase } from "@/lib/types";
@@ -16,7 +17,7 @@ function PhaseNode({ data }: NodeProps<Node<PhaseNodeData>>) {
   return (
     <div
       className={`w-[208px] rounded-xl border bg-panel px-3.5 py-3 text-left transition-[transform,opacity] duration-300 ${
-        active ? "glow -translate-y-0.5 border-accent/50" : p.status === "skipped" ? "border-line opacity-50" : "border-line"
+        active ? "glow -translate-y-0.5 border-agent/50" : p.status === "skipped" ? "border-line opacity-50" : "border-line"
       } ${p.status === "awaiting_reapproval" ? "border-warn" : ""} ${p.status === "failed_waiting" || p.status === "failed" ? "border-bad/50" : ""}`}
       data-testid={`phase-${p.id}`}
       data-status={p.status}
@@ -24,7 +25,7 @@ function PhaseNode({ data }: NodeProps<Node<PhaseNodeData>>) {
       <Handle type="target" position={vertical ? Position.Top : Position.Left} className="!h-1.5 !w-1.5 !border-0 !bg-line" />
       <div className="flex items-center justify-between gap-2">
         <span className="flex items-center gap-1.5 font-mono text-[10.5px] text-ink-3">
-          {active ? <Spinner /> : <span>{String(step).padStart(2, "0")}</span>}
+          {active ? <span className="text-agent"><Spinner /></span> : p.status === "done" ? <span className="text-good">✓</span> : <span>{String(step).padStart(2, "0")}</span>}
         </span>
         <StatusTag status={p.status} />
       </div>
@@ -33,7 +34,7 @@ function PhaseNode({ data }: NodeProps<Node<PhaseNodeData>>) {
 
       {active && (
         <div className="mt-2 h-1 overflow-hidden rounded-full bg-line">
-          <div className="h-full rounded-full bg-accent transition-[width] duration-500" style={{ width: `${Math.round((p.progress ?? 0) * 100)}%` }} />
+          <div className="h-full rounded-full bg-agent transition-[width] duration-500" style={{ width: `${Math.round((p.progress ?? 0) * 100)}%` }} />
         </div>
       )}
 
@@ -67,6 +68,32 @@ function PhaseNode({ data }: NodeProps<Node<PhaseNodeData>>) {
 }
 
 const nodeTypes = { phase: PhaseNode };
+
+type FlowEdgeData = { flowing: boolean; filled: boolean };
+
+/** Edge that fills when the source finishes; a dot travels only while money or data is moving. */
+function FlowEdge(props: EdgeProps<Edge<FlowEdgeData>>) {
+  const reduce = useReducedMotion();
+  const [path] = getSmoothStepPath({ ...props, borderRadius: 14 });
+  const { flowing, filled } = props.data ?? { flowing: false, filled: false };
+  return (
+    <>
+      <BaseEdge path={path} style={{ stroke: filled ? "var(--color-good)" : "var(--color-line)", strokeWidth: 1.75, transition: "stroke 400ms" }} />
+      {flowing && !reduce && (
+        <>
+          <circle r="3.5" fill="var(--agent)">
+            <animateMotion dur="1.1s" repeatCount="indefinite" path={path} />
+          </circle>
+          <circle r="3.5" fill="var(--agent)" opacity="0.45">
+            <animateMotion dur="1.1s" begin="0.55s" repeatCount="indefinite" path={path} />
+          </circle>
+        </>
+      )}
+    </>
+  );
+}
+
+const edgeTypes = { flow: FlowEdge };
 
 function useNarrow() {
   const [narrow, set] = useState(false);
@@ -109,19 +136,12 @@ export function PhaseGraph({ phases, lines, simulated }: { phases: Phase[]; line
       };
     });
 
-    const edges: Edge[] = phases.flatMap((p) =>
+    const edges: Edge<FlowEdgeData>[] = phases.flatMap((p) =>
       p.dependsOn.map((src) => {
         const from = phases.find((x) => x.id === src)!;
         const flowing = p.status === "active" && p.payments.some((x) => x.txState === "signing" || x.txState === "pending");
         const filled = from.status === "done" || from.status === "skipped";
-        return {
-          id: `${src}-${p.id}`,
-          source: src,
-          target: p.id,
-          type: "smoothstep",
-          className: flowing ? "edge-flow" : "",
-          style: { stroke: filled ? "var(--color-good)" : "var(--color-line)", strokeWidth: 1.75, transition: "stroke 400ms" },
-        };
+        return { id: `${src}-${p.id}`, source: src, target: p.id, type: "flow", data: { flowing, filled } };
       }),
     );
     const cols_n = Object.keys(cols).length;
@@ -135,6 +155,7 @@ export function PhaseGraph({ phases, lines, simulated }: { phases: Phase[]; line
         nodes={nodes}
         edges={edges}
         nodeTypes={nodeTypes}
+        edgeTypes={edgeTypes}
         fitView
         fitViewOptions={{ padding: 0.08, maxZoom: 1 }}
         nodesDraggable={false}

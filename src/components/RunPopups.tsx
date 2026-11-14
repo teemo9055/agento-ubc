@@ -1,6 +1,6 @@
 "use client";
 import { useEffect, useState } from "react";
-import { fmt } from "@/lib/money";
+import { fmt, usdc } from "@/lib/money";
 import { short } from "@/lib/format";
 import type { Failure, FailureAction, ReapprovalRequest, Run } from "@/lib/types";
 import { Modal } from "./Modal";
@@ -18,11 +18,20 @@ function Countdown({ until }: { until: string }) {
 
 export function ReapprovalModal({ run, req, onClose }: { run: Run; req: ReapprovalRequest; onClose: () => void }) {
   const [busy, setBusy] = useState(false);
+  const [editing, setEditing] = useState(false);
+  const [amount, setAmount] = useState(fmt(req.to.amount));
   const phase = run.phases.find((p) => p.id === req.phaseId);
-  const decide = async (outcome: "approved" | "denied") => {
+  let custom: bigint | null = null;
+  try {
+    custom = usdc(amount || "0");
+  } catch {
+    custom = null;
+  }
+  const tooLow = custom != null && custom < BigInt(req.minAmount);
+  const decide = async (outcome: "approved" | "denied", value?: bigint) => {
     setBusy(true);
     try {
-      await post(`/api/runs/${run.id}/reapproval`, { requestId: req.id, outcome });
+      await post(`/api/runs/${run.id}/reapproval`, { requestId: req.id, outcome, amount: value?.toString() });
     } finally {
       setBusy(false);
     }
@@ -57,13 +66,38 @@ export function ReapprovalModal({ run, req, onClose }: { run: Run; req: Reapprov
       <div className="mt-1 text-[12px] text-ink-3">
         This step waits; independent steps keep going. No answer in <Countdown until={req.expiresAt} /> counts as deny.
       </div>
-      <div className="mt-5 flex justify-end gap-2">
+      {editing && (
+        <div className="mt-4 rounded-xl border border-line p-3">
+          <label htmlFor="reamount" className="text-[12px] text-ink-3">
+            Approve a different amount for this step
+          </label>
+          <div className="ring-agent mt-1 flex items-center gap-2 rounded-lg border border-line px-3">
+            <input id="reamount" autoFocus inputMode="decimal" value={amount} onChange={(e) => setAmount(e.target.value.replace(/[^0-9.]/g, ""))} className="num h-10 w-full bg-transparent text-lg font-semibold outline-none" />
+            <span className="text-sm text-ink-3">USDC</span>
+          </div>
+          <div className={`mt-1 text-[11.5px] ${tooLow ? "text-bad" : "text-ink-3"}`}>
+            Minimum {fmt(req.minAmount)} (one more request). Lower amounts mean you&apos;ll be asked again sooner.
+          </div>
+        </div>
+      )}
+      <div className="mt-5 flex flex-wrap justify-end gap-2">
         <Button variant="ghost" onClick={() => decide("denied")} disabled={busy}>
           Deny
         </Button>
-        <Button onClick={() => decide("approved")} disabled={busy} data-testid="reapprove">
-          Approve {fmt(req.to.amount)}
-        </Button>
+        {editing ? (
+          <Button onClick={() => custom != null && decide("approved", custom)} disabled={busy || custom == null || tooLow} data-testid="reapprove-edited" className="bg-agent hover:opacity-90">
+            Approve {custom != null ? fmt(custom) : "…"}
+          </Button>
+        ) : (
+          <>
+            <Button variant="ghost" onClick={() => setEditing(true)} disabled={busy} data-testid="reapprove-edit">
+              Edit amount
+            </Button>
+            <Button onClick={() => decide("approved")} disabled={busy} data-testid="reapprove" className="bg-agent hover:opacity-90">
+              Approve {fmt(req.to.amount)}
+            </Button>
+          </>
+        )}
       </div>
     </Modal>
   );

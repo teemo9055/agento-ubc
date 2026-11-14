@@ -3,6 +3,8 @@ import { fmt, fmtFee } from "@/lib/money";
 import { addrUrl, dateTime, time, txUrl } from "@/lib/format";
 import { buildReceipt, receiptCsv } from "@/lib/receipt";
 import type { Run } from "@/lib/types";
+import { useState } from "react";
+import { motion } from "framer-motion";
 import { Button } from "./ui";
 
 function download(name: string, body: string, type: string) {
@@ -14,11 +16,35 @@ function download(name: string, body: string, type: string) {
 }
 
 function Hash({ h }: { h?: string }) {
+  const [copied, setCopied] = useState(false);
   if (!h) return null;
   return (
-    <a href={txUrl(h)} target="_blank" rel="noreferrer" className="block break-all font-mono text-[10.5px] leading-snug text-ink-3 hover:text-ink">
-      {h}
-    </a>
+    <span className="group flex items-start gap-1">
+      <a href={txUrl(h)} target="_blank" rel="noreferrer" className="break-all font-mono text-[10.5px] leading-snug text-ink-3 hover:text-ink">
+        {h}
+      </a>
+      <button
+        type="button"
+        onClick={() => {
+          navigator.clipboard?.writeText(h);
+          setCopied(true);
+          setTimeout(() => setCopied(false), 1200);
+        }}
+        className="no-print shrink-0 rounded px-1 text-[10px] text-ink-3 opacity-0 transition-opacity hover:bg-ink/5 hover:text-ink focus-visible:opacity-100 group-hover:opacity-100"
+        aria-label="Copy transaction hash"
+      >
+        {copied ? "✓" : "copy"}
+      </button>
+    </span>
+  );
+}
+
+function Check() {
+  return (
+    <svg width="22" height="22" viewBox="0 0 24 24" aria-hidden className="text-good">
+      <circle cx="12" cy="12" r="11" fill="currentColor" opacity="0.12" />
+      <path d="M7 12.5l3.2 3.2L17 9" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round" className="draw" />
+    </svg>
   );
 }
 
@@ -26,21 +52,25 @@ export function ReceiptView({ run }: { run: Run }) {
   const r = buildReceipt(run);
   const cancelled = r.status === "cancelled";
   return (
-    <section id="receipt" className="rounded-2xl border border-line bg-panel p-6 shadow-sm sm:p-8" aria-label="Receipt">
+    <section id="receipt" className="paper relative rounded-2xl border border-line bg-panel p-5 sm:p-8" aria-label="Receipt">
+      <div className="perf no-print absolute inset-x-6 -top-[7px] rotate-180" aria-hidden />
       <div className="flex flex-wrap items-start justify-between gap-4">
         <div>
-          <div className={`text-[13px] font-medium ${cancelled ? "text-ink-2" : "text-good"}`}>{cancelled ? "Job cancelled" : "✓ Transaction confirmed"}</div>
+          <div className={`flex items-center gap-2 text-[13px] font-medium ${cancelled ? "text-ink-2" : "text-good"}`}>
+            {!cancelled && <Check />}
+            {cancelled ? "Job cancelled" : "Transaction confirmed"}
+          </div>
           <div className="mt-1 text-[12px] text-ink-3">Total paid</div>
-          <div className="num text-5xl font-semibold tracking-tight" data-testid="receipt-total">
+          <motion.div initial={{ opacity: 0, y: 6 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: 0.15 }} className="num text-5xl font-semibold tracking-tight" data-testid="receipt-total">
             {fmt(r.total)}
             <span className="ml-2 text-lg font-normal text-ink-3">USDC</span>
-          </div>
+          </motion.div>
           {r.mode === "demo" && <div className="mt-1 text-[12px] text-[#7a5000]">Demo rail: settlement simulated, no onchain transactions.</div>}
         </div>
         <div className="text-right text-[12px] text-ink-3">
           <div className="font-mono">{r.receiptId}</div>
           <div>{dateTime(r.issuedAt)}</div>
-          <div className="no-print mt-3 flex justify-end gap-2">
+          <div className="no-print mt-3 flex flex-wrap justify-end gap-2">
             <Button variant="ghost" onClick={() => window.print()}>
               Print / PDF
             </Button>
@@ -54,12 +84,23 @@ export function ReceiptView({ run }: { run: Run }) {
         </div>
       </div>
 
-      <div className="mt-6 rounded-lg bg-surface p-3 text-[13px]">
-        <div className="text-ink-3">{r.agent.name} delivered</div>
-        <div className="font-medium">{r.deliverable.summary}</div>
-        <div className="text-[12px] text-ink-3">
-          {r.deliverable.method} · task: “{r.task}”
+      <div className="mt-6 flex flex-wrap items-center justify-between gap-3 rounded-xl bg-agent-soft/70 p-3 text-[13px]">
+        <div>
+          <div className="text-ink-3">{r.agent.name} delivered</div>
+          <div className="font-medium">{r.deliverable.summary}</div>
+          <div className="text-[12px] text-ink-3">
+            {r.deliverable.method} · task: “{r.task}”
+          </div>
         </div>
+        {run.deliverable?.contextPack && (
+          <Button
+            variant="ghost"
+            className="no-print"
+            onClick={() => download(`context-pack-${r.workOrderId}.json`, JSON.stringify(run.deliverable!.contextPack, null, 2), "application/json")}
+          >
+            Context pack for your AI IDE ↓
+          </Button>
+        )}
       </div>
 
       <h3 className="mt-7 text-[11px] font-medium uppercase tracking-wide text-ink-3">Where your money went</h3>

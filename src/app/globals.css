@@ -24,6 +24,81 @@ body {
   color: var(--color-ink);
 }
 
+body {
+  background-image:
+    radial-gradient(1200px 500px at 85% -10%, color-mix(in oklab, var(--agent) 9%, transparent), transparent 70%),
+    radial-gradient(900px 400px at -10% 0%, color-mix(in oklab, var(--agent) 5%, transparent), transparent 70%);
+  background-attachment: fixed;
+  transition: background-color 400ms;
+}
+
+:root,
+[data-agent="inso"] {
+  --agent: #6250d6;
+  --agent-soft: #efedfc;
+}
+[data-agent="trado"] {
+  --agent: #2a78d6;
+  --agent-soft: #e8f1fc;
+}
+[data-agent="travo"] {
+  --agent: #eb6834;
+  --agent-soft: #fdeee7;
+}
+
+.text-agent {
+  color: var(--agent);
+}
+.bg-agent {
+  background-color: var(--agent);
+}
+.bg-agent-soft {
+  background-color: var(--agent-soft);
+}
+.border-agent {
+  border-color: var(--agent);
+}
+.ring-agent:focus-within {
+  border-color: color-mix(in oklab, var(--agent) 55%, transparent);
+  box-shadow: 0 0 0 4px color-mix(in oklab, var(--agent) 12%, transparent);
+}
+
+.paper {
+  background: linear-gradient(var(--color-panel), var(--color-panel)) padding-box;
+  box-shadow: 0 1px 0 rgb(0 0 0 / 0.02), 0 12px 40px -18px rgb(0 0 0 / 0.18);
+}
+
+.perf {
+  background-image: radial-gradient(circle at 8px 0, transparent 6px, var(--color-panel) 6.5px);
+  background-size: 16px 8px;
+  background-repeat: repeat-x;
+  height: 8px;
+}
+
+@keyframes float {
+  0%,
+  100% {
+    transform: translateY(0);
+  }
+  50% {
+    transform: translateY(-3px);
+  }
+}
+.float {
+  animation: float 4s ease-in-out infinite;
+}
+
+@keyframes draw {
+  to {
+    stroke-dashoffset: 0;
+  }
+}
+.draw {
+  stroke-dasharray: 60;
+  stroke-dashoffset: 60;
+  animation: draw 700ms 150ms ease-out forwards;
+}
+
 .num {
   font-variant-numeric: tabular-nums;
 }
@@ -31,10 +106,10 @@ body {
 @keyframes glow {
   0%,
   100% {
-    box-shadow: 0 0 0 1px color-mix(in oklab, var(--color-accent) 60%, transparent), 0 6px 24px -6px color-mix(in oklab, var(--color-accent) 45%, transparent);
+    box-shadow: 0 0 0 1px color-mix(in oklab, var(--agent) 55%, transparent), 0 6px 24px -6px color-mix(in oklab, var(--agent) 40%, transparent);
   }
   50% {
-    box-shadow: 0 0 0 1px color-mix(in oklab, var(--color-accent) 80%, transparent), 0 8px 32px -4px color-mix(in oklab, var(--color-accent) 65%, transparent);
+    box-shadow: 0 0 0 1px color-mix(in oklab, var(--agent) 80%, transparent), 0 10px 34px -4px color-mix(in oklab, var(--agent) 60%, transparent);
   }
 }
 .glow {
@@ -52,6 +127,8 @@ body {
 }
 
 @media (prefers-reduced-motion: reduce) {
+  .float,
+  .draw,
   .glow,
   .edge-flow path.react-flow__edge-path {
     animation: none;

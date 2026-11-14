@@ -4,11 +4,12 @@ async function start(page: Page, faults: string[] = [], task = "How have BTC odd
   await page.goto("/");
   await page.getByRole("tab", { name: new RegExp(agent) }).click();
   await page.fill("#task", task);
+  await page.getByRole("radio", { name: "Demo rail" }).click();
   if (faults.length) {
     await page.getByText("Test mode").click();
-    for (const f of faults) await page.getByLabel(f).check();
+    for (const f of faults) await page.locator("label", { hasText: f }).click();
   }
-  await page.getByRole("button", { name: "Get work order" }).click();
+  await page.getByRole("button", { name: /Get work order/ }).click();
   await expect(page.getByTestId("card-price")).toBeVisible();
   const approved = (await page.getByTestId("big-number").innerText()).replace(/USDC|\s/g, "");
   await page.getByTestId("open-approve").click();
@@ -29,13 +30,42 @@ test("pre-approved big spend runs with no popup", async ({ page }) => {
 test("impossible card edit explains why and offers alternatives", async ({ page }) => {
   await page.goto("/");
   await page.fill("#task", "BTC odds");
-  await page.getByRole("button", { name: "Get work order" }).click();
+  await page.getByRole("radio", { name: "Demo rail" }).click();
+  await page.getByRole("button", { name: /Get work order/ }).click();
   await page.getByTestId("card-deliverable").click();
   await page.getByRole("dialog").locator("input").fill("place a real bet on yes");
   await page.keyboard.press("Enter");
   await expect(page.getByText("Can't do that")).toBeVisible();
   await page.getByRole("button", { name: "Track 5 markets" }).click();
+  await expect(page.getByTestId("edit-preview")).toBeVisible();
+  await page.getByTestId("apply-edit").click();
   await expect(page.getByRole("dialog")).toHaveCount(0);
+  await expect(page.getByTestId("card-deliverable")).toContainText("5 markets");
+});
+
+test("method picker re-prices and AI IDE adds a 0 USDC subscription line", async ({ page }) => {
+  await page.goto("/");
+  await page.fill("#task", "BTC odds");
+  await page.getByRole("radio", { name: "Demo rail" }).click();
+  await page.getByRole("button", { name: /Get work order/ }).click();
+  const before = await page.getByTestId("big-number").innerText();
+  await page.getByRole("radio", { name: /Odds Mirror/ }).click();
+  await expect(page.getByTestId("big-number")).not.toHaveText(before);
+  await page.getByRole("radio", { name: /Your AI IDE/ }).click();
+  await expect(page.getByTestId("line-ide")).toContainText("your subscription");
+});
+
+test("re-approval can be edited to a smaller amount", async ({ page }) => {
+  await start(page, ["Seller raises price"]);
+  await expect(page.getByRole("dialog", { name: "Needs your OK" })).toBeVisible({ timeout: 30_000 });
+  await page.getByTestId("reapprove-edit").click();
+  await page.fill("#reamount", "0.04");
+  await page.getByTestId("reapprove-edited").click();
+  // A smaller amount means the agent asks again when it needs more.
+  await expect(page.getByRole("dialog", { name: "Needs your OK" })).toBeVisible({ timeout: 30_000 });
+  await page.getByTestId("reapprove").click();
+  await receipt(page);
+  await expect(page.getByText("edited by user").first()).toBeVisible();
 });
 
 test("price_increase opens re-approval; approve continues", async ({ page }) => {
