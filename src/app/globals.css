@@ -14,6 +14,8 @@
   --color-s1: #2a78d6;
   --color-s2: #eb6834;
   --color-s3: #1baf7a;
+  --color-agent: var(--agent);
+  --color-agent-soft: var(--agent-soft);
   --font-sans: ui-sans-serif, system-ui, -apple-system, "Segoe UI", Inter, sans-serif;
   --font-mono: ui-monospace, "SF Mono", Menlo, Consolas, monospace;
 }
@@ -46,18 +48,6 @@ body {
   --agent-soft: #fdeee7;
 }
 
-.text-agent {
-  color: var(--agent);
-}
-.bg-agent {
-  background-color: var(--agent);
-}
-.bg-agent-soft {
-  background-color: var(--agent-soft);
-}
-.border-agent {
-  border-color: var(--agent);
-}
 .ring-agent:focus-within {
   border-color: color-mix(in oklab, var(--agent) 55%, transparent);
   box-shadow: 0 0 0 4px color-mix(in oklab, var(--agent) 12%, transparent);

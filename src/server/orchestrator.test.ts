@@ -107,7 +107,7 @@ describe("orchestrator (demo rail)", () => {
     const { run, seen } = await drive("BTC odds", ["seller_402_timeout"], { failure: ["switch"], reapproval: "approved" });
     expect(seen.failures).toEqual(["seller_402_timeout"]);
     expect(seen.reapprovals).toBe(1);
-    expect(run.lines.find((l) => l.id === "history")?.payeeName).toBe("Odds Mirror");
+    expect(run.lines.find((l) => l.id === "history")?.payeeName).toBe("Data Mirror");
     expect(run.status).toBe("done");
   });
 

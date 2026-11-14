@@ -116,10 +116,8 @@ export default function RunPage({ params }: { params: Promise<{ id: string }> })
       {draft && (
         <>
           <Cards run={run} onEdit={run.status === "draft" ? setEditing : undefined} />
-          <div className="grid gap-4 lg:grid-cols-[minmax(0,1fr)_minmax(0,1.3fr)]">
-            <MethodPicker run={run} />
-            <CostTable run={run} />
-          </div>
+          <MethodPicker run={run} />
+          <CostTable run={run} />
           <AnimatePresence>
             {run.editNote && (
               <motion.p initial={{ opacity: 0, y: 4 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0 }} className={`text-right text-[12.5px] ${run.editNote.ok ? "text-ink-2" : "text-bad"}`}>

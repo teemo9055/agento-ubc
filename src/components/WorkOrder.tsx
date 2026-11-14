@@ -57,8 +57,8 @@ export function Cards({ run, onEdit }: { run: Run; onEdit?: (k: Card["kind"]) =>
 }
 
 const SELLERS: { id: Method["seller"]; name: string; note: string }[] = [
-  { id: "primary", name: "Odds Feed", note: "Base price · x402" },
-  { id: "mirror", name: "Odds Mirror", note: "+50% · backup x402 seller" },
+  { id: "primary", name: "Data Feed", note: "Base price · x402" },
+  { id: "mirror", name: "Data Mirror", note: "+50% · backup seller" },
 ];
 const ANALYSIS: { id: Method["analysis"]; name: string; note: string }[] = [
   { id: "builtin", name: "Built-in analysis", note: "Free · runs here" },
@@ -101,7 +101,6 @@ export function MethodPicker({ run }: { run: Run }) {
     }
   };
   const disabled = busy || run.status !== "draft";
-  const sellerName = run.agent === "inso" ? SELLERS : SELLERS.map((s) => ({ ...s, name: s.id === "primary" ? "Data Feed" : "Data Mirror" }));
   return (
     <section className="rounded-2xl border border-line bg-panel p-4" aria-label="How it gets done">
       <div className="mb-3 flex items-center justify-between">
@@ -115,7 +114,7 @@ export function MethodPicker({ run }: { run: Run }) {
       <div className="grid gap-3 sm:grid-cols-2">
         <div>
           <div className="mb-1.5 text-[11px] font-medium uppercase tracking-wide text-ink-3">Data</div>
-          <Segment label="Data seller" value={run.method.seller} options={sellerName} onChange={(seller) => set({ seller })} disabled={disabled} />
+          <Segment label="Data seller" value={run.method.seller} options={SELLERS} onChange={(seller) => set({ seller })} disabled={disabled} />
         </div>
         <div>
           <div className="mb-1.5 text-[11px] font-medium uppercase tracking-wide text-ink-3">Analysis</div>
@@ -186,7 +185,7 @@ export function CostTable({ run, compact = false }: { run: Run; compact?: boolea
                   <td className="px-2 py-2.5 text-ink-2">
                     {l.payeeName}
                     {!sub && (
-                      <a href={addrUrl(l.payee)} target="_blank" rel="noreferrer" className="block font-mono text-[10.5px] text-ink-3 hover:text-ink">
+                      <a href={addrUrl(l.payee)} target="_blank" rel="noreferrer" className="hidden font-mono text-[10.5px] text-ink-3 hover:text-ink sm:block">
                         {short(l.payee)}
                       </a>
                     )}

@@ -49,7 +49,7 @@ test("method picker re-prices and AI IDE adds a 0 USDC subscription line", async
   await page.getByRole("radio", { name: "Demo rail" }).click();
   await page.getByRole("button", { name: /Get work order/ }).click();
   const before = await page.getByTestId("big-number").innerText();
-  await page.getByRole("radio", { name: /Odds Mirror/ }).click();
+  await page.getByRole("radio", { name: /Data Mirror/ }).click();
   await expect(page.getByTestId("big-number")).not.toHaveText(before);
   await page.getByRole("radio", { name: /Your AI IDE/ }).click();
   await expect(page.getByTestId("line-ide")).toContainText("your subscription");
