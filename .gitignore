@@ -18,3 +18,4 @@ next-env.d.ts
 .circle-recovery/
 .data/
 .env.anvil
+agento-secrets.env.txt
