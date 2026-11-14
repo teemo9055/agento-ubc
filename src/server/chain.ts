@@ -1,0 +1,70 @@
+import { createPublicClient, createWalletClient, http, parseAbi, type Hex } from "viem";
+import { privateKeyToAccount } from "viem/accounts";
+import { arcTestnet } from "viem/chains";
+
+export const USDC: Hex = (process.env.USDC_ADDRESS as Hex) ?? "0x3600000000000000000000000000000000000000";
+export const FACTORY = process.env.FACTORY_ADDRESS as Hex | undefined;
+export const EXPLORER = process.env.NEXT_PUBLIC_EXPLORER_URL ?? "https://explorer.testnet.arc.io";
+
+const rpc = http(process.env.ARC_RPC_URL ?? "https://rpc.testnet.arc.network");
+export const publicClient = createPublicClient({ chain: arcTestnet, transport: rpc });
+
+const key = (name: string) => {
+  const v = process.env[name];
+  return v ? privateKeyToAccount(v as Hex) : undefined;
+};
+
+export const accounts = {
+  agent: key("AGENT_PRIVATE_KEY"),
+  client: key("CLIENT_PRIVATE_KEY"),
+  seller: key("SELLER_PRIVATE_KEY"),
+};
+
+export const wallet = (who: keyof typeof accounts) => {
+  const account = accounts[who];
+  if (!account) throw new Error(`${who} key missing`);
+  return createWalletClient({ account, chain: arcTestnet, transport: rpc });
+};
+
+export const liveReady = () => Boolean(FACTORY && accounts.agent && accounts.client && accounts.seller);
+
+export const usdcAbi = parseAbi([
+  "function balanceOf(address) view returns (uint256)",
+  "function approve(address,uint256) returns (bool)",
+  "function allowance(address,address) view returns (uint256)",
+  "function authorizationState(address,bytes32) view returns (bool)",
+  "function transferWithAuthorization(address from,address to,uint256 value,uint256 validAfter,uint256 validBefore,bytes32 nonce,bytes signature)",
+]);
+
+export const factoryAbi = parseAbi([
+  "function open(address agent, bytes32 planHash, address[] payees, uint128[] caps, uint256 amount) returns (address)",
+  "function vaultFor(address payer, bytes32 planHash) view returns (address)",
+  "event Opened(address indexed vault, address indexed payer, address indexed agent, bytes32 planHash, uint256 funded)",
+]);
+
+export const vaultAbi = parseAbi([
+  "function pay(uint256 line, uint128 amount, bytes32 ref)",
+  "function authorize(uint256 line, address to, uint128 value, uint64 validAfter, uint64 validBefore, bytes32 nonce) returns (bytes32)",
+  "function release(bytes32 nonce)",
+  "function setLine(uint256 line, address payee, uint128 cap, bytes32 newPlanHash)",
+  "function topUp(uint256 amount)",
+  "function close()",
+  "function funded() view returns (uint256)",
+  "function closed() view returns (bool)",
+  "function usedRef(bytes32) view returns (bool)",
+  "event Closed(address indexed by, uint256 spent, uint256 refunded)",
+]);
+
+/** Sends a tx and returns hash + fee (18-decimal native USDC) once mined. */
+export async function send(
+  who: keyof typeof accounts,
+  req: { address: Hex; abi: readonly unknown[]; functionName: string; args: readonly unknown[] },
+) {
+  const w = wallet(who);
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const { request } = await publicClient.simulateContract({ ...(req as any), account: w.account });
+  const hash = await w.writeContract(request);
+  const receipt = await publicClient.waitForTransactionReceipt({ hash });
+  if (receipt.status !== "success") throw new Error(`tx reverted ${hash}`);
+  return { hash, fee: (receipt.gasUsed * receipt.effectiveGasPrice).toString(), receipt };
+}
