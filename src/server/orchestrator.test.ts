@@ -151,3 +151,17 @@ describe("orchestrator (demo rail)", () => {
     expect(run.status).toBe("done");
   });
 });
+
+describe("edit alternatives", () => {
+  it("every suggested alternative is itself a valid edit", async () => {
+    const { AGENTS } = await import("@/server/agents");
+    const prompts = ["place a real bet", "guarantee profit", "make it free", "9 markets", "do a backflip", "open a long position", "add eth sol doge link", "book a hotel", "take a flight", "add Portland", "30 hours"];
+    for (const agent of Object.values(AGENTS)) {
+      const opts = { ...agent.defaults, stops: ["Vancouver", "Seattle"] };
+      for (const p of prompts) {
+        const r = agent.edit("deliverable", p, opts);
+        for (const alt of r.alternatives ?? []) expect(agent.edit("deliverable", alt, opts).ok, `${agent.id}: "${p}" -> "${alt}"`).toBe(true);
+      }
+    }
+  });
+});

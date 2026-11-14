@@ -8,6 +8,7 @@ const SCALE = Number(process.env.DEMO_DELAY_SCALE ?? 1);
 const wait = (ms: number) => new Promise((r) => setTimeout(r, ms * SCALE));
 const spentByRun = new Map<string, bigint>();
 const fundedByRun = new Map<string, bigint>();
+const closedRuns = new Set<string>();
 
 /** Same flow as the Arc adapter, with real market data and simulated settlement. */
 export const demoAdapter: PaymentAdapter = {
@@ -57,6 +58,8 @@ export const demoAdapter: PaymentAdapter = {
     await wait(700);
     if (req.fault === "settle_fails") throw new PaymentError("settle_fails", "Signed, but settlement failed");
     const data = await PRODUCTS[req.product].run(new URLSearchParams(req.params));
+    // Mirrors the vault: once closed, pending authorizations can't settle.
+    if (closedRuns.has(run.id)) throw new PaymentError("settle_fails", "Vault closed before settlement");
     spentByRun.set(run.id, (spentByRun.get(run.id) ?? 0n) + amount);
     return { data, result: { amount } };
   },
@@ -71,6 +74,7 @@ export const demoAdapter: PaymentAdapter = {
   },
 
   async close(run) {
+    closedRuns.add(run.id);
     await wait(500);
     const refunded = (fundedByRun.get(run.id) ?? 0n) - (spentByRun.get(run.id) ?? 0n);
     return { refunded };

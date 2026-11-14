@@ -93,15 +93,15 @@ export const travo: AgentDef = {
     const p = prompt.trim();
     const lower = p.toLowerCase();
     if (/book|reserve|buy (a )?ticket|hotel/.test(lower))
-      return { ok: false, message: "Travo plans routes. Booking is a later add-on.", alternatives: ["Add an overnight stop", "Shorter driving days"] };
-    if (/fly|flight|plane|train/.test(lower)) return { ok: false, message: "Driving routes only for now.", alternatives: ["Add a stop to break up the drive"] };
+      return { ok: false, message: "Travo plans routes. Booking is a later add-on.", alternatives: ["Max 5 hours a day", "Max 8 hours a day"] };
+    if (/fly|flight|plane|train/.test(lower)) return { ok: false, message: "Driving routes only for now.", alternatives: ["Max 5 hours a day"] };
     const add = p.match(/(?:add|stop at|via)\s+(.+)/i);
     const hrs = lower.match(/(\d+)\s*h(ou)?rs?/);
     let changed = false;
     if (add) {
       const base = opts.stops.length ? opts.stops : [];
       if (base.length < 2) return { ok: false, message: "Set a start and end first.", alternatives: ["From Vancouver to Seattle"] };
-      if (base.length >= 6) return { ok: false, message: "Up to 6 stops per order.", alternatives: ["Split the trip in two"] };
+      if (base.length >= 6) return { ok: false, message: "Up to 6 stops per order.", alternatives: ["Max 8 hours a day"] };
       opts.stops = [...base.slice(0, -1), clean(add[1]), base[base.length - 1]];
       changed = true;
     } else if (/from .+ to /i.test(p)) {
@@ -114,7 +114,7 @@ export const travo: AgentDef = {
       opts.hoursPerDay = h;
       changed = true;
     }
-    if (!changed) return { ok: false, message: "Not something Travo can change.", alternatives: ["Add a stop", "Max 5 hours a day", "From A to B via C"] };
+    if (!changed) return { ok: false, message: "Not something Travo can change.", alternatives: ["Max 5 hours a day", "From Vancouver to Seattle via Whistler"] };
     return { ok: true, message: "Updated", options: opts as unknown as Record<string, unknown> };
   },
 

@@ -117,13 +117,13 @@ export const trado: AgentDef = {
     const opts = { ...(o as unknown as Opts) };
     const p = prompt.toLowerCase();
     if (/(place|make|execute|open).*(trade|order|position)|leverage|short it|long it/.test(p))
-      return { ok: false, message: "Trado reads charts. It doesn't place orders.", alternatives: ["Add a trend call per coin", "Add prediction-market odds"] };
-    if (/guarantee|sure|can't lose|moon/.test(p)) return { ok: false, message: "No one can promise price moves.", alternatives: ["Show volatility", "Compare two coins"] };
+      return { ok: false, message: "Trado reads charts. It doesn't place orders.", alternatives: ["Add ETH", "Add prediction-market odds"] };
+    if (/guarantee|sure|can't lose|moon/.test(p)) return { ok: false, message: "No one can promise price moves.", alternatives: ["Add ETH", "Drop market odds"] };
     let changed = false;
     const syms = symbolsIn(p);
     if (/(add|include|also|compare)/.test(p) && Object.keys(COINS).some((c) => p.includes(c))) {
       opts.symbols = [...new Set([...(opts.symbols.length ? opts.symbols : []), ...syms])];
-      if (opts.symbols.length > 3) return { ok: false, message: "Up to 3 coins per order.", alternatives: ["Split into two orders"] };
+      if (opts.symbols.length > 3) return { ok: false, message: "Up to 3 coins per order.", alternatives: ["Only BTC"] };
       changed = true;
     } else if (/(only|just|switch to)/.test(p) && Object.keys(COINS).some((c) => p.includes(c))) {
       opts.symbols = syms;

@@ -132,10 +132,10 @@ export const inso: AgentDef = {
       return {
         ok: false,
         message: "Inso is read-only. Placing orders needs a Gemini trading key and its own approved spend.",
-        alternatives: ["Add a suggested position to the report", "Track more markets"],
+        alternatives: ["Track 5 markets", "Drop the trade tape"],
       };
     if (/guarantee|sure thing|risk.?free|can't lose/.test(p))
-      return { ok: false, message: "Odds are probabilities, not promises.", alternatives: ["Show the biggest moves", "Add trade tape for flow"] };
+      return { ok: false, message: "Odds are probabilities, not promises.", alternatives: ["Track 5 markets", "Add trade tape"] };
     if (/free|zero cost|no cost/.test(p))
       return { ok: false, message: "Market data is paid per request. Lowest plan is 1 market, no tape.", alternatives: ["1 market, no tape"] };
 
@@ -143,7 +143,7 @@ export const inso: AgentDef = {
     const m = p.match(/(\d+)\s*(market|contract)/);
     if (m) {
       const n = Number(m[1]);
-      if (n < 1 || n > 5) return { ok: false, message: "1 to 5 markets per order.", alternatives: ["5 markets", "Split into two orders"] };
+      if (n < 1 || n > 5) return { ok: false, message: "1 to 5 markets per order.", alternatives: ["5 markets", "1 market"] };
       opts.markets = n;
       changed = true;
     }
