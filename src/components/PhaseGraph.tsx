@@ -6,6 +6,7 @@ import "@xyflow/react/dist/style.css";
 import { fmt } from "@/lib/money";
 import type { CostLine, Phase } from "@/lib/types";
 import { Spinner, StatusTag, TxChip } from "./ui";
+import { Icon } from "./Icon";
 
 type PhaseNodeData = { phase: Phase; line?: CostLine; step: number; vertical: boolean; simulated: boolean };
 
@@ -25,7 +26,7 @@ function PhaseNode({ data }: NodeProps<Node<PhaseNodeData>>) {
       <Handle type="target" position={vertical ? Position.Top : Position.Left} className="!h-1.5 !w-1.5 !border-0 !bg-line" />
       <div className="flex items-center justify-between gap-2">
         <span className="flex items-center gap-1.5 font-mono text-[10.5px] text-ink-3">
-          {active ? <span className="text-agent"><Spinner /></span> : p.status === "done" ? <span className="text-good">✓</span> : <span>{String(step).padStart(2, "0")}</span>}
+          {active ? <span className="text-agent-ink"><Spinner /></span> : p.status === "done" ? <Icon name="check" size={13} stroke={2.6} className="text-good" /> : <span>{String(step).padStart(2, "0")}</span>}
         </span>
         <StatusTag status={p.status} />
       </div>
@@ -33,7 +34,7 @@ function PhaseNode({ data }: NodeProps<Node<PhaseNodeData>>) {
       <div className="truncate text-[11.5px] text-ink-3">{p.note && active ? p.note : p.sub}</div>
 
       {active && (
-        <div className="mt-2 h-1 pix-bar overflow-hidden bg-line">
+        <div className="mt-2 h-1.5 overflow-hidden rounded-[2px] bg-[#f1f0ec]">
           <div className="h-full rounded-full bg-agent transition-[width] duration-500" style={{ width: `${Math.round((p.progress ?? 0) * 100)}%` }} />
         </div>
       )}

@@ -1,6 +1,7 @@
 "use client";
 import { useEffect, useState } from "react";
 import { AnimatePresence, motion } from "framer-motion";
+import { Icon } from "./Icon";
 
 type Tone = "default" | "good" | "bad";
 interface Toast {
@@ -36,9 +37,9 @@ export function Toaster() {
             animate={{ opacity: 1, y: 0, scale: 1 }}
             exit={{ opacity: 0, y: 6, transition: { duration: 0.12 } }}
             transition={{ duration: 0.18, ease: [0.23, 1, 0.32, 1] }}
-            className={`pix-shadow pointer-events-auto max-w-md border border-ink px-4 py-2.5 text-sm ${t.tone === "bad" ? "bg-bad text-white" : t.tone === "good" ? "bg-ink text-white" : "bg-panel text-ink"}`}
+            className={`pix-shadow pointer-events-auto flex max-w-md items-center gap-2 rounded-lg border-[1.5px] border-ink px-4 py-2.5 text-sm font-medium ${t.tone === "bad" ? "bg-bad text-white" : t.tone === "good" ? "bg-ink text-white" : "bg-panel text-ink"}`}
           >
-            {t.tone === "good" && <span className="mr-1.5 text-good">✓</span>}
+            {t.tone === "good" && <Icon name="check" size={15} stroke={2.4} className="text-[#7fd67f]" />}
             {t.text}
           </motion.div>
         ))}

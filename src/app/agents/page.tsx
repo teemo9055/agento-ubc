@@ -16,15 +16,15 @@ export default function Agents() {
   return (
     <div className="space-y-10">
       <header>
-        <h1 className="text-3xl">Meet the agents</h1>
-        <p className="mt-1 text-sm text-ink-2">One crew, one core. Each dresses for the job it&apos;s doing.</p>
+        <h1 className="font-pixel text-[30px] leading-tight sm:text-[34px]">Agents</h1>
+        <p className="mt-1 text-[15px] text-ink-2">Three agents share one core. Each mascot changes its outfit to match the job&apos;s topic, and its face to match the job&apos;s status.</p>
       </header>
       {(Object.keys(THEMES) as AgentId[]).map((a) => (
         <section key={a} data-agent={a} className="rounded-2xl border border-line bg-panel p-5">
           <div className="flex items-center gap-4">
             <Mascot agent={a} size={88} mood="idle" />
             <div>
-              <h2 className="text-xl text-agent">{THEMES[a].name}</h2>
+              <h2 className="font-pixel text-xl text-agent-ink">{THEMES[a].name}</h2>
               <p className="text-sm text-ink-2">
                 {THEMES[a].domain} · {THEMES[a].tagline}
               </p>
@@ -34,7 +34,7 @@ export default function Agents() {
             {OUTFITS.map((o) => (
               <figure key={o} className="flex flex-col items-center gap-1.5">
                 <Mascot agent={a} outfit={o} size={56} />
-                <figcaption className="text-center text-[11px] text-ink-3">{OUTFIT_LABEL[o] || "Plain"}</figcaption>
+                <figcaption className="text-center text-[12px] text-ink-3">{OUTFIT_LABEL[o] || "Plain"}</figcaption>
               </figure>
             ))}
           </div>
