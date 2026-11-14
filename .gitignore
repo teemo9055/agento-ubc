@@ -11,3 +11,4 @@ contracts/broadcast/*/31337/
 .DS_Store
 test-results/
 playwright-report/
+*.tsbuildinfo
