@@ -109,14 +109,16 @@ body {
 }
 
 /* ---------- pixel / block language ---------- */
-h1,
-h2 {
-  font-family: var(--font-pixel);
-  letter-spacing: 0;
-  font-weight: 400;
-}
-h1 {
-  line-height: 1.15;
+@layer base {
+  h1,
+  h2 {
+    font-family: var(--font-pixel);
+    letter-spacing: 0;
+    font-weight: 400;
+  }
+  h1 {
+    line-height: 1.15;
+  }
 }
 .font-pixel {
   font-family: var(--font-pixel);

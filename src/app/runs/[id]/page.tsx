@@ -1,5 +1,5 @@
 "use client";
-import { use, useEffect, useState } from "react";
+import { use, useEffect, useRef, useState } from "react";
 import Link from "next/link";
 import { AnimatePresence, motion } from "framer-motion";
 import { AgentIcon } from "@/components/AgentIcon";
@@ -56,6 +56,14 @@ export default function RunPage({ params }: { params: Promise<{ id: string }> })
   useEffect(() => {
     if (run) transitionReady();
   }, [run]);
+
+  // After approval the layout changes from work order to progress; bring the progress into view.
+  const status = run?.status;
+  const prevStatus = useRef(status);
+  useEffect(() => {
+    if (prevStatus.current === "draft" && (status === "funding" || status === "running")) window.scrollTo({ top: 0, behavior: "smooth" });
+    prevStatus.current = status;
+  }, [status]);
 
   // Toast the moments that matter, only when they happen live (not on replay).
   useEffect(() => {
@@ -131,13 +139,13 @@ export default function RunPage({ params }: { params: Promise<{ id: string }> })
                 </span>
               )}
               <span className="rounded-full bg-agent-soft px-2 py-0.5 text-[11px] text-agent" title={run.ai ? `${run.ai.calls} model calls` : undefined}>
-                {run.planner === "ai" ? `Planned by AI · ${run.ai?.model ?? ""}` : "Rule-based plan"}
+                {run.planning ? "Planning…" : run.planner === "ai" ? `Planned by AI · ${run.ai?.model ?? ""}` : "Rule-based plan"}
               </span>
             </div>
-            <h1 style={{ viewTransitionName: `task-${run.id}` }} className="mt-1 max-w-2xl text-[22px] font-semibold leading-tight tracking-tight sm:text-[26px]">{run.task}</h1>
+            <h1 style={{ viewTransitionName: `task-${run.id}` }} className="mt-1 max-w-2xl font-sans font-semibold text-[22px] font-semibold leading-tight tracking-tight sm:text-[26px]">{run.task}</h1>
             <AnimatePresence mode="wait">
               <motion.p key={run.status} initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }} className="mt-1 text-sm text-ink-2">
-                {theme.copy[run.status]}
+                {run.planning ? "Working out the plan and the price." : theme.copy[run.status]}
               </motion.p>
             </AnimatePresence>
           </div>
@@ -147,7 +155,7 @@ export default function RunPage({ params }: { params: Promise<{ id: string }> })
           <div className="text-[40px] font-semibold leading-none tracking-tight" data-testid="big-number">
             {planning ? <span className="inline-block h-10 w-36 animate-pulse bg-line align-middle motion-reduce:animate-none" /> : <Amount value={draft ? total : actual} />}
           </div>
-          {!draft && <div className="num mt-1 text-[12px] text-ink-3">of {fmt(total)} approved</div>}
+          {!draft && !planning && <div className="num mt-1 text-[12px] text-ink-3">of {fmt(total)} approved</div>}
         </div>
       </motion.header>
 
