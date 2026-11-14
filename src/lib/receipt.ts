@@ -1,0 +1,115 @@
+import { fmt, fmtFee, sum } from "./money";
+import { THEMES } from "./themes";
+import type { Decision, Hex, Run } from "./types";
+
+export interface ReceiptLine {
+  step: string;
+  purpose: string;
+  service: string;
+  rail: string;
+  payeeName: string;
+  payee: Hex;
+  approved: string;
+  amount: string;
+  networkFee: string;
+  tx?: Hex;
+  time?: string;
+}
+
+export interface Receipt {
+  receiptId: string;
+  workOrderId: string;
+  status: "confirmed" | "cancelled";
+  mode: "demo" | "live";
+  issuedAt: string;
+  task: string;
+  client: { wallet: Hex };
+  agent: { name: string; wallet: Hex };
+  chain: { name: "Arc Testnet"; chainId: 5042002; asset: "USDC" };
+  deliverable: { summary: string; method: string };
+  planHash?: Hex;
+  vault?: Hex;
+  lines: ReceiptLine[];
+  subtotal: string;
+  networkFees: string;
+  total: string;
+  budget: { approved: string; cap: string; spent: string; returned: string; fundingTx?: Hex; refundTx?: Hex };
+  decisions: Decision[];
+  policy: { spendsOnPlan: number; bigSpendsPreApproved: number; reapprovals: number; offPlanBlocked: number; threshold: string };
+  job: { started?: string; finished?: string; durationSec: number };
+}
+
+/** One row per settled payment. Amounts in USDC base units; fees in 18-decimal native units. */
+export function buildReceipt(run: Run): Receipt {
+  const lines: ReceiptLine[] = run.phases.flatMap((p) =>
+    p.payments
+      .filter((x) => x.txState === "settled")
+      .map((x) => {
+        const l = run.lines.find((l) => l.id === x.lineId)!;
+        return {
+          step: p.label,
+          purpose: l.purpose,
+          service: l.service,
+          rail: l.rail,
+          payeeName: l.payeeName,
+          payee: l.payee,
+          approved: l.calls?.unitPrice ?? l.approved,
+          amount: x.amount ?? "0",
+          networkFee: x.networkFee ?? "0",
+          tx: x.txHash,
+          time: x.at,
+        };
+      }),
+  );
+  const subtotal = sum(lines.map((l) => l.amount));
+  const fees = sum(lines.map((l) => l.networkFee));
+  const reapprovals = run.decisions.filter((d) => d.kind === "reapproval");
+  const started = run.startedAt ?? run.createdAt;
+  return {
+    receiptId: `R-${run.id}`,
+    workOrderId: run.id,
+    status: run.status === "cancelled" ? "cancelled" : "confirmed",
+    mode: run.mode,
+    issuedAt: run.finishedAt ?? new Date().toISOString(),
+    task: run.task,
+    client: { wallet: run.client },
+    agent: { name: THEMES[run.agent].name, wallet: run.agentWallet },
+    chain: { name: "Arc Testnet", chainId: 5042002, asset: "USDC" },
+    deliverable: { summary: run.deliverable?.summary ?? "Not delivered", method: run.deliverable?.method ?? "" },
+    planHash: run.planHash,
+    vault: run.vault,
+    lines,
+    subtotal: subtotal.toString(),
+    networkFees: fees.toString(),
+    total: subtotal.toString(),
+    budget: {
+      approved: sum(run.lines.map((l) => l.approved)).toString(),
+      cap: run.cap,
+      spent: subtotal.toString(),
+      returned: run.refunded ?? "0",
+      fundingTx: run.fundingTx,
+      refundTx: run.refundTx,
+    },
+    decisions: run.decisions,
+    policy: {
+      spendsOnPlan: lines.length,
+      bigSpendsPreApproved: run.lines.filter((l) => l.bigSpend).length,
+      reapprovals: reapprovals.length,
+      offPlanBlocked: reapprovals.filter((d) => d.outcome !== "approved").length,
+      threshold: run.threshold,
+    },
+    job: {
+      started,
+      finished: run.finishedAt,
+      durationSec: run.finishedAt ? Math.round((Date.parse(run.finishedAt) - Date.parse(started)) / 1000) : 0,
+    },
+  };
+}
+
+const csvCell = (v: string) => (/[",\n]/.test(v) ? `"${v.replace(/"/g, '""')}"` : v);
+
+export function receiptCsv(r: Receipt): string {
+  const head = ["time", "step", "purpose", "service", "rail", "payee_name", "payee", "approved_usdc", "amount_usdc", "network_fee_usdc", "tx"];
+  const rows = r.lines.map((l) => [l.time ?? "", l.step, l.purpose, l.service, l.rail, l.payeeName, l.payee, fmt(l.approved), fmt(l.amount), fmtFee(l.networkFee), l.tx ?? ""]);
+  return [head, ...rows].map((row) => row.map(csvCell).join(",")).join("\n") + "\n";
+}

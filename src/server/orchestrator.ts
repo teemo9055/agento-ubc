@@ -1,7 +1,7 @@
 import { keccak256, toBytes, type Hex } from "viem";
 import { randomUUID } from "node:crypto";
 import type { RunEvent, SeqEvent } from "@/lib/events";
-import { sum } from "@/lib/money";
+import { fmt, sum } from "@/lib/money";
 import { checkSpend } from "@/lib/policy";
 import { reduce } from "@/lib/reducer";
 import type {
@@ -94,7 +94,7 @@ function priceCard(lines: CostLine[], cap: bigint, threshold: bigint): Card {
   const total = sum(lines.map((l) => l.approved));
   const big = lines.filter((l) => l.bigSpend).length;
   const calls = lines.reduce((a, l) => a + (l.calls?.max ?? 0), 0);
-  const f = (v: bigint) => (Number(v) / 1e6).toFixed(2);
+  const f = (v: bigint) => fmt(v);
   return {
     kind: "price",
     title: `${f(total)} USDC`,
@@ -381,6 +381,7 @@ async function buy<T>(ctl: Ctl, phaseId: string, lineId: string, product: string
     emit(ctl, { type: "line.updated", line: { ...fresh, actual: (BigInt(fresh.actual) + result.amount).toString() } });
     update({ txState: "settled", txHash: result.txHash, networkFee: result.fee });
     ctl.cache.set(key, data);
+    emit(ctl, { type: "data.received", key, product, data });
     return data as T;
   } catch (e) {
     update({ txState: "failed" });

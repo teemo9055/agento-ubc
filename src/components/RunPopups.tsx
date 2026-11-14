@@ -1,0 +1,179 @@
+"use client";
+import { useEffect, useState } from "react";
+import { fmt } from "@/lib/money";
+import { short } from "@/lib/format";
+import type { Failure, FailureAction, ReapprovalRequest, Run } from "@/lib/types";
+import { Modal } from "./Modal";
+import { Amount, Button } from "./ui";
+import { post } from "./useRun";
+
+function Countdown({ until }: { until: string }) {
+  const [left, setLeft] = useState(() => Math.max(0, Math.round((Date.parse(until) - Date.now()) / 1000)));
+  useEffect(() => {
+    const t = setInterval(() => setLeft(Math.max(0, Math.round((Date.parse(until) - Date.now()) / 1000))), 500);
+    return () => clearInterval(t);
+  }, [until]);
+  return <span className="num">{left}s</span>;
+}
+
+export function ReapprovalModal({ run, req, onClose }: { run: Run; req: ReapprovalRequest; onClose: () => void }) {
+  const [busy, setBusy] = useState(false);
+  const phase = run.phases.find((p) => p.id === req.phaseId);
+  const decide = async (outcome: "approved" | "denied") => {
+    setBusy(true);
+    try {
+      await post(`/api/runs/${run.id}/reapproval`, { requestId: req.id, outcome });
+    } finally {
+      setBusy(false);
+    }
+  };
+  const newPayee = req.from.payee.toLowerCase() !== req.to.payee.toLowerCase();
+  return (
+    <Modal open onClose={onClose} title="Needs your OK" tone="warn">
+      <p className="text-[13.5px] text-ink-2">
+        <b className="text-ink">{phase?.label}</b> · {req.reason}
+      </p>
+      <div className="mt-4 grid grid-cols-2 gap-3 text-[13px]">
+        <div className="rounded-lg border border-line p-3">
+          <div className="text-[11px] uppercase tracking-wide text-ink-3">Approved</div>
+          <div className="num mt-1 text-lg font-semibold">{fmt(req.from.amount)}</div>
+          <div className="text-ink-2">{req.from.payeeName}</div>
+          <div className="font-mono text-[10.5px] text-ink-3">{short(req.from.payee)}</div>
+        </div>
+        <div className="rounded-lg border border-warn bg-warn/10 p-3">
+          <div className="text-[11px] uppercase tracking-wide text-[#7a5000]">Requested</div>
+          <div className="num mt-1 text-lg font-semibold">{fmt(req.to.amount)}</div>
+          <div className={newPayee ? "font-medium" : "text-ink-2"}>
+            {req.to.payeeName}
+            {newPayee && <span className="ml-1 text-[11px] text-[#7a5000]">new payee</span>}
+          </div>
+          <div className="font-mono text-[10.5px] text-ink-3">{short(req.to.payee)}</div>
+        </div>
+      </div>
+      <div className="mt-3 text-[12.5px] text-ink-2">
+        For: {req.to.service}. Budget left after this:{" "}
+        {BigInt(req.budgetLeft) >= 0n ? <b className="num">{fmt(req.budgetLeft)} USDC</b> : <b className="num">tops up vault by {fmt(-BigInt(req.budgetLeft))} USDC</b>}
+      </div>
+      <div className="mt-1 text-[12px] text-ink-3">
+        This step waits; independent steps keep going. No answer in <Countdown until={req.expiresAt} /> counts as deny.
+      </div>
+      <div className="mt-5 flex justify-end gap-2">
+        <Button variant="ghost" onClick={() => decide("denied")} disabled={busy}>
+          Deny
+        </Button>
+        <Button onClick={() => decide("approved")} disabled={busy} data-testid="reapprove">
+          Approve {fmt(req.to.amount)}
+        </Button>
+      </div>
+    </Modal>
+  );
+}
+
+const ACTION: Record<FailureAction, { label: string; hint: string }> = {
+  retry: { label: "Retry", hint: "Same step again. Paid requests aren't paid twice." },
+  skip: { label: "Skip", hint: "Optional step. Its cost is released." },
+  switch: { label: "Switch provider", hint: "Use the backup seller. Asks you if price or payee changes." },
+  edit: { label: "Edit", hint: "Change the plan." },
+  topup: { label: "Top up vault", hint: "Add USDC to the vault, then retry." },
+  cancel: { label: "Cancel job", hint: "Stop here. Unspent funds return to you." },
+};
+
+const TITLE: Record<string, string> = {
+  seller_402_timeout: "Seller didn't answer",
+  payment_rejected: "Payment rejected",
+  settle_fails: "Settlement failed",
+  insufficient_balance: "Not enough in the vault",
+  policy_block: "Change denied",
+  price_increase: "Price went up",
+  model_error: "Analysis crashed",
+  approval_timeout: "Approval timed out",
+  unknown: "Step failed",
+};
+
+export function FailureModal({ run, failure, onClose }: { run: Run; failure: Failure; onClose: () => void }) {
+  const [busy, setBusy] = useState<FailureAction | null>(null);
+  const phase = run.phases.find((p) => p.id === failure.phaseId);
+  const line = run.lines.find((l) => l.id === phase?.lineId);
+  const act = async (action: FailureAction) => {
+    setBusy(action);
+    try {
+      await post(`/api/runs/${run.id}/failure`, { failureId: failure.id, action });
+    } finally {
+      setBusy(null);
+    }
+  };
+  return (
+    <Modal open onClose={onClose} title={TITLE[failure.code] ?? "Step failed"} tone="bad">
+      <p className="text-[13.5px]">
+        <b>{phase?.label}</b> <span className="text-ink-2">· {failure.message}</span>
+      </p>
+      <div className="mt-4 grid grid-cols-2 gap-3 text-[13px]">
+        <div className="rounded-lg border border-line p-3">
+          <div className="text-[11px] uppercase tracking-wide text-ink-3">Charged this attempt</div>
+          <Amount value={failure.charged} className="mt-1 block text-lg font-semibold" />
+        </div>
+        <div className="rounded-lg border border-line p-3">
+          <div className="text-[11px] uppercase tracking-wide text-ink-3">Not charged</div>
+          <Amount value={failure.notCharged} className="mt-1 block text-lg font-semibold" />
+        </div>
+      </div>
+      {line && (
+        <div className="num mt-2 text-[12px] text-ink-3">
+          Step so far: {fmt(line.actual)} of {fmt(line.approved)} USDC to {line.payeeName}
+        </div>
+      )}
+      <div className="mt-5 space-y-2">
+        {failure.options.map((a) => (
+          <button
+            key={a}
+            disabled={!!busy}
+            onClick={() => act(a)}
+            data-testid={`failure-${a}`}
+            className={`flex w-full items-center justify-between rounded-lg border px-3.5 py-2.5 text-left text-sm transition-colors ${
+              a === "cancel" ? "border-bad/30 text-bad hover:bg-bad/5" : "border-line hover:bg-surface"
+            }`}
+          >
+            <span className="font-medium">{busy === a ? "Working…" : ACTION[a].label}</span>
+            <span className="text-[12px] text-ink-3">{ACTION[a].hint}</span>
+          </button>
+        ))}
+      </div>
+    </Modal>
+  );
+}
+
+export function CancelModal({ run, open, onClose }: { run: Run; open: boolean; onClose: () => void }) {
+  const [busy, setBusy] = useState(false);
+  const spent = run.lines.reduce((a, l) => a + BigInt(l.actual), 0n);
+  return (
+    <Modal open={open} onClose={onClose} title="Cancel job?" tone="bad">
+      <div className="grid grid-cols-2 gap-3 text-[13px]">
+        <div className="rounded-lg border border-line p-3">
+          <div className="text-[11px] uppercase tracking-wide text-ink-3">Charged</div>
+          <Amount value={spent} className="mt-1 block text-lg font-semibold" />
+        </div>
+        <div className="rounded-lg border border-line p-3">
+          <div className="text-[11px] uppercase tracking-wide text-ink-3">Returned to you</div>
+          <Amount value={run.status === "draft" ? 0n : BigInt(run.cap) - spent} className="mt-1 block text-lg font-semibold" />
+        </div>
+      </div>
+      <p className="mt-3 text-[12.5px] text-ink-3">The vault closes; pending authorizations become invalid.</p>
+      <div className="mt-5 flex justify-end gap-2">
+        <Button variant="ghost" onClick={onClose}>
+          Keep going
+        </Button>
+        <Button
+          variant="danger"
+          disabled={busy}
+          onClick={async () => {
+            setBusy(true);
+            await post(`/api/runs/${run.id}/cancel`).finally(() => setBusy(false));
+            onClose();
+          }}
+        >
+          {busy ? "Closing vault…" : "Cancel job"}
+        </Button>
+      </div>
+    </Modal>
+  );
+}

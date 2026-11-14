@@ -186,7 +186,10 @@ export const inso: AgentDef = {
       }
       const picks: Pick[] = [];
       for (const e of events.sort((a, b) => b.volume - a.volume)) {
-        const c = [...e.contracts].filter((c) => c.symbol).sort((a, b) => Math.abs((a.last ?? 0.5) - 0.5) - Math.abs((b.last ?? 0.5) - 0.5))[0];
+        // Prefer contracts that have traded, then the most uncertain one.
+        const c = [...e.contracts]
+          .filter((c) => c.symbol)
+          .sort((a, b) => Number(b.last != null) - Number(a.last != null) || Math.abs((a.last ?? 0.5) - 0.5) - Math.abs((b.last ?? 0.5) - 0.5))[0];
         if (c && !picks.some((p) => p.symbol === c.symbol)) picks.push({ event: e.title, label: c.label, symbol: c.symbol, last: c.last });
         if (picks.length >= opts.markets) break;
       }

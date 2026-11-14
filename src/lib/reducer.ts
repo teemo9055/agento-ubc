@@ -34,6 +34,8 @@ export function reduce(run: Run | null, e: SeqEvent): Run | null {
       const exists = run.lines.some((l) => l.id === e.line.id);
       return { ...run, lines: exists ? run.lines.map((l) => (l.id === e.line.id ? e.line : l)) : [...run.lines, e.line] };
     }
+    case "data.received":
+      return { ...run, feed: { ...run.feed, [e.key]: { product: e.product, data: e.data } } };
     case "reapproval.requested":
       return {
         ...mapPhase(run, e.request.phaseId, (p) => ({ ...p, status: "awaiting_reapproval" })),

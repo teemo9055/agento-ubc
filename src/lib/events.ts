@@ -10,6 +10,7 @@ export type RunEvent =
   | { type: "phase.skipped"; phaseId: string }
   | { type: "payment.updated"; phaseId: string; payment: Payment }
   | { type: "line.updated"; line: CostLine }
+  | { type: "data.received"; key: string; product: string; data: unknown }
   | { type: "reapproval.requested"; request: ReapprovalRequest }
   | { type: "reapproval.decided"; requestId: string; outcome: "approved" | "denied" | "timed_out" }
   | { type: "failure.raised"; failure: Failure }

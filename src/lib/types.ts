@@ -137,4 +137,5 @@ export interface Run {
   startedAt?: string;
   finishedAt?: string;
   editNote?: { ok: boolean; message: string; alternatives?: string[] };
+  feed?: Record<string, { product: string; data: unknown }>;
 }

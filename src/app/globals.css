@@ -1,0 +1,83 @@
+@import "tailwindcss";
+
+@theme {
+  --color-surface: #fcfcfb;
+  --color-panel: #ffffff;
+  --color-line: #e7e6e2;
+  --color-ink: #0b0b0b;
+  --color-ink-2: #52514e;
+  --color-ink-3: #8a8984;
+  --color-accent: #2a78d6;
+  --color-good: #0ca30c;
+  --color-warn: #fab219;
+  --color-bad: #d03b3b;
+  --color-s1: #2a78d6;
+  --color-s2: #eb6834;
+  --color-s3: #1baf7a;
+  --font-sans: ui-sans-serif, system-ui, -apple-system, "Segoe UI", Inter, sans-serif;
+  --font-mono: ui-monospace, "SF Mono", Menlo, Consolas, monospace;
+}
+
+html,
+body {
+  background: var(--color-surface);
+  color: var(--color-ink);
+}
+
+.num {
+  font-variant-numeric: tabular-nums;
+}
+
+@keyframes glow {
+  0%,
+  100% {
+    box-shadow: 0 0 0 1px color-mix(in oklab, var(--color-accent) 60%, transparent), 0 6px 24px -6px color-mix(in oklab, var(--color-accent) 45%, transparent);
+  }
+  50% {
+    box-shadow: 0 0 0 1px color-mix(in oklab, var(--color-accent) 80%, transparent), 0 8px 32px -4px color-mix(in oklab, var(--color-accent) 65%, transparent);
+  }
+}
+.glow {
+  animation: glow 2.4s ease-in-out infinite;
+}
+
+@keyframes flow {
+  to {
+    stroke-dashoffset: -16;
+  }
+}
+.edge-flow path.react-flow__edge-path {
+  stroke-dasharray: 4 4;
+  animation: flow 0.8s linear infinite;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .glow,
+  .edge-flow path.react-flow__edge-path {
+    animation: none;
+  }
+}
+
+@media print {
+  body * {
+    visibility: hidden;
+  }
+  #receipt,
+  #receipt * {
+    visibility: visible;
+  }
+  #receipt {
+    position: absolute;
+    inset: 0;
+    padding: 0;
+    box-shadow: none;
+    border: 0;
+  }
+  #receipt .no-print {
+    display: none;
+  }
+  #receipt tr,
+  #receipt .row {
+    break-inside: avoid;
+  }
+}

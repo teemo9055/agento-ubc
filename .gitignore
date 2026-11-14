@@ -12,3 +12,4 @@ contracts/broadcast/*/31337/
 test-results/
 playwright-report/
 *.tsbuildinfo
+next-env.d.ts
