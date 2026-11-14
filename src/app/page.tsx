@@ -6,6 +6,9 @@ import { AnimatePresence, motion } from "framer-motion";
 import { AgentIcon } from "@/components/AgentIcon";
 import { Spinner } from "@/components/ui";
 import { useAgentTheme } from "@/components/useRun";
+import { useRuns } from "@/components/runsStore";
+import { NotifyToggle } from "@/components/AppShell";
+import { useTransitionNav } from "@/components/transitions";
 import { fmt } from "@/lib/money";
 import { THEMES } from "@/lib/themes";
 import type { RunSummary } from "@/lib/summary";
@@ -32,6 +35,12 @@ function ago(iso?: string) {
 }
 
 function StatusPill({ r }: { r: RunSummary }) {
+  if (r.planning)
+    return (
+      <span className="inline-flex items-center gap-1 rounded-full border border-agent/40 bg-agent-soft px-2 py-0.5 text-[11px] font-medium text-agent">
+        <Spinner /> Planning
+      </span>
+    );
   if (r.needsYou > 0) return <span className="rounded-full border border-warn bg-warn/15 px-2 py-0.5 text-[11px] font-medium text-[#7a5000]">! Needs you</span>;
   if (r.status === "running" || r.status === "funding")
     return (
@@ -45,17 +54,25 @@ function StatusPill({ r }: { r: RunSummary }) {
 }
 
 function JobCard({ r }: { r: RunSummary }) {
+  const nav = useTransitionNav();
   const pct = r.stepsTotal ? (r.stepsDone / r.stepsTotal) * 100 : 0;
   const live = r.status === "running" || r.status === "funding";
   return (
     <motion.li layout initial={{ opacity: 0, y: 6 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0 }} data-agent={r.agent}>
       <Link
         href={`/runs/${r.id}`}
-        className={`pix-lift group block rounded-2xl border bg-panel p-4 ${r.needsYou ? "border-warn" : "border-line"}`}
+        onClick={(e) => {
+          if (e.metaKey || e.ctrlKey || e.shiftKey || e.button !== 0) return;
+          e.preventDefault();
+          nav(`/runs/${r.id}`, { waitForPage: true });
+        }}
+        className={`pix-lift pressable group block rounded-2xl border bg-panel p-4 ${r.needsYou ? "border-warn" : "border-line"}`}
         data-testid={`job-${r.id}`}
       >
         <div className="flex items-start gap-3">
-          <AgentIcon agent={r.agent} size={40} outfit={r.outfit} mood={moodFor(r.status, r.needsYou)} />
+          <span style={{ viewTransitionName: `mascot-${r.id}` }}>
+            <AgentIcon agent={r.agent} size={40} outfit={r.outfit} mood={moodFor(r.status, r.needsYou)} />
+          </span>
           <div className="min-w-0 flex-1">
             <div className="flex flex-wrap items-center gap-1.5 text-[11.5px] text-ink-3">
               <span className="font-medium text-agent">{THEMES[r.agent].name}</span>
@@ -63,7 +80,9 @@ function JobCard({ r }: { r: RunSummary }) {
               {r.planner === "ai" && <span>· AI plan</span>}
               <span>· {ago(r.finishedAt ?? r.createdAt)}</span>
             </div>
-            <div className="mt-0.5 line-clamp-2 font-medium leading-snug">{r.task}</div>
+            <div className="mt-0.5 line-clamp-2 font-medium leading-snug" style={{ viewTransitionName: `task-${r.id}` }}>
+              {r.task}
+            </div>
           </div>
           <StatusPill r={r} />
         </div>
@@ -89,7 +108,7 @@ function JobCard({ r }: { r: RunSummary }) {
             {r.status === "draft" ? "Quoted" : "Spent"} <b className="font-semibold text-ink">{fmt(r.status === "draft" ? r.approved : r.spent)}</b>
             {r.status !== "draft" && <> / {fmt(r.approved)}</>} USDC
           </span>
-          {r.refunded && BigInt(r.refunded) > 0n ? <span>{fmt(r.refunded)} returned</span> : <span className="opacity-0 transition-opacity group-hover:opacity-100">Open →</span>}
+          {r.refunded && BigInt(r.refunded) > 0n ? <span>{fmt(r.refunded)} returned</span> : <span className="reveal opacity-0 transition-opacity group-hover:opacity-100">Open →</span>}
         </div>
       </Link>
     </motion.li>
@@ -102,24 +121,10 @@ function Dashboard() {
   const folder = (params.get("folder") as Folder) ?? "all";
   const status = params.get("status") as Section | null;
   const [q, setQ] = useState(params.get("q") ?? "");
-  const [runs, setRuns] = useState<RunSummary[] | null>(null);
+  const { runs, connection } = useRuns();
   const search = useRef<HTMLInputElement>(null);
   useAgentTheme(folder === "all" ? "inso" : folder);
 
-  useEffect(() => {
-    let stop = false;
-    const load = () =>
-      fetch("/api/runs", { cache: "no-store" })
-        .then((r) => r.json())
-        .then((x: RunSummary[]) => !stop && setRuns(x))
-        .catch(() => {});
-    load();
-    const t = setInterval(load, 2500);
-    return () => {
-      stop = true;
-      clearInterval(t);
-    };
-  }, []);
 
   useEffect(() => {
     const h = (e: KeyboardEvent) => {
@@ -160,8 +165,8 @@ function Dashboard() {
   ];
 
   return (
-    <div className="grid gap-6 lg:grid-cols-[220px_minmax(0,1fr)]">
-      <aside className="lg:sticky lg:top-20 lg:self-start">
+    <div className="grid grid-cols-1 gap-6 lg:grid-cols-[220px_minmax(0,1fr)]">
+      <aside className="min-w-0 lg:sticky lg:top-20 lg:self-start">
         <div className="mb-2 hidden text-[11px] font-medium uppercase tracking-wide text-ink-3 lg:block">Folders</div>
         <nav aria-label="Folders" className="-mx-1 flex gap-1 overflow-x-auto px-1 pb-1 lg:flex-col lg:overflow-visible">
           {folders.map((f) => {
@@ -172,7 +177,7 @@ function Dashboard() {
                 onClick={() => setParam("folder", f.key === "all" ? null : f.key)}
                 aria-current={on ? "page" : undefined}
                 data-agent={f.key === "all" ? undefined : f.key}
-                className={`relative flex shrink-0 items-center gap-2.5 rounded-xl px-2.5 py-2 text-left transition-colors ${on ? "bg-panel shadow-sm ring-1 ring-line" : "hover:bg-panel/70"}`}
+                className={`pressable tap relative flex shrink-0 items-center gap-2.5 rounded-xl px-2.5 py-2 text-left transition-colors ${on ? "bg-panel shadow-sm ring-1 ring-line" : "hover:bg-panel/70"}`}
               >
                 {f.key === "all" ? (
                   <span className="inline-flex h-7 w-7 items-center justify-center rounded-[30%] bg-ink text-[13px] text-white" aria-hidden>
@@ -204,9 +209,14 @@ function Dashboard() {
             <h1 className="text-2xl font-semibold tracking-tight">{folder === "all" ? "Your jobs" : `${THEMES[folder].name} jobs`}</h1>
             <p className="mt-0.5 text-sm text-ink-2">{folder === "all" ? "Everything your agents are doing, in one place." : THEMES[folder].tagline}</p>
           </div>
-          <Link href={folder === "all" ? "/new" : `/new?agent=${folder}`} className="inline-flex h-9 items-center rounded-xl bg-agent px-4 text-sm font-medium text-white lg:hidden">
-            + New job
-          </Link>
+          <div className="flex items-center gap-2">
+            {connection === "reconnecting" && (
+              <span className="inline-flex h-9 items-center gap-1.5 border border-warn bg-warn/15 px-2.5 text-[12px] text-[#7a5000]" role="status">
+                <Spinner /> Reconnecting
+              </span>
+            )}
+            <NotifyToggle />
+          </div>
         </div>
 
         <div className="mt-5 grid grid-cols-2 gap-2 sm:grid-cols-4">
@@ -244,7 +254,7 @@ function Dashboard() {
                 role="tab"
                 aria-selected={status === s.key}
                 onClick={() => setParam("status", s.key)}
-                className={`shrink-0 rounded-full border px-3 py-1.5 text-[12.5px] transition-colors ${status === s.key ? "border-ink bg-ink text-white" : "border-line bg-panel text-ink-2 hover:border-ink/30"}`}
+                className={`pressable tap shrink-0 rounded-full border px-3 py-1.5 text-[12.5px] transition-colors ${status === s.key ? "border-ink bg-ink text-white" : "border-line bg-panel text-ink-2 hover:border-ink/30"}`}
               >
                 {s.title}
               </button>
@@ -284,7 +294,7 @@ function Dashboard() {
                 <h2 className={`mb-2 text-[12px] font-medium uppercase tracking-wide ${s.key === "needs" ? "text-[#7a5000]" : "text-ink-3"}`}>
                   {s.title} <span className="num">· {items.length}</span>
                 </h2>
-                <ul className="grid gap-3 sm:grid-cols-2">
+                <ul className="grid grid-cols-1 gap-3 sm:grid-cols-2">
                   <AnimatePresence initial={false}>
                     {items.map((r) => (
                       <JobCard key={r.id} r={r} />

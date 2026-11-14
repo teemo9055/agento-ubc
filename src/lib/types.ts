@@ -155,6 +155,8 @@ export interface Run {
   feed?: Record<string, { product: string; data: unknown }>;
   method: Method;
   planner: "ai" | "rules";
+  /** True while the plan is being drafted in the background. */
+  planning?: boolean;
   ai?: AiStats;
   estFees: string; // 18-decimal native USDC
 }

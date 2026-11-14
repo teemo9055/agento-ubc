@@ -37,7 +37,7 @@ export async function POST(req: NextRequest) {
   if (process.env.ALLOW_FAULTS === "false") body.faults = [];
   if (body.mode === "live" && !liveAllowed(body.accessCode)) return NextResponse.json({ error: "Arc testnet jobs need the access code. Use the demo rail, or ask the owner for the code." }, { status: 403 });
   try {
-    return NextResponse.json(await createRun(body));
+    return NextResponse.json(await createRun(body, { wait: false }));
   } catch (e) {
     return NextResponse.json({ error: (e as Error).message }, { status: 400 });
   }

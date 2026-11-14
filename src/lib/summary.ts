@@ -22,6 +22,7 @@ export interface RunSummary {
   headline?: string;
   faults: number;
   outfit: Outfit;
+  planning: boolean;
 }
 
 export function summarize(r: Run): RunSummary {
@@ -44,6 +45,7 @@ export function summarize(r: Run): RunSummary {
     headline: r.deliverable?.summary,
     faults: r.faults.length,
     outfit: runOutfit(r),
+    planning: Boolean(r.planning),
   };
 }
 

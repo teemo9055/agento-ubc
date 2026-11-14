@@ -9,10 +9,17 @@ export function useRun(id: string) {
   const [run, dispatch] = useReducer((s: Run | null, e: SeqEvent) => reduce(s, e), null);
   const [missing, setMissing] = useState(false);
   const [lastEvent, setLastEvent] = useState<SeqEvent | null>(null);
+  const [connection, setConnection] = useState<"connecting" | "live" | "reconnecting">("connecting");
+  const [liveSince, setLiveSince] = useState(0);
 
   useEffect(() => {
     let seq = -1;
     const es = new EventSource(`/api/runs/${id}/events`);
+    es.onopen = () => {
+      setConnection("live");
+      setLiveSince((t) => t || Date.now());
+    };
+    es.onerror = () => setConnection((c) => (c === "connecting" ? c : "reconnecting"));
     es.onmessage = (m) => {
       const e = JSON.parse(m.data) as SeqEvent;
       if (e.seq <= seq) return; // replayed on reconnect
@@ -27,7 +34,8 @@ export function useRun(id: string) {
     return () => es.close();
   }, [id]);
 
-  return { run, missing, lastEvent };
+  // Events arriving well after connect are live (not replayed history); used for toasts.
+  return { run, missing, lastEvent, connection, isLive: (e: SeqEvent | null) => Boolean(e && liveSince && Date.now() - liveSince > 1500) };
 }
 
 export async function post<T = unknown>(url: string, body?: unknown): Promise<T> {

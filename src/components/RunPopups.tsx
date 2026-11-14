@@ -6,6 +6,7 @@ import type { Failure, FailureAction, ReapprovalRequest, Run } from "@/lib/types
 import { Modal } from "./Modal";
 import { Amount, Button } from "./ui";
 import { post } from "./useRun";
+import { toast } from "./Toaster";
 
 function Countdown({ until }: { until: string }) {
   const [left, setLeft] = useState(() => Math.max(0, Math.round((Date.parse(until) - Date.now()) / 1000)));
@@ -32,6 +33,7 @@ export function ReapprovalModal({ run, req, onClose }: { run: Run; req: Reapprov
     setBusy(true);
     try {
       await post(`/api/runs/${run.id}/reapproval`, { requestId: req.id, outcome, amount: value?.toString() });
+      toast(outcome === "approved" ? `Approved ${fmt(value ?? BigInt(req.to.amount))} USDC · continuing` : "Denied · nothing extra spent", outcome === "approved" ? "good" : "default");
     } finally {
       setBusy(false);
     }
@@ -132,6 +134,7 @@ export function FailureModal({ run, failure, onClose }: { run: Run; failure: Fai
     setBusy(action);
     try {
       await post(`/api/runs/${run.id}/failure`, { failureId: failure.id, action });
+      toast(ACTION[action].label === "Cancel job" ? "Cancelling · unspent funds return to you" : `${ACTION[action].label} · on it`);
     } finally {
       setBusy(null);
     }
@@ -163,7 +166,7 @@ export function FailureModal({ run, failure, onClose }: { run: Run; failure: Fai
             disabled={!!busy}
             onClick={() => act(a)}
             data-testid={`failure-${a}`}
-            className={`flex w-full items-center justify-between rounded-lg border px-3.5 py-2.5 text-left text-sm transition-colors ${
+            className={`pressable tap flex w-full items-center justify-between rounded-lg border px-3.5 py-2.5 text-left text-sm transition-colors ${
               a === "cancel" ? "border-bad/30 text-bad hover:bg-bad/5" : "border-line hover:bg-surface"
             }`}
           >
@@ -199,10 +202,11 @@ export function CancelModal({ run, open, onClose }: { run: Run; open: boolean; o
         <Button
           variant="danger"
           disabled={busy}
-          onClick={async () => {
-            setBusy(true);
-            await post(`/api/runs/${run.id}/cancel`).finally(() => setBusy(false));
+          onClick={() => {
+            // Optimistic: the vault closes in the background; the receipt shows the refund.
             onClose();
+            toast("Cancelling · unspent funds return to you");
+            post(`/api/runs/${run.id}/cancel`).catch((e) => toast(`Cancel failed: ${(e as Error).message}`, "bad"));
           }}
         >
           {busy ? "Closing vault…" : "Cancel job"}

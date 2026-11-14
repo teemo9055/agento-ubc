@@ -32,7 +32,7 @@ function Hash({ h }: { h?: string }) {
           setCopied(true);
           setTimeout(() => setCopied(false), 1200);
         }}
-        className="no-print shrink-0 rounded px-1 text-[10px] text-ink-3 opacity-0 transition-opacity hover:bg-ink/5 hover:text-ink focus-visible:opacity-100 group-hover:opacity-100"
+        className="reveal hit no-print shrink-0 rounded px-1 text-[10px] text-ink-3 opacity-0 transition-opacity hover:bg-ink/5 hover:text-ink focus-visible:opacity-100 group-hover:opacity-100"
         aria-label="Copy transaction hash"
       >
         {copied ? "✓" : "copy"}
@@ -158,7 +158,7 @@ export function ReceiptView({ run }: { run: Run }) {
         </tbody>
       </table>
 
-      <dl className="num ml-auto mt-4 grid max-w-xs grid-cols-2 gap-y-1 text-[13px]">
+      <dl className="num ml-auto mt-4 grid w-full max-w-xs grid-cols-[minmax(0,1fr)_auto] gap-x-3 gap-y-1 text-[13px]">
         <dt className="text-ink-3">Subtotal</dt>
         <dd className="text-right">{fmt(r.subtotal)}</dd>
         <dt className="text-ink-3">Network fees (agent gas)</dt>

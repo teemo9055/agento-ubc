@@ -27,7 +27,8 @@ function InsoWidget({ run }: { run: Run }) {
       <div className="mb-1 text-[13px] font-semibold">YES odds over time</div>
       <LineChart series={series} format={pct} domain={[0, 1]} label="Prediction market odds over time" />
       {analysis && (
-        <table className="mt-4 w-full text-[12.5px]">
+        <div className="mt-4 overflow-x-auto">
+        <table className="w-full min-w-[520px] text-[12.5px] sm:min-w-0">
           <thead className="text-left text-[11px] uppercase tracking-wide text-ink-3">
             <tr>
               <th className="py-1.5 font-medium">Market</th>
@@ -53,6 +54,7 @@ function InsoWidget({ run }: { run: Run }) {
             ))}
           </tbody>
         </table>
+        </div>
       )}
     </div>
   );

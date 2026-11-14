@@ -7,6 +7,8 @@ import type { Card, CostLine, Method, Run } from "@/lib/types";
 import { Modal } from "./Modal";
 import { Amount, Button, Spinner } from "./ui";
 import { post } from "./useRun";
+import { toast } from "./Toaster";
+import { AgentIcon } from "./AgentIcon";
 
 const CARD_ORDER: Card["kind"][] = ["price", "deliverable", "method", "risk"];
 const CARD_LABEL: Record<Card["kind"], string> = { price: "Price", deliverable: "Deliverable", method: "Method", risk: "Risk" };
@@ -26,7 +28,7 @@ export function Cards({ run, onEdit }: { run: Run; onEdit?: (k: Card["kind"]) =>
           disabled={!onEdit}
           onClick={() => onEdit?.(c.kind)}
           data-testid={`card-${c.kind}`}
-          className={`group relative overflow-hidden rounded-2xl border p-4 text-left transition-colors disabled:cursor-default ${
+          className={`pressable group relative overflow-hidden rounded-2xl border p-4 text-left transition-colors disabled:cursor-default ${
             c.kind === "price" ? "border-agent/30 bg-agent-soft/60" : "border-line bg-panel enabled:hover:border-ink/25"
           }`}
         >
@@ -35,7 +37,7 @@ export function Cards({ run, onEdit }: { run: Run; onEdit?: (k: Card["kind"]) =>
               <span className="mr-1 text-agent">{CARD_ICON[c.kind]}</span>
               {CARD_LABEL[c.kind]}
             </span>
-            {onEdit && <span className="rounded-full bg-ink/5 px-2 py-0.5 normal-case tracking-normal opacity-0 transition-opacity group-hover:opacity-100 group-focus-visible:opacity-100">Edit ✎</span>}
+            {onEdit && <span className="rounded-full bg-ink/5 px-2 py-0.5 reveal normal-case tracking-normal opacity-0 transition-opacity group-hover:opacity-100 group-focus-visible:opacity-100">Edit ✎</span>}
           </div>
           <AnimatePresence mode="popLayout" initial={false}>
             <motion.div key={c.title} initial={{ opacity: 0, y: 4 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0, y: -4 }} className="num mt-1.5 text-[16px] font-semibold">
@@ -77,7 +79,7 @@ function Segment<T extends string>({ value, options, onChange, disabled, label }
             aria-checked={on}
             disabled={disabled}
             onClick={() => !on && onChange(o.id)}
-            className="relative rounded-lg px-3 py-2 text-left disabled:cursor-not-allowed"
+            className="pressable tap relative rounded-lg px-3 py-2 text-left disabled:cursor-not-allowed"
           >
             {on && <motion.span layoutId={`seg-${label}`} className="absolute inset-0 rounded-lg border border-line bg-panel shadow-sm" transition={{ type: "spring", duration: 0.35 }} />}
             <span className="relative block text-[13px] font-medium">{o.name}</span>
@@ -111,7 +113,7 @@ export function MethodPicker({ run }: { run: Run }) {
           </span>
         )}
       </div>
-      <div className="grid gap-3 sm:grid-cols-2">
+      <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
         <div>
           <div className="mb-1.5 text-[11px] font-medium uppercase tracking-wide text-ink-3">Data</div>
           <Segment label="Data seller" value={run.method.seller} options={SELLERS} onChange={(seller) => set({ seller })} disabled={disabled} />
@@ -153,7 +155,8 @@ export function CostTable({ run, compact = false }: { run: Run; compact?: boolea
           </div>
         </div>
       )}
-      <table className="w-full text-[13px]">
+      <div className="overflow-x-auto">
+      <table className="w-full min-w-[340px] text-[13px]">
         <thead className="border-b border-line text-left text-[11px] uppercase tracking-wide text-ink-3">
           <tr>
             <th className="px-4 py-2.5 font-medium">Step</th>
@@ -243,6 +246,7 @@ export function CostTable({ run, compact = false }: { run: Run; compact?: boolea
           </tr>
         </tfoot>
       </table>
+      </div>
     </div>
   );
 }
@@ -277,6 +281,7 @@ export function EditCardModal({ run, kind, onClose }: { run: Run; kind: Card["ki
     setBusy(true);
     try {
       await post<Run>(`/api/runs/${run.id}/edit`, { card: kind, prompt: preview.prompt });
+      toast(preview.message, "good");
       onClose();
     } finally {
       setBusy(false);
@@ -314,6 +319,15 @@ export function EditCardModal({ run, kind, onClose }: { run: Run; kind: Card["ki
           />
         </div>
 
+        {busy && !preview && (
+          <motion.div initial={{ opacity: 0, y: 4 }} animate={{ opacity: 1, y: 0 }} className="mt-4 flex items-center gap-3 rounded-xl border border-line bg-surface p-3 text-[13px]" aria-live="polite">
+            <AgentIcon agent={run.agent} size={34} mood="working" />
+            <div className="min-w-0">
+              <div className="truncate font-medium">“{prompt}”</div>
+              <div className="text-ink-3">{run.planner === "ai" ? "Thinking it through and re-pricing…" : "Re-pricing…"}</div>
+            </div>
+          </motion.div>
+        )}
         <AnimatePresence mode="wait">
           {preview && !preview.ok && (
             <motion.div key="no" role="alert" initial={{ opacity: 0, y: 4 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0 }} className="mt-4 rounded-xl border border-bad/30 bg-bad/5 p-3 text-[13px]">
@@ -323,7 +337,7 @@ export function EditCardModal({ run, kind, onClose }: { run: Run; kind: Card["ki
                 <div className="mt-2 flex flex-wrap gap-1.5">
                   <span className="text-[12px] text-ink-3">Try:</span>
                   {preview.alternatives.map((a) => (
-                    <button key={a} type="button" onClick={() => check(a)} className="rounded-full border border-line bg-panel px-2.5 py-1 text-xs transition-colors hover:border-agent">
+                    <button key={a} type="button" onClick={() => check(a)} className="pressable tap rounded-full border border-line bg-panel px-2.5 py-1 text-xs transition-colors hover:border-agent">
                       {a}
                     </button>
                   ))}
@@ -372,22 +386,17 @@ export function EditCardModal({ run, kind, onClose }: { run: Run; kind: Card["ki
 }
 
 export function ApproveModal({ run, open, onClose }: { run: Run; open: boolean; onClose: () => void }) {
-  const [busy, setBusy] = useState(false);
+  const busy = false;
   const [err, setErr] = useState("");
   const total = sum(run.lines.map((l) => l.approved));
   const big = run.lines.filter((l) => l.bigSpend);
 
-  async function approve() {
-    setBusy(true);
+  // Optimistic: close at once; the step graph shows "Funding vault" from the server's own event.
+  function approve() {
     setErr("");
-    try {
-      await post(`/api/runs/${run.id}/approve`);
-      onClose();
-    } catch (e) {
-      setErr((e as Error).message);
-    } finally {
-      setBusy(false);
-    }
+    onClose();
+    toast(`Approved · funding vault with ${fmt(run.cap)} USDC`, "good");
+    post(`/api/runs/${run.id}/approve`).catch((e) => toast(`Funding failed: ${(e as Error).message}`, "bad"));
   }
 
   return (

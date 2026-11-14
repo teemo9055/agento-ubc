@@ -57,6 +57,14 @@ interface Ctl {
 const g = globalThis as unknown as { __agentoRuns?: Map<string, Ctl> };
 const runs: Map<string, Ctl> = (g.__agentoRuns ??= new Map<string, Ctl>());
 
+const gl = globalThis as unknown as { __agentoWatchers?: Set<(run: Run) => void> };
+const watchers: Set<(run: Run) => void> = (gl.__agentoWatchers ??= new Set());
+/** Called with the latest run state after every event, for any run. */
+export function watchAll(fn: (run: Run) => void) {
+  watchers.add(fn);
+  return () => watchers.delete(fn);
+}
+
 const now = () => new Date().toISOString();
 const id = () => randomUUID().slice(0, 8);
 
@@ -74,6 +82,7 @@ function emit(ctl: Ctl, e: RunEvent) {
     console.warn("persist failed", (err as Error).message);
   }
   for (const l of ctl.listeners) l(se);
+  for (const w of watchers) w(ctl.run);
 }
 
 function log(ctl: Ctl, d: Omit<Decision, "id" | "at">) {
@@ -189,7 +198,13 @@ function materialize(ctl: Ctl, raw: PlanDraft) {
   return { cards: [...draft.cards, priceCard(lines, cap, threshold, fees)], lines, phases, cap: cap.toString(), estFees: fees.toString() };
 }
 
-export async function createRun(input: { agent: AgentId; task: string; mode?: "demo" | "live"; faults?: FailureCode[]; options?: Record<string, unknown>; plannedBy?: string }) {
+type CreateInput = { agent: AgentId; task: string; mode?: "demo" | "live"; faults?: FailureCode[]; options?: Record<string, unknown>; plannedBy?: string };
+
+/**
+ * Creates a job. With `wait: false` it returns at once with `planning: true` and the
+ * plan arrives as a later event, so the screen never blocks on the model.
+ */
+export async function createRun(input: CreateInput, opts: { wait?: boolean } = {}) {
   const agent = AGENTS[input.agent];
   if (!agent) throw new Error("unknown agent");
   const mode = input.mode === "live" && liveReady() ? "live" : "demo";
@@ -231,6 +246,18 @@ export async function createRun(input: { agent: AgentId; task: string; mode?: "d
     cancelled: false,
   };
   runs.set(run.id, ctl);
+  emit(ctl, { type: "workorder.updated", run: { ...run, planning: true } });
+  const planned = draftPlan(ctl, input).catch((e) => {
+    console.warn("planning failed", e);
+    emit(ctl, { type: "workorder.updated", run: { ...ctl.run, planning: false, editNote: { ok: false, message: "Couldn't plan this task. Try rephrasing it." } } });
+  });
+  if (opts.wait !== false) await planned;
+  return ctl.run;
+}
+
+async function draftPlan(ctl: Ctl, input: CreateInput) {
+  const run = { ...ctl.run };
+  const agent = AGENTS[run.agent];
   // The model drafts options from the task; code validates, prices and can always fall back to rules.
   // A plan from an outside AI (already validated) wins; otherwise the built-in planner drafts one.
   const drafted = input.options ? null : aiEnabled() ? await aiPlan(run.agent, run.task) : null;
@@ -244,9 +271,8 @@ export async function createRun(input: { agent: AgentId; task: string; mode?: "d
     run.planner = "ai";
   }
   const plan = materialize(ctl, await agent.plan(run.task, ctl.options));
-  emit(ctl, { type: "workorder.updated", run: { ...run, ...plan } });
+  emit(ctl, { type: "workorder.updated", run: { ...run, ...plan, planning: false } });
   if (drafted) trackAi(ctl, "plan", drafted.usage);
-  return ctl.run;
 }
 
 const ctlOf = (runId: string) => {
@@ -316,6 +342,7 @@ function compact(v: unknown, depth = 0): unknown {
 export async function approve(runId: string) {
   const ctl = ctlOf(runId);
   if (ctl.run.status !== "draft") throw new Error("already approved");
+  if (ctl.run.planning) throw new Error("still planning");
   emit(ctl, { type: "run.funding" });
   const hash = planHash(ctl.run);
   const adapter = adapterFor(ctl.run);
@@ -731,6 +758,7 @@ function restore() {
       previews: new Map(),
     };
     runs.set(run.id, ctl);
+    if (run.planning) ctl.run = { ...run, planning: false, editNote: { ok: false, message: "Planning was interrupted by a restart. Start the job again." } };
     if (run.status === "running" || run.status === "funding") void recover(ctl);
   }
 }

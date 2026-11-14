@@ -146,7 +146,7 @@ export default function Home() {
               whileHover={{ y: -2 }}
               whileTap={{ scale: 0.98 }}
               data-agent={id}
-              className={`relative rounded-2xl border p-3 text-left transition-colors sm:p-4 ${on ? "border-agent bg-panel shadow-[0_8px_30px_-12px_var(--agent)]" : "border-line bg-panel/60 hover:bg-panel"}`}
+              className={`pressable relative rounded-2xl border p-3 text-left transition-colors sm:p-4 ${on ? "border-agent bg-panel shadow-[0_8px_30px_-12px_var(--agent)]" : "border-line bg-panel/60 hover:bg-panel"}`}
             >
               <AgentIcon agent={id} size={36} className={on ? "float" : ""} />
               <div className="mt-3 font-semibold">{THEMES[id].name}</div>
@@ -187,7 +187,7 @@ export default function Home() {
               transition={{ delay: i * 0.05 }}
               type="button"
               onClick={() => setTask(x)}
-              className="rounded-full border border-line px-3 py-1 text-xs text-ink-2 transition-colors hover:border-agent hover:text-ink"
+              className="pressable tap rounded-full border border-line px-3 py-1 text-xs text-ink-2 transition-colors hover:border-agent hover:text-ink"
             >
               {x}
             </motion.button>
@@ -204,7 +204,7 @@ export default function Home() {
                 disabled={m === "live" && !cfg?.live}
                 onClick={() => setMode(m)}
                 title={m === "live" && !cfg?.live ? "Live mode needs funded wallets and a deployed factory" : undefined}
-                className={`relative rounded-lg px-3 py-1.5 transition-colors ${mode === m ? "text-white" : "text-ink-2 disabled:text-ink-3/60"}`}
+                className={`tap relative rounded-lg px-3 py-1.5 transition-colors ${mode === m ? "text-white" : "text-ink-2 disabled:text-ink-3/60"}`}
               >
                 {mode === m && <motion.span layoutId="rail" className="absolute inset-0 rounded-lg bg-ink" transition={{ type: "spring", duration: 0.35 }} />}
                 <span className="relative">{m === "live" ? "Arc testnet" : "Demo rail"}</span>
@@ -260,7 +260,7 @@ export default function Home() {
                     return (
                       <label
                         key={f.code}
-                        className={`cursor-pointer select-none rounded-full border px-3 py-1.5 text-[12.5px] transition-colors ${on ? "border-warn bg-warn/15 text-[#7a5000]" : "border-line text-ink-2 hover:border-ink/30"}`}
+                        className={`pressable tap inline-flex cursor-pointer select-none items-center rounded-full border px-3 py-1.5 text-[12.5px] transition-colors ${on ? "border-warn bg-warn/15 text-[#7a5000]" : "border-line text-ink-2 hover:border-ink/30"}`}
                       >
                         <input
                           type="checkbox"

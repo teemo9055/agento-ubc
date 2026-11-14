@@ -43,6 +43,56 @@
   --radius-3xl: 6px;
 }
 
+/* ---------- touch ---------- */
+:root {
+  --tabbar-h: 0px;
+}
+@media (max-width: 639px) {
+  :root {
+    --tabbar-h: calc(60px + env(safe-area-inset-bottom));
+  }
+}
+html {
+  -webkit-tap-highlight-color: transparent;
+  -webkit-text-size-adjust: 100%;
+}
+a,
+button,
+summary,
+label,
+[role="button"],
+[role="tab"],
+[role="radio"] {
+  touch-action: manipulation;
+}
+/* Comfortable thumb targets on touch screens, without changing the look. */
+@media (pointer: coarse) {
+  .tap {
+    min-height: 44px;
+  }
+  .hit {
+    position: relative;
+  }
+  .hit::after {
+    content: "";
+    position: absolute;
+    inset: -12px;
+  }
+}
+/* Instant press feedback for anything tappable that isn't a pix-press button. */
+.pressable {
+  transition: transform 80ms steps(2);
+}
+.pressable:active {
+  transform: translate(1px, 1px) scale(0.985);
+}
+/* Things revealed on hover are always visible where there is no hover. */
+@media (hover: none) {
+  .reveal {
+    opacity: 1 !important;
+  }
+}
+
 html,
 body {
   background: var(--color-surface);
@@ -268,5 +318,22 @@ h1 {
   #receipt tr,
   #receipt .row {
     break-inside: avoid;
+  }
+}
+
+/* ---------- page transitions ---------- */
+::view-transition-group(*) {
+  animation-duration: 260ms;
+  animation-timing-function: cubic-bezier(0.23, 1, 0.32, 1);
+}
+::view-transition-old(root),
+::view-transition-new(root) {
+  animation-duration: 180ms;
+}
+@media (prefers-reduced-motion: reduce) {
+  ::view-transition-group(*),
+  ::view-transition-old(*),
+  ::view-transition-new(*) {
+    animation: none !important;
   }
 }
