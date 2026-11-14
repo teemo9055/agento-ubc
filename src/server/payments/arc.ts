@@ -6,7 +6,7 @@ import { decodeHeader, encodeHeader, type PaymentPayload, type PaymentRequiremen
 import type { PaymentAdapter, X402Request } from "./index";
 import { PaymentError } from "./index";
 
-const APP_URL = process.env.APP_URL ?? "http://localhost:3000";
+const APP_URL = process.env.APP_URL ?? `http://127.0.0.1:${process.env.PORT ?? 3000}`;
 const AUTH_WINDOW_SEC = 30;
 
 const wait = (ms: number) => new Promise((r) => setTimeout(r, ms));

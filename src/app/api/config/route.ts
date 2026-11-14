@@ -10,6 +10,7 @@ export async function GET() {
     factory: FACTORY ?? null,
     explorer: EXPLORER,
     faultsEnabled: process.env.ALLOW_FAULTS !== "false",
+    liveNeedsCode: Boolean(process.env.LIVE_ACCESS_CODE),
     agents: Object.values(AGENTS).map((a) => ({ id: a.id, name: a.name, tagline: a.tagline, examples: a.examples })),
   });
 }

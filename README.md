@@ -146,6 +146,15 @@ cd contracts && forge script script/Deploy.s.sol --rpc-url https://rpc.testnet.a
 
 4. Put the factory address in `FACTORY_ADDRESS`, then run `npm run dev`.
 
+### Deploy (Railway)
+
+The app keeps a live connection per job and runs jobs in the background, so it needs an always-on server (not serverless). The repo includes a `Dockerfile` and `railway.json`.
+
+1. New Railway project → deploy from this GitHub repo.
+2. Add a volume mounted at `/data` (jobs are stored there).
+3. Set variables from `.env.example`: Arc RPC and factory, the client key, Circle API key, entity secret and wallet ids, `AI_API_KEY`, `MCP_TOKEN`, and `LIVE_ACCESS_CODE` so only you can start Arc testnet jobs. The demo rail stays open to everyone.
+4. Keep one replica: jobs run in the server process.
+
 ## Test
 
 ```bash

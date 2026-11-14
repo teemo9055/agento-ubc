@@ -7,7 +7,8 @@ export const dynamic = "force-dynamic";
 /** Optional shared token. Set MCP_TOKEN wherever the app is reachable by others. */
 function authorized(req: Request) {
   const want = process.env.MCP_TOKEN;
-  if (!want) return true;
+  // Hosted deployments must set a token; without one, only local use is allowed.
+  if (!want) return process.env.NODE_ENV !== "production" || process.env.MCP_OPEN === "true";
   const got = (req.headers.get("authorization") ?? "").replace(/^Bearer\s+/i, "");
   const a = Buffer.from(got);
   const b = Buffer.from(want);

@@ -25,6 +25,7 @@ interface Config {
   factory: string | null;
   explorer: string;
   faultsEnabled: boolean;
+  liveNeedsCode?: boolean;
   agents: { id: AgentId; examples: string[] }[];
 }
 
@@ -72,6 +73,7 @@ export default function Home() {
   const [testMode, setTestMode] = useState(false);
   const [faults, setFaults] = useState<FailureCode[]>([]);
   const [busy, setBusy] = useState(false);
+  const [accessCode, setAccessCode] = useState("");
   const [err, setErr] = useState("");
   useAgentTheme(agent);
 
@@ -85,7 +87,7 @@ export default function Home() {
       .then((r) => r.json())
       .then((c: Config) => {
         setCfg(c);
-        if (c.live) setMode("live");
+        if (c.live && !c.liveNeedsCode) setMode("live");
       });
   }, []);
 
@@ -98,7 +100,7 @@ export default function Home() {
     setBusy(true);
     setErr("");
     try {
-      const run = await post<Run>("/api/runs", { agent, task, mode, faults: testMode ? faults : [] });
+      const run = await post<Run>("/api/runs", { agent, task, mode, faults: testMode ? faults : [], accessCode: mode === "live" ? accessCode : undefined });
       router.push(`/runs/${run.id}`);
     } catch (x) {
       setErr((x as Error).message);
@@ -213,6 +215,16 @@ export default function Home() {
             {busy ? "Planning…" : "Get work order →"}
           </Button>
         </div>
+        {mode === "live" && cfg?.liveNeedsCode && (
+          <input
+            type="password"
+            value={accessCode}
+            onChange={(e) => setAccessCode(e.target.value)}
+            placeholder="Access code for Arc testnet jobs"
+            aria-label="Access code"
+            className="mt-3 h-9 w-full rounded-xl border border-line bg-surface px-3 text-sm outline-none focus:border-ink/40"
+          />
+        )}
         {err && <p className="mt-3 text-sm text-bad">{err}</p>}
       </form>
       <p className="mt-3 text-xs text-ink-3">
