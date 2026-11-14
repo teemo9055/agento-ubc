@@ -88,6 +88,16 @@ export function ReceiptView({ run }: { run: Run }) {
         <div>
           <div className="text-ink-3">{r.agent.name} delivered</div>
           <div className="font-medium">{r.deliverable.summary}</div>
+          {run.deliverable?.notes && run.deliverable.notes.length > 0 && (
+            <ul className="mt-1.5 space-y-0.5 text-[12.5px] text-ink-2">
+              {run.deliverable.notes.map((n) => (
+                <li key={n} className="flex gap-1.5">
+                  <span className="text-agent">•</span>
+                  {n}
+                </li>
+              ))}
+            </ul>
+          )}
           <div className="text-[12px] text-ink-3">
             {r.deliverable.method} · task: “{r.task}”
           </div>
@@ -214,6 +224,12 @@ export function ReceiptView({ run }: { run: Run }) {
           <dt className="text-ink-3">Chain</dt>
           <dd>
             {r.chain.name} · chain ID {r.chain.chainId} · {r.chain.asset}
+          </dd>
+        </div>
+        <div>
+          <dt className="text-ink-3">AI</dt>
+          <dd className="num">
+            {run.ai ? `${run.ai.model} · ${run.ai.calls} calls · ${(run.ai.promptTokens + run.ai.completionTokens).toLocaleString()} tokens` : "Rule-based planner, no model calls"}
           </dd>
         </div>
         <div>

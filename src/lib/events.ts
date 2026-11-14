@@ -1,4 +1,4 @@
-import type { CostLine, Decision, Deliverable, Failure, FailureAction, Hex, Payment, ReapprovalRequest, Run } from "./types";
+import type { AiStats, CostLine, Decision, Deliverable, Failure, FailureAction, Hex, Payment, ReapprovalRequest, Run } from "./types";
 
 export type RunEvent =
   | { type: "workorder.updated"; run: Run }
@@ -11,6 +11,7 @@ export type RunEvent =
   | { type: "payment.updated"; phaseId: string; payment: Payment }
   | { type: "line.updated"; line: CostLine }
   | { type: "data.received"; key: string; product: string; data: unknown }
+  | { type: "ai.used"; purpose: string; usage: Omit<AiStats, "calls"> }
   | { type: "reapproval.requested"; request: ReapprovalRequest }
   | { type: "reapproval.decided"; requestId: string; outcome: "approved" | "denied" | "timed_out" }
   | { type: "failure.raised"; failure: Failure }

@@ -15,6 +15,8 @@ interface Opts {
   markets: number;
   tape: boolean;
   tf: "5m" | "15m" | "1hr";
+  /** Events chosen by the planner; when absent, keyword search is used. */
+  events?: { ticker: string; title: string }[];
 }
 
 const seller = SELLERS.primary;
@@ -58,21 +60,23 @@ export const inso: AgentDef = {
 
   async plan(task, o) {
     const opts = o as unknown as Opts;
-    const terms = searchTerms(task);
-    const searches = Math.max(1, terms.length);
+    const chosen = opts.events ?? [];
+    const terms = chosen.length ? chosen.map((e) => e.title) : searchTerms(task);
+    const product = chosen.length ? "markets.event" : "markets.search";
+    const searches = Math.max(1, chosen.length || terms.length);
     const n = opts.markets;
 
     const lines: LineDraft[] = [
       {
         id: "discover",
         phaseId: "discover",
-        purpose: `Find markets (${searches} ${searches === 1 ? "search" : "searches"})`,
-        service: "markets.search",
+        purpose: chosen.length ? `Load ${searches} chosen ${searches === 1 ? "event" : "events"}` : `Find markets (${searches} ${searches === 1 ? "search" : "searches"})`,
+        service: product,
         payeeName: seller.name,
         payee: seller.address,
         rail: "x402",
-        approved: price("markets.search", searches),
-        calls: { max: searches, unitPrice: PRODUCTS["markets.search"].price.toString() },
+        approved: price(product, searches),
+        calls: { max: searches, unitPrice: PRODUCTS[product].price.toString() },
       },
       {
         id: "history",
@@ -100,7 +104,7 @@ export const inso: AgentDef = {
       });
 
     const phases: PhaseDraft[] = [
-      { id: "discover", label: "Find markets", sub: terms.length ? terms.join(", ") : "top active", dependsOn: [], optional: false, lineId: "discover", alternatives: alt("markets.search", searches) },
+      { id: "discover", label: chosen.length ? "Load markets" : "Find markets", sub: terms.length ? terms.join(" · ").slice(0, 80) : "top active", dependsOn: [], optional: false, lineId: "discover", alternatives: alt(product, searches) },
       { id: "history", label: "Buy odds history", sub: `${n} markets · ${opts.tf}`, dependsOn: ["discover"], optional: false, lineId: "history", alternatives: alt("markets.history", n) },
     ];
     if (opts.tape)
@@ -115,7 +119,7 @@ export const inso: AgentDef = {
         {
           kind: "deliverable",
           title: "Odds report",
-          points: [`${n} markets · ${terms.length ? terms.join(", ") : "top active"}`, "Odds-over-time chart", "Biggest moves, momentum", ...(opts.tape ? ["Buyer vs seller flow"] : [])],
+          points: [`${n} markets · ${chosen.length ? `${chosen.length} events` : terms.length ? terms.join(", ") : "top active"}`, "Odds-over-time chart", "Biggest moves, momentum", ...(opts.tape ? ["Buyer vs seller flow"] : [])],
         },
         { kind: "risk", title: "Read-only", points: ["No trades placed", "Thin markets move on small trades", "Data as of purchase time"] },
         { kind: "method", title: "Pay per request", points: ["Gemini market data", "x402 on Arc, paid from vault", "Built-in analysis, no model fees"] },
@@ -178,22 +182,30 @@ export const inso: AgentDef = {
     const mem = ctx.memory as { picks?: Pick[]; history?: Record<string, OddsPoint[]>; tape?: Record<string, { p: number; size: number; side: string }[]>; analysis?: unknown[] };
 
     if (id === "discover") {
-      const terms = searchTerms(ctx.task);
-      const queries = terms.length ? terms : [""];
       const events: MarketEvent[] = [];
-      for (const [i, q] of queries.entries()) {
-        events.push(...(await ctx.buy<MarketEvent[]>("discover", "markets.search", { q, limit: "5" }, `search:${q}`)));
-        ctx.progress((i + 1) / queries.length, `${events.length} events`);
+      if (opts.events?.length) {
+        for (const [i, e] of opts.events.entries()) {
+          events.push(await ctx.buy<MarketEvent>("discover", "markets.event", { ticker: e.ticker }, `event:${e.ticker}`));
+          ctx.progress((i + 1) / opts.events.length, e.title);
+        }
+      } else {
+        const terms = searchTerms(ctx.task);
+        const queries = terms.length ? terms : [""];
+        for (const [i, q] of queries.entries()) {
+          events.push(...(await ctx.buy<MarketEvent[]>("discover", "markets.search", { q, limit: "5" }, `search:${q}`)));
+          ctx.progress((i + 1) / queries.length, `${events.length} events`);
+        }
       }
+      // Prefer contracts that have traded, then the most uncertain; spread picks across events.
+      const ranked = events
+        .sort((a, b) => b.volume - a.volume)
+        .map((e) => [...e.contracts].filter((c) => c.symbol).sort((a, b) => Number(b.last != null) - Number(a.last != null) || Math.abs((a.last ?? 0.5) - 0.5) - Math.abs((b.last ?? 0.5) - 0.5)).map((c) => ({ e, c })));
       const picks: Pick[] = [];
-      for (const e of events.sort((a, b) => b.volume - a.volume)) {
-        // Prefer contracts that have traded, then the most uncertain one.
-        const c = [...e.contracts]
-          .filter((c) => c.symbol)
-          .sort((a, b) => Number(b.last != null) - Number(a.last != null) || Math.abs((a.last ?? 0.5) - 0.5) - Math.abs((b.last ?? 0.5) - 0.5))[0];
-        if (c && !picks.some((p) => p.symbol === c.symbol)) picks.push({ event: e.title, label: c.label, symbol: c.symbol, last: c.last });
-        if (picks.length >= opts.markets) break;
-      }
+      for (let round = 0; picks.length < opts.markets && ranked.some((r) => r[round]); round++)
+        for (const r of ranked) {
+          const x = r[round];
+          if (x && picks.length < opts.markets && !picks.some((p) => p.symbol === x.c.symbol)) picks.push({ event: x.e.title, label: x.c.label, symbol: x.c.symbol, last: x.c.last });
+        }
       if (picks.length === 0) throw new PhaseFailure("unknown", "No active markets match this task");
       mem.picks = picks;
       ctx.progress(1, `${picks.length} markets picked`);

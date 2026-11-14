@@ -19,6 +19,12 @@ export const PRODUCTS: Record<string, Product> = {
     price: 10_000n,
     run: (q) => gemini.searchEvents(q.get("q") ?? "", Number(q.get("limit") ?? 5)),
   },
+  "markets.event": {
+    id: "markets.event",
+    description: "One prediction-market event with its contracts",
+    price: 10_000n,
+    run: (q) => gemini.getEvent(q.get("ticker") ?? ""),
+  },
   "markets.history": {
     id: "markets.history",
     description: "YES-odds history for one contract",

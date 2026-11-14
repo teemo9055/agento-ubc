@@ -19,6 +19,8 @@ import type {
   Run,
 } from "@/lib/types";
 import { AGENTS } from "./agents";
+import { aiEdit, aiPlan, aiSummary } from "./agents/ai-planning";
+import { aiEnabled, type AiUsage } from "./ai";
 import { PhaseFailure, type AgentCtx, type PlanDraft } from "./agents/types";
 import { addresses, liveReady } from "./chain";
 import { adapterFor, PaymentError } from "./payments";
@@ -46,6 +48,7 @@ interface Ctl {
   usedFaults: Set<FailureCode>;
   seller: Record<string, "primary" | "mirror">;
   overrides: Map<string, bigint>;
+  previews: Map<string, { ok: boolean; message: string; options?: Record<string, unknown>; alternatives?: string[] }>;
   funded: bigint;
   cancelled: boolean;
 }
@@ -153,6 +156,11 @@ function applyMethod(ctl: Ctl, draft: PlanDraft): PlanDraft {
     phases = phases.map((p) => (p.id === ph ? { ...p, sub: "context pack for your AI IDE", lineId: "ide" } : p));
     cards = cards.map((c) => (c.kind === "method" ? { ...c, points: c.points.map((x) => (/^Built-in/.test(x) ? "Your AI IDE does the analysis" : x)) } : c));
   }
+  const copy = ctl.options.cards as { deliverableTitle: string; deliverablePoints: string[]; riskPoints: string[] } | undefined;
+  if (copy)
+    cards = cards.map((c) =>
+      c.kind === "deliverable" ? { ...c, title: copy.deliverableTitle, points: copy.deliverablePoints } : c.kind === "risk" ? { ...c, points: copy.riskPoints } : c,
+    );
   cards = cards.map((c) => (c.kind === "method" ? { ...c, points: c.points.map((x) => (/^x402/.test(x) ? `x402 on Arc via ${m.seller === "mirror" ? SELLERS.mirror.name : SELLERS.primary.name}` : x)) } : c));
   return { cards, lines, phases };
 }
@@ -198,6 +206,7 @@ export async function createRun(input: { agent: AgentId; task: string; mode?: "d
     pendingFailures: [],
     createdAt: now(),
     method: { seller: "primary", analysis: "builtin" },
+    planner: "rules",
     estFees: "0",
   };
   const ctl: Ctl = {
@@ -211,12 +220,20 @@ export async function createRun(input: { agent: AgentId; task: string; mode?: "d
     usedFaults: new Set(),
     seller: {},
     overrides: new Map(),
+    previews: new Map(),
     funded: 0n,
     cancelled: false,
   };
   runs.set(run.id, ctl);
+  // The model drafts options from the task; code validates, prices and can always fall back to rules.
+  const drafted = aiEnabled() ? await aiPlan(run.agent, run.task) : null;
+  if (drafted) {
+    ctl.options = { ...ctl.options, ...drafted.options };
+    run.planner = "ai";
+  }
   const plan = materialize(ctl, await agent.plan(run.task, ctl.options));
   emit(ctl, { type: "workorder.updated", run: { ...run, ...plan } });
+  if (drafted) trackAi(ctl, "plan", drafted.usage);
   return ctl.run;
 }
 
@@ -241,7 +258,8 @@ export async function editCard(runId: string, card: Card["kind"], prompt: string
     }
   }
 
-  const res = agent.edit(card, prompt, ctl.options);
+  const res = ctl.previews.get(`${card}:${prompt}`) ?? (await editOptions(ctl, card, prompt));
+  ctl.previews.clear();
   if (res.ok && res.options) {
     const before = ctl.run.cards.find((c) => c.kind === "price")?.title;
     ctl.options = res.options;
@@ -256,6 +274,29 @@ export async function editCard(runId: string, card: Card["kind"], prompt: string
   }
   log(ctl, { kind: "card_edit", what: `${card}: ${prompt}`, why: res.message, outcome: res.ok ? "edited" : "rejected", by: "user" });
   return ctl.run;
+}
+
+function trackAi(ctl: Ctl, purpose: string, usage: AiUsage) {
+  emit(ctl, { type: "ai.used", purpose, usage });
+}
+
+/** AI edit first (keeps the model's card copy in sync), rule-based edit as fallback. */
+async function editOptions(ctl: Ctl, card: Card["kind"], prompt: string) {
+  if (aiEnabled() && ctl.run.planner === "ai") {
+    const r = await aiEdit(ctl.run.agent, ctl.run.task, card, prompt, ctl.options);
+    if (r) {
+      trackAi(ctl, "edit", r.usage);
+      return { ok: r.ok, message: r.message, alternatives: r.alternatives, options: r.ok ? { ...ctl.options, ...r.options } : undefined };
+    }
+  }
+  return AGENTS[ctl.run.agent].edit(card, prompt, ctl.options);
+}
+
+/** Large arrays (price series) become a short sketch so the summary prompt stays small. */
+function compact(v: unknown, depth = 0): unknown {
+  if (Array.isArray(v)) return v.length > 20 ? { count: v.length, first: compact(v[0], depth + 1), last: compact(v[v.length - 1], depth + 1) } : v.map((x) => compact(x, depth + 1));
+  if (v && typeof v === "object" && depth < 6) return Object.fromEntries(Object.entries(v).map(([k, x]) => [k, compact(x, depth + 1)]));
+  return v;
 }
 
 // ---------- approval + execution ----------
@@ -311,6 +352,14 @@ async function execute(ctl: Ctl) {
 async function finish(ctl: Ctl) {
   const agent = AGENTS[ctl.run.agent];
   const deliverable = agent.deliver(agentCtx(ctl, "deliver"));
+  if (aiEnabled() && ctl.run.method.analysis !== "ide") {
+    const r = await aiSummary(ctl.run.agent, ctl.run.task, compact(deliverable.data));
+    if (r) {
+      trackAi(ctl, "summary", r.usage);
+      deliverable.summary = r.summary.headline;
+      deliverable.notes = r.summary.bullets;
+    }
+  }
   if (ctl.run.method.analysis === "ide") {
     deliverable.method = `${deliverable.method} · analysis in your AI IDE`;
     deliverable.contextPack = {
@@ -608,7 +657,8 @@ export async function previewEdit(runId: string, card: Card["kind"], prompt: str
   const before = { total: sum(ctl.run.lines.map((l) => l.approved)).toString(), lines: ctl.run.lines.map((l) => ({ purpose: l.purpose, approved: l.approved })) };
   const m = prompt.match(/(\d+(?:\.\d+)?)/);
   if (card === "price" && /threshold|big spend/i.test(prompt) && m) return { ok: true, message: `Big-spend threshold → ${m[1]} USDC`, before, after: before };
-  const res = agent.edit(card, prompt, ctl.options);
+  const res = await editOptions(ctl, card, prompt);
+  ctl.previews.set(`${card}:${prompt}`, res);
   if (!res.ok || !res.options) return { ok: false, message: res.message, alternatives: res.alternatives };
   const plan = materialize(ctl, await agent.plan(ctl.run.task, res.options));
   return {

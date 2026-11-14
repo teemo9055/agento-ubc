@@ -34,6 +34,18 @@ export function reduce(run: Run | null, e: SeqEvent): Run | null {
       const exists = run.lines.some((l) => l.id === e.line.id);
       return { ...run, lines: exists ? run.lines.map((l) => (l.id === e.line.id ? e.line : l)) : [...run.lines, e.line] };
     }
+    case "ai.used": {
+      const prev = run.ai ?? { model: e.usage.model, calls: 0, promptTokens: 0, completionTokens: 0 };
+      return {
+        ...run,
+        ai: {
+          model: e.usage.model,
+          calls: prev.calls + 1,
+          promptTokens: prev.promptTokens + e.usage.promptTokens,
+          completionTokens: prev.completionTokens + e.usage.completionTokens,
+        },
+      };
+    }
     case "data.received":
       return { ...run, feed: { ...run.feed, [e.key]: { product: e.product, data: e.data } } };
     case "reapproval.requested":

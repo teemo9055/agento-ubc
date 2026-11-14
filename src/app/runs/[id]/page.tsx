@@ -95,6 +95,9 @@ export default function RunPage({ params }: { params: Promise<{ id: string }> })
               <span>·</span>
               <span>{theme.domain}</span>
               <span className={`rounded-full px-2 py-0.5 text-[11px] ${run.mode === "live" ? "bg-ink text-white" : "bg-ink/5 text-ink-2"}`}>{run.mode === "live" ? "Arc testnet" : "Demo rail"}</span>
+              <span className="rounded-full bg-agent-soft px-2 py-0.5 text-[11px] text-agent" title={run.ai ? `${run.ai.calls} model calls` : undefined}>
+                {run.planner === "ai" ? `Planned by AI · ${run.ai?.model ?? ""}` : "Rule-based plan"}
+              </span>
             </div>
             <h1 className="mt-1 max-w-2xl text-[22px] font-semibold leading-tight tracking-tight sm:text-[26px]">{run.task}</h1>
             <AnimatePresence mode="wait">

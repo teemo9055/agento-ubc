@@ -108,6 +108,14 @@ export interface Deliverable {
   method: string;
   data?: unknown;
   contextPack?: { prompt: string; data: unknown };
+  notes?: string[];
+}
+
+export interface AiStats {
+  model: string;
+  calls: number;
+  promptTokens: number;
+  completionTokens: number;
 }
 
 export interface Method {
@@ -146,5 +154,7 @@ export interface Run {
   editNote?: { ok: boolean; message: string; alternatives?: string[] };
   feed?: Record<string, { product: string; data: unknown }>;
   method: Method;
+  planner: "ai" | "rules";
+  ai?: AiStats;
   estFees: string; // 18-decimal native USDC
 }

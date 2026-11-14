@@ -206,7 +206,7 @@ export default function Home() {
             ))}
           </div>
           <Button type="submit" disabled={busy || task.trim().length < 3} className="bg-agent hover:opacity-90">
-            {busy ? "Pricing…" : "Get work order →"}
+            {busy ? "Planning…" : "Get work order →"}
           </Button>
         </div>
         {err && <p className="mt-3 text-sm text-bad">{err}</p>}
