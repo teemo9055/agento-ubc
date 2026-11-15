@@ -336,6 +336,8 @@ export async function validateProposal(agent: AgentId, input: unknown, id: strin
     seen.add(k);
     return true;
   });
+  if (venue === "gemini-sandbox" && action && action.kind !== "itinerary" && unique.some((r) => r.tool !== "oracle_price"))
+    adjustments.push("Data from the live Gemini market; the order trades on Gemini's test exchange, where prices can differ");
   const research: ResearchStep[] = unique.map((r, i) => ({ id: `r${i + 1}`, tool: r.tool, args: r.args, label: r.label, why: r.why }));
   return {
     proposal: {

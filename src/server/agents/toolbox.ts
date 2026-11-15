@@ -81,18 +81,27 @@ async function geocodeAll(names: string[]) {
   return out;
 }
 
-/** Fresh price for the condition, read right before acting. */
-async function observe(c: MoveCondition, action: MoveAction | undefined, venue: Proposal["venue"]): Promise<number | undefined> {
-  if (c.metric === "spot_price") return (await gemini.spotTicker(c.symbol)).last;
+/**
+ * Fresh price for the condition, read right before acting. The book the order trades on comes first;
+ * Gemini's test exchange often has an empty book, so then the live market's price is used and named.
+ */
+async function observe(c: MoveCondition, action: MoveAction | undefined, venue: Proposal["venue"]): Promise<{ value: number; source: string } | undefined> {
+  if (c.metric === "spot_price") return { value: (await gemini.spotTicker(c.symbol)).last, source: "Gemini spot" };
   const ticker = action?.kind === "prediction_order" ? action.eventTicker : undefined;
   if (!ticker) return undefined;
-  // Read the book the order would trade on.
-  const ev = await gemini.getEvent(ticker, marketBase(venue));
-  const k = ev.contracts.find((x) => x.symbol === c.symbol);
-  if (!k) return undefined;
-  const yes = k.ask ?? k.last;
-  if (yes == null) return undefined;
-  return c.metric === "yes_price" ? yes : 1 - (k.bid ?? k.last ?? yes);
+  const read = async (base: string) => {
+    const ev = await gemini.getEvent(ticker, base).catch(() => null);
+    const k = ev?.contracts.find((x) => x.symbol === c.symbol);
+    if (!k) return undefined;
+    const yes = k.ask ?? k.last;
+    if (yes == null) return undefined;
+    return c.metric === "yes_price" ? yes : 1 - (k.bid ?? k.last ?? yes);
+  };
+  const own = await read(marketBase(venue));
+  if (own != null) return { value: own, source: venue === "gemini-sandbox" ? "test exchange" : "Gemini" };
+  if (venue !== "gemini-sandbox") return undefined;
+  const live = await read(gemini.PROD_BASE);
+  return live != null ? { value: live, source: "live market (test exchange book empty)" } : undefined;
 }
 
 const dollars = (m: MoveCondition["metric"]) => m === "spot_price" || m === "oracle_price";
@@ -440,12 +449,13 @@ async function analyse(p: Proposal, mem: Mem, ctx: AgentCtx) {
     mem.check = { met: true, text: p.action ? "No condition: going ahead" : "Data read", stats };
   } else {
     const bought = p.research.find((r) => r.tool === "oracle_price" && r.args.symbol.toLowerCase() === p.condition!.symbol);
-    const v =
+    const seen =
       p.condition.metric === "oracle_price"
-        ? (mem.data[bought?.id ?? ""] as OraclePrice | undefined)?.price
+        ? { value: (mem.data[bought?.id ?? ""] as OraclePrice | undefined)?.price, source: "Chainlink" }
         : await observe(p.condition, p.action, p.venue).catch(() => undefined);
+    const v = seen?.value;
     const met = v != null && (p.condition.op === "<=" ? v <= p.condition.value : v >= p.condition.value);
-    mem.check = { met, observed: v, stats, text: v == null ? "Couldn't read a fresh price, so the move is skipped" : `${conditionText(p.condition)} → now ${fmtVal(p.condition.metric, v)} · ${met ? "met" : "not met"}` };
+    mem.check = { met, observed: v, stats, text: v == null ? "Couldn't read a fresh price, so the move is skipped" : `${conditionText(p.condition)} → now ${fmtVal(p.condition.metric, v)} (${seen?.source}) · ${met ? "met" : "not met"}` };
   }
 }
 

@@ -54,7 +54,7 @@ function system(agent: AgentId) {
           "Order types: orders rest on the exchange until filled or cancelled. For 'buy if it drops to X' use orderType limit with maxPrice X: it waits on the book and may never fill. For 'buy once it rises to X' use stop-limit with stopPrice X (at or above the last trade) and maxPrice 1-2¢ above. A limit at or above the current ask fills right away. Say which one it is.",
           "Pick contracts that can actually trade: open, closing more than 20 minutes from now, with a bid and ask; mention a wide spread. Use `condition` only for a different number, never for the order's own price: e.g. BTC spot ≥ 64k, or the Chainlink oracle (metric oracle_price, with an oracle_price research step for that symbol) before buying a BTC contract. A Chainlink check is a strong, cheap (0.0001 USDC) independent confirmation for crypto moves.",
           v === "gemini-sandbox"
-            ? "Test exchange: only markets in search_markets' `tradable` list can be ordered (crypto and commodities, no sports). Answer questions with the live markets, but take order symbols and prices from `tradable`. If the user wants something not tradable, say so instead of proposing."
+            ? "Test exchange: only markets in search_markets' `tradable` list can be ordered (crypto and commodities, no sports). Answer questions with the live markets, but take order symbols and prices from `tradable`. If the user wants something not tradable, say so instead of proposing. The test exchange's books are often empty (no bids or asks): that's fine, a limit order still rests there; base the price on the live market and say it may wait. Paid lookups always read the live market."
             : "",
         ].join("\n")
       : "",
