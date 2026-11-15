@@ -12,7 +12,9 @@ import { post } from "./useRun";
 import { toast } from "./Toaster";
 import { runOutfit } from "@/lib/summary";
 
-const RESEARCH_PRICE: Record<string, number> = { odds_history: 0.02, trade_tape: 0.1, spot_candles: 0.02, drive_route: 0.03, oracle_price: 0.0001 };
+const RESEARCH_PRICE: Record<string, number> = { odds_history: 0.02, trade_tape: 0.1, spot_candles: 0.02, drive_route: 0.03, oracle_price: 0.0001, gas_price: 0.0001, btc_network: 0.0002, wallet_balance: 0.0001 };
+/** What a paid lookup costs; a marketplace service carries the price its seller quoted. */
+const lookupCost = (r: Proposal["research"][number]) => (r.tool === "service" ? Number(r.args.price ?? 0) / 1e6 : (RESEARCH_PRICE[r.tool] ?? 0));
 const usdc = (x: number) => (x < 0.01 ? x.toFixed(4) : x.toFixed(2));
 const cents = (x: number) => `${Math.round(x * 100)}¢`;
 
@@ -72,7 +74,7 @@ function notes(p: Proposal) {
 }
 
 export function MoveCard({ p, run, chosen, onChoose, busy }: { p: Proposal; run: Run; chosen?: boolean; onChoose?: () => void; busy?: boolean }) {
-  const research = p.research.reduce((s, r) => s + (RESEARCH_PRICE[r.tool] ?? 0), 0);
+  const research = p.research.reduce((s, r) => s + lookupCost(r), 0);
   const total = research + maxCost(p.action);
   const trade = p.action && p.action.kind !== "itinerary";
   // One line of facts: the most it costs, then the one or two notes that change the decision.
@@ -124,7 +126,7 @@ const STEP_STATUS: Record<PlanStep["status"], { text: string; cls: string }> = {
   skipped: { text: "Skipped", cls: "text-ink-3" },
 };
 
-const stepCost = (p: Proposal) => p.research.reduce((s, r) => s + (RESEARCH_PRICE[r.tool] ?? 0), 0) + maxCost(p.action);
+const stepCost = (p: Proposal) => p.research.reduce((s, r) => s + lookupCost(r), 0) + maxCost(p.action);
 
 /** Several moves in a row, possibly by different agents. Started once; each step runs as its own job. */
 export function PlanCard({ plan, run }: { plan: Plan; run: Run }) {
@@ -180,7 +182,15 @@ export function PlanCard({ plan, run }: { plan: Plan; run: Run }) {
                   {st.proposal.research.length ? ` · ${st.proposal.research.length} lookup${st.proposal.research.length > 1 ? "s" : ""}` : ""}
                   {cost > 0 ? ` · ≤ $${cost < 0.01 ? usdc(cost) : cost.toFixed(2)}` : ""}
                 </div>
-                {i > 0 && st.gate === "filled" && st.status === "waiting" && <div className="text-[12px] text-ink-3">Starts only once step {i}&apos;s order fills</div>}
+                {(st.status === "waiting" || st.status === "blocked") && live.steps.length > 1 && (
+                  <div className="text-[12px] text-ink-3" data-testid="plan-step-when">
+                    {(st.after ?? []).length === 0
+                      ? live.steps.filter((x) => !(x.after ?? []).length).length > 1
+                        ? "Starts right away, alongside the others"
+                        : "Starts right away"
+                      : `After step ${(st.after ?? []).map((id) => id.replace(/^s/, "")).join(" and ")}${st.gate === "filled" ? "’s order fills" : ""}${st.useProceeds ? " · spends what it brings in" : ""}`}
+                  </div>
+                )}
                 {(st.note || st.runId) && live.status !== "proposed" && (
                   <div className="mt-0.5 text-[12px] text-ink-2">
                     {st.note}

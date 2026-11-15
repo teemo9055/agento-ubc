@@ -64,10 +64,10 @@ function system(agent: AgentId) {
     TOOLKIT[agent].research.includes("oracle_price")
       ? "CHAINLINK: you CAN check crypto prices against Chainlink's oracle (BTC, ETH, SOL, LINK). It isn't a free lookup: add a research step {tool: oracle_price, args: {symbol: 'btcusd'}} to the move, and to make the order depend on it add condition {metric: 'oracle_price', symbol: 'btcusd', op, value}. It's bought for 0.0001 USDC right before the check. Never tell the user you can't access Chainlink."
       : "",
-    `PAID RESEARCH you can attach to a move (bought after approval; Gemini data from the user's vault over x402 on Arc, Chainlink prices from Quicknode on Circle's Agent Marketplace via Gateway nanopayments):\n${researchMenu(agent)}\nAttach 1-2 lookups only when they could change the decision and say why in each; skip research the free tools already answered. Research symbols must be live markets with data.`,
-    "PLANS: when the user asks for several things in one go that need more than one move or more than one agent (e.g. 'sell my calmest position, then plan a drive to Austin'), call propose_plan instead of propose_move. Steps run in order; each is a complete move for the agent that does it (inso: prediction orders and sells; trado: spot orders; travo: driving itineraries with a drive_route lookup). Use gate 'filled' when a step should only start once the step before's order has filled (spending what a sell brought in), else 'done'. Put anything no agent can do here in `unavailable` with the honest reason, e.g. booking hotels or flights: the travel booking services on Circle's marketplace (BRIJ, Agentic Reservations) take Arc mainnet only. Never pretend a step books something. Look things up first (positions, markets) so every step uses real symbols.",
+    `PAID RESEARCH you can attach to a move (bought after approval; Gemini data from the user's vault over x402 on Arc, everything else from vendors on Circle's Agent Marketplace with Gateway nanopayments):\n${researchMenu(agent)}\nAttach 1-2 lookups only when they could change the decision and say why in each; skip research the free tools already answered. Research symbols must be live markets with data.`,
+    "PLANS: when a request has several parts (more than one move, or work for more than one agent), call propose_plan instead of propose_move. Break it into the steps that really make it up, one per thing to get done, and for each write a brief the owning agent can act on alone (inso: prediction orders, hedges, sells; trado: spot orders and onchain checks like gas, Bitcoin fees or a wallet balance; travo: driving itineraries). Put real names and numbers in the brief; look them up first. Say what each step waits for in `after`: leave it empty for steps that don't depend on anything, so they run at the same time; use gate 'filled' when a step should only start once the order it waits for has filled, and useProceeds when it should spend what that sell brought in. Put anything no agent can do here in `unavailable` with the honest reason (hotels and flights: the booking services on Circle's marketplace take mainnet only). Never pretend a step books something.",
     `PROVIDERS YOU KNOW (say plainly what each sells and whether you can use it now):\n${providerDirectory()}`,
-    "MARKETPLACE: use search_services when the user wants deeper data than the free tools. Be honest: most of Circle's Agent Marketplace charges on Arc mainnet or Base with real USDC; only services marked payableHere=true work with this app's Arc testnet vault today.",
+    "MARKETPLACE: Circle's Agent Marketplace lists thousands of paid services. You can buy from ANY listing with payableHere=true: find it with search_services (payable=true lists only those), then add a `service` research step with its url and the input it takes; code reads the seller's price and payee and the user approves it like any other step. Prefer your typed lookups (oracle_price, gas_price…) when one fits; use `service` for the rest. Be honest about the others: most listings charge on Arc mainnet or Base with real USDC, so say 'that one needs mainnet' instead of pretending.",
     `KNOWLEDGE (shared notes; use them, don't recite them):\n- ${[...PRIMERS[agent], ...lessonLines(agent).map((l) => `Learned from past jobs: ${l}`)].join("\n- ")}`,
     "TRUTH: never invent tickers, symbols, prices, odds or places; use what the tools returned in this conversation (see 'facts' in earlier turns) or look them up again. Prices of prediction contracts are 0-1; say them as cents or %. Don't promise fills or profits. This isn't financial advice; say so only if asked for advice.",
     [
@@ -98,7 +98,7 @@ const PROPOSE: ToolSpec = {
 const PROPOSE_PLAN: ToolSpec = {
   name: "propose_plan",
   description:
-    "Show the user a plan of 2-4 moves run one after another, when they ask for several things that different agents do (e.g. sell a position, then plan a trip). Each step is a full move (same shape as propose_move) for the agent that runs it. It becomes one card the user starts with one click.",
+    "Break a request with several parts into 2-5 steps and show them as one plan. You write a short brief for each step and say which earlier steps it waits for; the agent that owns the step builds its move with its own tools. Steps that don't depend on each other run at the same time. It becomes one card the user starts with one click.",
   parameters: z.toJSONSchema(PlanInput),
 };
 
@@ -114,13 +114,12 @@ const ASK: ToolSpec = {
 };
 
 /** Each agent only sees its own tools. */
-const toolSpecs = (agent: AgentId): ToolSpec[] => [
+const toolSpecs = (agent: AgentId, solo = false): ToolSpec[] => [
   ...Object.entries(FREE_TOOLS)
     .filter(([name]) => TOOLKIT[agent].free.includes(name))
     .map(([name, t]) => ({ name, description: t.description, parameters: z.toJSONSchema(t.params) })),
-  ASK,
-  PROPOSE,
-  PROPOSE_PLAN,
+  // An agent working one step of someone else's plan just builds its move.
+  ...(solo ? [PROPOSE] : [ASK, PROPOSE, PROPOSE_PLAN]),
 ];
 
 function historyTurns(chat: ChatMsg[]): ChatTurn[] {
@@ -226,10 +225,27 @@ function splitNext(text: string) {
   };
 }
 
-export async function exploreTurn(agent: AgentId, chat: ChatMsg[], onTool: (note: string) => void, proposalId: string): Promise<TurnResult> {
+/**
+ * One agent building the move for one step of a plan, from the brief another agent wrote.
+ * It works with its own tools and knowledge, and returns a checked move or the reason it can't.
+ */
+async function specialistMove(agent: AgentId, brief: string, id: string, onTool: (note: string) => void, usage: AiUsage[]): Promise<{ proposal: Proposal } | { error: string }> {
+  const r = await exploreTurn(agent, [{ id: `${id}-brief`, role: "user", text: brief, at: new Date().toISOString() }], (note) => onTool(`${NAMES[agent]}: ${note}`), id, { solo: true });
+  usage.push(...r.usage);
+  if (r.proposal) return { proposal: r.proposal };
+  return { error: `${NAMES[agent]} couldn't build this step: ${r.text.slice(0, 200)}${r.options?.length ? ` (it needs one of: ${r.options.join(", ")})` : ""}` };
+}
+const NAMES: Record<AgentId, string> = { inso: "Inso", trado: "Trado", travo: "Travo" };
+
+export async function exploreTurn(agent: AgentId, chat: ChatMsg[], onTool: (note: string) => void, proposalId: string, opts: { solo?: boolean } = {}): Promise<TurnResult> {
   if (!aiEnabled()) return rulesTurn(agent, chat, onTool, proposalId);
   const onScreen = [...chat].reverse().find((m) => m.proposal)?.proposal;
   const messages: ChatTurn[] = [{ role: "system", content: system(agent) }, ...historyTurns(chat)];
+  if (opts.solo)
+    messages.splice(1, 0, {
+      role: "system",
+      content: "You are doing ONE step of a larger plan another agent is putting together. The message is their brief. Look up what you need, then call propose_move with the move for exactly this step. Don't ask questions and don't plan other steps. If the brief can't be done, say why in one sentence.",
+    });
   if (onScreen)
     messages.splice(1, 0, {
       role: "system",
@@ -244,7 +260,7 @@ export async function exploreTurn(agent: AgentId, chat: ChatMsg[], onTool: (note
   let plan: Plan | undefined;
   for (let round = 0; round < MAX_ROUNDS; round++) {
     const last = round === MAX_ROUNDS - 1;
-    const r = await aiChat(messages, last ? [] : toolSpecs(agent));
+    const r = await aiChat(messages, last ? [] : toolSpecs(agent, opts.solo));
     if (!r) break;
     usage.push(r.usage);
     messages.push(r.message);
@@ -267,10 +283,9 @@ export async function exploreTurn(agent: AgentId, chat: ChatMsg[], onTool: (note
         content = { ok: false, error: "ask_user needs a question and at least 2 options" };
       } else if (c.name === "propose_plan") {
         onTool("Drafting a plan");
-        const steps = (c.args as { steps?: { move?: unknown }[] }).steps;
-        const args = Array.isArray(steps) ? { ...c.args, steps: steps.map((s) => ({ ...s, move: onlyStatedBudget(s.move, chat) })) } : c.args;
-        const v = await validatePlan(args, proposalId);
-        if ("error" in v) content = { ok: false, error: v.error, hint: "Fix that step with real data from the tools, drop it into `unavailable` with the reason, or explain to the user why no plan fits." };
+        const args = c.args;
+        const v = await validatePlan(args, proposalId, (who, brief, id) => specialistMove(who, onlyStatedBudget(brief, chat), id, onTool, usage));
+        if ("error" in v) content = { ok: false, error: v.error, hint: "Rewrite that step's brief with what its agent needs (real names and amounts), ask the user with ask_user if something is missing, move it to `unavailable` with the reason, or explain why no plan fits." };
         else {
           plan = v.plan;
           for (const s of plan.steps) seen.push(toProposalInput(s.proposal));
@@ -413,7 +428,8 @@ async function rulesPlan(text: string, onTool: (note: string) => void, pid: stri
     }
     const prev = steps[steps.length - 1]?.proposal.action;
     const spendsProceeds = /\b(proceeds|money|cash|that|it)\b/i.test(r.part) && prev?.kind === "prediction_order" && prev.trade === "sell";
-    steps.push({ id: `s${steps.length + 1}`, agent: r.agent, proposal: sub.proposal, gate: spendsProceeds ? "filled" : "done", status: "waiting" });
+    // Without the model the order the user said things in is the order they run in.
+    steps.push({ id: `s${steps.length + 1}`, agent: r.agent, proposal: sub.proposal, after: steps.length ? [`s${steps.length}`] : [], gate: spendsProceeds ? "filled" : "done", brief: r.part, useProceeds: spendsProceeds || undefined, status: "waiting" });
   }
   const cant = unavailable.length ? ` I can't do ${unavailable.map((u) => u.what).join(" or ")} here: ${unavailable[0].why}.` : "";
   // One doable part is just a move, with an honest note about the rest.

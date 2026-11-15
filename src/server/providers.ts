@@ -17,8 +17,15 @@ export interface Provider {
 
 export const PROVIDERS: Provider[] = [
   { name: "Gemini", sells: "prediction-market odds history and trade flow, spot price candles (our x402 data seller), and order placement on the Gemini exchange", tools: ["odds_history", "trade_tape", "spot_candles"], payable: "now", networks: "Arc testnet (x402 from your vault)" },
-  { name: "Quicknode", sells: "blockchain nodes; we use it to read Chainlink oracle prices for BTC, ETH, SOL and LINK from Ethereum mainnet", tools: ["oracle_price"], payable: "now", networks: "Arc testnet via Circle Gateway, also Arc, Base, Polygon" },
-  { name: "Chainlink", aliases: ["oracle"], sells: "oracle prices for BTC, ETH, SOL, LINK (read through Quicknode)", tools: ["oracle_price"], payable: "now", networks: "Arc testnet via Circle Gateway" },
+  {
+    name: "Quicknode",
+    sells: "pay-per-call access to 130+ blockchains. Through it we read Chainlink prices (coins, gold, silver, euro, pound, yen), gas prices on Ethereum, Base, Arbitrum, Optimism and Polygon, Bitcoin fees and mempool, and any wallet's USDC balance; any other read is possible with a `service` step",
+    tools: ["oracle_price", "gas_price", "btc_network", "wallet_balance", "service"],
+    payable: "now",
+    networks: "Arc testnet via Circle Gateway, also Arc, Base, Polygon",
+  },
+  { name: "Chainlink", aliases: ["oracle"], sells: "oracle prices for BTC, ETH, SOL, LINK, AVAX, BNB, USDC, gold, silver, EUR, GBP and JPY (read through Quicknode)", tools: ["oracle_price"], payable: "now", networks: "Arc testnet via Circle Gateway" },
+  { name: "BotPay", sells: "paid access receipts and verification codes (a payments utility, mostly useful to test that paying a new vendor works)", tools: ["service"], payable: "now", networks: "Arc testnet via Circle Gateway, also Base and Solana" },
   { name: "OpenStreetMap", aliases: ["osm", "osrm"], sells: "places and driving routes", tools: ["drive_route"], payable: "now", networks: "Arc testnet (x402 from your vault)" },
   { name: "BlockRun", aliases: ["blockrun.ai"], sells: "prediction-market data across Polymarket, Kalshi, Limitless, Opinion and Predict.Fun (search, order books, smart-money positions), plus AI models for chat, images, music and speech", payable: "mainnet", networks: "Arc mainnet" },
   { name: "Arkham", sells: "onchain wallet intelligence and Polymarket positions, prices and wallet profit-and-loss", payable: "other-network", networks: "Base and other mainnets" },

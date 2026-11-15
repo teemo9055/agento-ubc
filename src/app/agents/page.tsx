@@ -1,4 +1,5 @@
 "use client";
+import { Marketplace } from "@/components/Marketplace";
 import { useMemo, useState } from "react";
 import Link from "next/link";
 import { motion } from "framer-motion";
@@ -92,6 +93,7 @@ export default function AgentDirectory() {
         })}
       </ul>
       {shown.length === 0 && <p className="rounded-2xl border border-dashed border-[#d5d4ce] p-8 text-center text-sm text-ink-2">No agent has that skill yet.</p>}
+      <Marketplace />
     </div>
   );
 }

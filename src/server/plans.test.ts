@@ -34,9 +34,13 @@ vi.mock("@/server/chainlink", async (orig) => ({
 }));
 vi.mock("@/server/nanopay", async (orig) => ({ ...(await orig<typeof import("@/server/nanopay")>()), gatewayBalance: async () => 1, depositToGateway: async () => ({}), ensureGatewayFunds: async () => {} }));
 
+const hold = vi.hoisted(() => ({ wait: Promise.resolve() as Promise<void>, release: () => {} }));
+const pause = () => {
+  hold.wait = new Promise<void>((r) => (hold.release = r));
+};
 vi.mock("@/server/geo", () => ({
   geocode: async (q: string) => ({ name: q, lat: 49 - q.length / 10, lon: -123 + q.length / 10 }),
-  drive: async (stops: { name: string }[]) => ({
+  drive: async (stops: { name: string }[]) => (await hold.wait, {
     distanceKm: 230 * (stops.length - 1),
     hours: 2.5 * (stops.length - 1),
     path: stops.map((_, i) => [-123 + i, 49 - i] as [number, number]),
@@ -113,27 +117,89 @@ describe("plans across agents", () => {
     await until(() => orch.getRun(r.id)!.plan?.status === "done", "the plan to finish");
   });
 
+  const move = {
+    order: (qty = 5) => ({ title: "Buy YES: BTC A", why: "coin flip", ask: "Buy YES?", research: [], action: { kind: "prediction_order", eventTicker: "BTC-1", symbol: "GEMI-BTC-A", label: "A", side: "yes", orderType: "limit", maxPrice: 0.52, stopPrice: null, quantity: qty }, condition: null, budgetUsd: null }),
+    sellCoin: () => ({ title: "Sell $10 of BTC", why: "raise cash", ask: "Sell $10 of BTC?", research: [], action: { kind: "spot_order", symbol: "btcusd", side: "sell", limitPrice: 59000, amountUsd: 10 }, condition: null, budgetUsd: null }),
+    drive: () => ({ title: "Drive", why: "trip", ask: "Plan it?", research: [{ tool: "drive_route", args: { stops: "Vancouver|Seattle" }, label: "Route", why: "hours" }], action: { kind: "itinerary", stops: ["Vancouver", "Seattle"], hoursPerDay: 6 }, condition: null, budgetUsd: null }),
+  };
+  /** Stands in for the specialist agents: each brief names the move to build. */
+  const build: import("@/server/tools").BuildStep = (agent, brief, id) => tools.validateProposal(agent, brief === "sell" ? move.sellCoin() : brief === "drive" ? move.drive() : move.order(brief === "big order" ? 40 : 5), id);
+  const step = (agent: string, brief: string, after: number[] = [], gate = "done", useProceeds = false) => ({ agent, brief: brief.padEnd(8, " "), after, gate, useProceeds });
+  const plan = async (steps: ReturnType<typeof step>[]) => {
+    const v = await tools.validatePlan({ title: "A plan", why: "because", unavailable: [], steps }, `p${Math.random().toString(36).slice(2, 8)}`, (a, b, i) => build(a, b.trim(), i));
+    if ("error" in v) throw new Error(v.error);
+    return v.plan;
+  };
+  const begin = async (p: Awaited<ReturnType<typeof plan>>) => {
+    const r = await orch.createRun({ agent: "inso", task: "hello there, a plan please" });
+    orch.offerPlan(r.id, p);
+    await orch.startPlan(r.id, p.id);
+    return r.id;
+  };
+
   it("stop cancels the running step and skips the rest", async () => {
-    process.env.DEMO_DELAY_SCALE = "1";
-    const r = await orch.createRun({ agent: "inso", task: ASK });
-    await orch.startPlan(r.id, r.chat!.find((m) => m.plan)!.plan!.id);
-    await until(() => orch.getRun(r.id)!.plan?.steps[0].status === "running", "step 1 to start");
-    await orch.stopPlan(r.id);
-    process.env.DEMO_DELAY_SCALE = "0";
-    const after = orch.getRun(r.id)!;
+    pause();
+    const p = await plan([step("travo", "drive"), step("inso", "order", [1])]);
+    const id = await begin(p);
+    await until(() => orch.getRun(id)!.plan?.steps[0].status === "running", "step 1 to start");
+    await orch.stopPlan(id);
+    hold.release();
+    const after = orch.getRun(id)!;
     expect(after.plan!.status).toBe("stopped");
     expect(after.plan!.steps[1]).toMatchObject({ status: "skipped", note: "Plan stopped" });
     await until(() => orch.getRun(after.plan!.steps[0].runId!)!.status === "cancelled", "step 1 to cancel");
   });
 
-  it("plans are checked step by step", async () => {
-    const step = (agent: string, gate: string, move: unknown) => ({ agent, gate, move });
-    const itinerary = { title: "Drive", why: "trip", ask: "Plan it?", research: [{ tool: "drive_route", args: { stops: "Vancouver|Seattle" }, label: "Route", why: "hours" }], action: { kind: "itinerary", stops: ["Vancouver", "Seattle"], hoursPerDay: 6 }, condition: null, budgetUsd: null };
-    const first = await tools.validatePlan({ title: "x", why: "y", unavailable: [], steps: [step("travo", "filled", itinerary), step("travo", "done", itinerary)] }, "p1");
-    expect("error" in first && first.error).toMatch(/Step 1 has nothing before it/);
-    const afterTrip = await tools.validatePlan({ title: "x", why: "y", unavailable: [], steps: [step("travo", "done", itinerary), step("travo", "filled", itinerary)] }, "p2");
-    expect("error" in afterTrip && afterTrip.error).toMatch(/places no order/);
-    const wrongAgent = await tools.validatePlan({ title: "x", why: "y", unavailable: [], steps: [step("inso", "done", itinerary), step("travo", "done", itinerary)] }, "p3");
+  it("each step is built by its own agent, and the plan's shape is checked", async () => {
+    const check = (steps: ReturnType<typeof step>[]) => tools.validatePlan({ title: "x", why: "y", unavailable: [], steps }, "px", (a, b, i) => build(a, b.trim(), i));
+    const wrongAgent = await check([step("inso", "drive"), step("travo", "drive")]);
     expect("error" in wrongAgent && wrongAgent.error).toMatch(/Step 1 \(inso\): This agent can't do itinerary/);
+    const forward = await check([step("travo", "drive", [2]), step("travo", "drive")]);
+    expect("error" in forward && forward.error).toMatch(/can only wait for steps before it/);
+    const noOrder = await check([step("travo", "drive"), step("inso", "order", [1], "filled")]);
+    expect("error" in noOrder && noOrder.error).toMatch(/places no order/);
+    const noSell = await check([step("inso", "order"), step("inso", "order", [1], "filled", true)]);
+    expect("error" in noSell && noSell.error).toMatch(/exactly one step that sells/);
+    const ok = await check([step("trado", "sell"), step("inso", "order", [1], "filled", true), step("travo", "drive")]);
+    expect("plan" in ok && ok.plan.steps.map((s) => s.after)).toEqual([[], ["s1"], []]);
+  });
+
+  it("steps that don't depend on each other run at the same time; the one that waits starts after both", async () => {
+    pause();
+    const id = await begin(await plan([step("travo", "drive"), step("travo", "drive"), step("travo", "drive", [1, 2])]));
+    await until(() => orch.getRun(id)!.plan!.steps.slice(0, 2).every((s) => s.status === "running"), "both independent steps to be running together");
+    expect(orch.getRun(id)!.plan!.steps[2].status).toBe("waiting");
+    hold.release();
+    await until(() => orch.getRun(id)!.plan?.status === "done", "the plan to finish");
+    const done = orch.getRun(id)!.plan!;
+    expect(done.steps.map((s) => s.status)).toEqual(["done", "done", "done"]);
+    const [a, b, c] = done.steps.map((s) => orch.getRun(s.runId!)!);
+    expect(Date.parse(c.createdAt)).toBeGreaterThanOrEqual(Math.max(Date.parse(a.finishedAt!), Date.parse(b.finishedAt!)));
+    // The step that waited was told what the two before it did.
+    expect(c.handoff).toMatch(/Travo: .+ · Travo: /);
+  });
+
+  it("a step can spend what an earlier sell brought in", async () => {
+    const id = await begin(await plan([step("trado", "sell"), step("inso", "big order", [1], "filled", true)]));
+    await until(() => orch.getRun(id)!.plan?.status === "done", "the plan to finish");
+    const [sell, buy] = orch.getRun(id)!.plan!.steps;
+    expect([sell.status, buy.status]).toEqual(["done", "done"]);
+    const bought = orch.getRun(buy.runId!)!;
+    // The $10 the sell brought in buys 19 contracts at 52¢, not the 40 first drafted.
+    expect(bought.proposal!.action).toMatchObject({ kind: "prediction_order", quantity: 19 });
+    expect(bought.proposal!.budgetUsd).toBe(10);
+    expect(bought.handoff).toMatch(/Budget for this step: \$10\.00/);
+  });
+
+  it("a failed step only stops the steps that depended on it", async () => {
+    pause();
+    const id = await begin(await plan([step("travo", "drive"), step("inso", "order"), step("travo", "drive", [1])]));
+    await until(() => orch.getRun(id)!.plan!.steps[0].status === "running" && Boolean(orch.getRun(id)!.plan!.steps[0].runId), "step 1 to start");
+    await orch.cancel(orch.getRun(id)!.plan!.steps[0].runId!);
+    hold.release();
+    await until(() => orch.getRun(id)!.plan?.status === "done", "the plan to settle");
+    const steps = orch.getRun(id)!.plan!.steps;
+    expect(steps.map((s) => s.status)).toEqual(["failed", "done", "skipped"]);
+    expect(steps[2].note).toMatch(/Step 1 didn't go through/);
   });
 });

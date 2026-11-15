@@ -1106,8 +1106,19 @@ export async function startPlan(runId: string, planId: string) {
   const plan: Plan = { ...proposed, status: "running", steps: proposed.steps.map((s) => ({ ...s, status: "waiting", runId: undefined, note: undefined })) };
   emit(ctl, { type: "plan.updated", plan });
   log(ctl, { kind: "plan_approval", what: `Plan started: ${plan.title}`, why: `${plan.steps.length} steps, each approved for you when its turn comes, within the limits shown`, outcome: "approved", by: "user" });
-  emit(ctl, { type: "chat.message", message: { id: id(), role: "agent", text: `Started. Step 1: ${plan.steps[0].proposal.title}. I'll move to the next step as each one finishes.`, at: now() } });
+  emit(ctl, { type: "chat.message", message: { id: id(), role: "agent", text: (() => {
+    const first = plan.steps.filter((x) => !(x.after ?? []).length);
+    return first.length > 1 ? `Started ${first.length} steps at once: ${first.map((x) => x.proposal.title).join("; ")}. The rest follow as these finish.` : `Started. Step 1: ${plan.steps[0].proposal.title}. I'll move to the next step as each one finishes.`;
+  })(), at: now() } });
   void advancePlan(runId);
+  return ctl.run;
+}
+
+/** Puts a ready-made plan in front of the user as an agent message (used by outside AIs and tests). */
+export function offerPlan(runId: string, plan: Plan, text = plan.why) {
+  const ctl = ctlOf(runId);
+  if (ctl.run.status !== "exploring") throw new Error("a plan can only be offered while chatting");
+  emit(ctl, { type: "chat.message", message: { id: id(), role: "agent", text, at: now(), plan: { ...plan, status: "proposed" }, suggestions: ["Yes, start the plan", "Not now"] } });
   return ctl.run;
 }
 
@@ -1116,9 +1127,9 @@ export async function stopPlan(runId: string) {
   const ctl = ctlOf(runId);
   const plan = ctl.run.plan;
   if (!plan || plan.status !== "running") return ctl.run;
-  const running = plan.steps.find((s) => s.status === "running" || s.status === "blocked");
+  const running = plan.steps.filter((s) => s.status === "running" && s.runId && runs.has(s.runId));
   emit(ctl, { type: "plan.updated", plan: { ...plan, status: "stopped", steps: plan.steps.map((s) => (s.status === "waiting" || s.status === "blocked" ? { ...s, status: "skipped", note: "Plan stopped" } : s)) } });
-  if (running?.runId && runs.has(running.runId)) await cancel(running.runId).catch(() => undefined);
+  await Promise.all(running.map((s) => cancel(s.runId!).catch(() => undefined)));
   log(ctl, { kind: "failure", what: "Plan stopped", why: "Stopped by you; steps not started won't run", outcome: "cancelled", by: "user" });
   return ctl.run;
 }
@@ -1131,71 +1142,88 @@ function advancePlan(parentId: string): Promise<void> {
   return next;
 }
 
-const statusOfOrder = (r: Run) => r.order?.status;
+/** What a finished sell brought in, in dollars: fills at their average price; a practice order at its limit. */
+function proceedsOf(run: Run): number {
+  const o = run.order;
+  const a = run.proposal?.action;
+  if (!o || !a) return 0;
+  if (o.status === "simulated") return a.kind === "prediction_order" ? a.maxPrice * a.quantity : a.kind === "spot_order" ? a.amountUsd : 0;
+  const filled = o.filledQuantity ?? 0;
+  const price = o.avgPrice ?? (a.kind === "prediction_order" ? a.maxPrice : a.kind === "spot_order" ? a.limitPrice : 0);
+  return filled * price;
+}
 
+const ended = (s: PlanStep) => s.status === "done" || s.status === "skipped" || s.status === "failed";
+
+/**
+ * Moves a plan forward as far as it can go right now. Steps form a graph: each starts when the
+ * steps it waits for are done (or their orders filled), independent steps run at the same time,
+ * and a step that fails only takes the steps that depended on it down with it.
+ */
 async function advanceNow(parentId: string) {
   const ctl = runs.get(parentId);
   const plan = ctl?.run.plan;
   if (!ctl || !plan || plan.status !== "running") return;
-  const steps: PlanStep[] = plan.steps.map((s) => ({ ...s }));
+  const steps: PlanStep[] = plan.steps.map((s) => ({ ...s, after: s.after ?? [] }));
+  const before = JSON.stringify(plan.steps);
   const save = () => emit(ctl, { type: "plan.updated", plan: { ...plan, steps: steps.map((s) => ({ ...s })) } });
-  const same = (a: PlanStep[]) => JSON.stringify(a) === JSON.stringify(plan.steps);
-  const stopRest = (from: number, why: string) => {
-    for (const s of steps.slice(from)) if (s.status === "waiting" || s.status === "blocked") Object.assign(s, { status: "skipped", note: why });
-  };
+  const num = (id: string) => id.replace(/^s/, "");
 
-  for (let i = 0; i < steps.length; i++) {
-    const s = steps[i];
-    if (s.status === "done" || s.status === "skipped" || s.status === "failed") continue;
+  // 1. Steps under way: read where their job stands.
+  for (const s of steps) {
+    if (s.status !== "running") continue;
+    const child = s.runId ? runs.get(s.runId)?.run : undefined;
+    if (!child) Object.assign(s, { status: "failed", note: "Its job was lost" });
+    else if (child.status === "done") {
+      const o = child.order;
+      s.status = "done";
+      s.note = o && o.status !== "simulated" ? (o.status === "filled" ? "Filled" : o.status === "open" ? "Order placed, waiting to fill" : o.status[0].toUpperCase() + o.status.slice(1)) : (child.deliverable?.summary ?? "Done").slice(0, 120);
+    } else if (child.status === "cancelled") Object.assign(s, { status: "failed", note: "Cancelled" });
+    else s.note = child.pendingFailures.length + child.pendingReapprovals.length ? "Needs you: open the step" : child.status === "draft" ? "Waiting for approval" : "Running";
+  }
 
-    if (s.status === "running") {
-      const child = s.runId ? runs.get(s.runId)?.run : undefined;
-      if (!child) {
-        Object.assign(s, { status: "failed", note: "Its job was lost" });
-        stopRest(i + 1, "An earlier step failed");
-        break;
-      }
-      if (child.status === "done") {
-        const o = child.order;
-        s.status = "done";
-        s.note = o && o.status !== "simulated" ? `${o.status === "filled" ? "Filled" : o.status === "open" ? "Order resting" : o.status[0].toUpperCase() + o.status.slice(1)}` : (child.deliverable?.summary ?? "Done").slice(0, 120);
+  // 2. Steps not started: start the ones whose turn has come.
+  for (const s of steps) {
+    if (s.status !== "waiting" && s.status !== "blocked") continue;
+    const deps = s.after.map((id) => steps.find((x) => x.id === id)!).filter(Boolean);
+    const broken = deps.find((d) => d.status === "failed" || d.status === "skipped");
+    if (broken) {
+      Object.assign(s, { status: "skipped", note: `Step ${num(broken.id)} didn't go through, and this one depended on it` });
+      continue;
+    }
+    if (deps.some((d) => d.status !== "done")) continue;
+    let budget: number | undefined;
+    if (s.gate === "filled") {
+      const orders = deps.map((d) => ({ d, run: d.runId ? runs.get(d.runId)?.run : undefined }));
+      // An order placed earlier may have filled since: look before deciding.
+      await Promise.all(orders.filter((x) => x.run?.order?.status === "open").map((x) => refreshRunOrder(x.run!.id).catch(() => undefined)));
+      const state = orders.map((x) => ({ d: x.d, st: x.d.runId ? runs.get(x.d.runId)?.run.order?.status : undefined }));
+      const waiting = state.find((x) => x.st === "open");
+      if (waiting) {
+        Object.assign(s, { status: "blocked", note: `Waiting for step ${num(waiting.d.id)}'s order to fill` });
         continue;
       }
-      if (child.status === "cancelled") {
-        Object.assign(s, { status: "failed", note: "Cancelled" });
-        stopRest(i + 1, "An earlier step was cancelled");
-        break;
+      const dead = state.find((x) => x.st !== "filled" && x.st !== "simulated");
+      if (dead) {
+        Object.assign(s, { status: "skipped", note: `Step ${num(dead.d.id)}'s order ${dead.st ? `was ${dead.st}` : "wasn't placed"}, so this doesn't run` });
+        continue;
       }
-      const needs = child.pendingFailures.length + child.pendingReapprovals.length;
-      s.note = needs ? "Needs you: open the step" : child.status === "draft" ? "Waiting for approval" : "Running";
-      break;
+      if (s.useProceeds) budget = Math.floor(orders.reduce((sum, x) => sum + (x.run ? proceedsOf(x.run) : 0), 0) * 100) / 100;
     }
-
-    // waiting or blocked: may it start?
-    const before = steps[i - 1];
-    if (before && s.gate === "filled") {
-      const prevRun = before.runId ? runs.get(before.runId)?.run : undefined;
-      const st = prevRun && statusOfOrder(prevRun);
-      if (st === "open") {
-        Object.assign(s, { status: "blocked", note: "Waiting for the order before to fill" });
-        break;
-      }
-      if (st !== "filled" && st !== "simulated") {
-        Object.assign(s, { status: "skipped", note: `The order before ${st ? `was ${st}` : "wasn't placed"}, so this doesn't run` });
-        stopRest(i + 1, "An earlier step didn't go through");
-        break;
-      }
-    }
-    // Start it: a job with this step's move, approved under the plan the user started.
     try {
-      const child = await createRun({ agent: s.agent, task: s.proposal.title, mode: ctl.run.mode, proposal: s.proposal, plannedBy: `plan in job ${parentId}` } as CreateInput);
+      let proposal = s.proposal;
+      // Spending what an earlier step brought in: the move is re-checked with that as its budget.
+      if (budget != null) {
+        if (budget <= 0) throw new Error("The sell it waits for brought in nothing to spend");
+        const v = await validateProposal(s.agent, { ...toProposalInput(s.proposal), budgetUsd: budget }, s.proposal.id);
+        if ("error" in v) throw new Error(v.error.split(". ")[0]);
+        proposal = v.proposal;
+        s.proposal = proposal;
+      }
+      const child = await createRun({ agent: s.agent, task: proposal.title, mode: ctl.run.mode, proposal, plannedBy: `plan in job ${parentId}` } as CreateInput);
       const cc = ctlOf(child.id);
       // The agents before this one pass along what they did, so this step starts with the full picture.
-      const handoff = steps
-        .slice(0, i)
-        .filter((x) => x.status === "done" && x.note)
-        .map((x) => `${AGENTS[x.agent].name}: ${x.proposal.title} → ${x.note}`)
-        .join(" · ");
+      const handoff = [...deps.map((d) => `${AGENTS[d.agent].name}: ${d.proposal.title} → ${d.note ?? "done"}`), budget != null ? `Budget for this step: $${budget.toFixed(2)}, what that brought in` : ""].filter(Boolean).join(" · ");
       emit(cc, { type: "workorder.updated", run: { ...cc.run, parentId, stepId: s.id, handoff: handoff || undefined } });
       Object.assign(s, { status: "running", runId: child.id, note: "Starting" });
       save();
@@ -1203,13 +1231,16 @@ async function advanceNow(parentId: string) {
       s.note = "Running";
     } catch (e) {
       Object.assign(s, { status: "failed", note: (e as Error).message.slice(0, 140) });
-      stopRest(i + 1, "An earlier step failed");
     }
-    break;
+  }
+  // A step skipped in this pass may be what a later one was waiting for: one more look settles the chain.
+  for (const s of steps) {
+    if (s.status !== "waiting" && s.status !== "blocked") continue;
+    const broken = s.after.map((id) => steps.find((x) => x.id === id)).find((d) => d && (d.status === "failed" || d.status === "skipped"));
+    if (broken) Object.assign(s, { status: "skipped", note: `Step ${num(broken.id)} didn't go through, and this one depended on it` });
   }
 
-  const finished = steps.every((s) => s.status === "done" || s.status === "skipped" || s.status === "failed");
-  if (finished) {
+  if (steps.every(ended)) {
     const done = steps.filter((s) => s.status === "done").length;
     emit(ctl, { type: "plan.updated", plan: { ...plan, status: "done", steps } });
     emit(ctl, {
@@ -1218,7 +1249,7 @@ async function advanceNow(parentId: string) {
     });
     return;
   }
-  if (!same(steps)) save();
+  if (JSON.stringify(steps) !== before) save();
 }
 
 // ---------- saved jobs and repeats ----------

@@ -9,7 +9,8 @@ import { templateOf, watchesOrder } from "@/lib/templates";
 /** How long the job itself follows a resting order before handing it to the background tracker. */
 const WATCH_MINUTES = Number(process.env.WATCH_MINUTES ?? 5);
 const WATCH_POLL_MS = Number(process.env.WATCH_POLL_MS ?? 15_000);
-import { RESEARCH, researchPrice } from "../tools";
+import { RESEARCH } from "../tools";
+import { isVendorTool, VENDOR_TOOLS } from "../vendor-tools";
 import { chainlinkPrice, type OraclePrice } from "../chainlink";
 import type { AgentCtx, AgentDef, EditResult, LineDraft, PhaseDraft, PlanDraft } from "./types";
 import { PhaseFailure } from "./types";
@@ -24,7 +25,7 @@ const seller = SELLERS.primary;
 const usd = (x: number) => BigInt(Math.round(x * 1e6)).toString();
 export const EXCHANGE_PAYEE = "0x0000000000000000000000000000000000000e0e" as const;
 /** Quicknode's payTo for x402 on the Agent Marketplace (from its listing). */
-export const QUICKNODE_PAYEE = "0xF46394adDdA95A3d5bCC1124605E3d15D204623C" as const;
+export { QUICKNODE_PAYEE } from "../vendor-tools";
 
 type Opts = { proposal?: Proposal };
 type Mem = { orderSince?: number; data: Record<string, unknown>; check?: CheckResult; order?: OrderResult; days?: Day[]; route?: geo.Route; places?: geo.Place[] };
@@ -115,9 +116,10 @@ export function planFromProposal(p: Proposal): PlanDraft {
   const phases: PhaseDraft[] = [];
   for (const r of p.research) {
     const t = RESEARCH[r.tool];
-    if (r.tool === "oracle_price") {
-      const price = researchPrice(r.tool);
-      lines.push({ id: r.id, phaseId: r.id, purpose: r.label, service: "Chainlink price via Quicknode", payeeName: "Quicknode (Agent Marketplace)", payee: QUICKNODE_PAYEE, rail: "gateway", approved: price.toString(), calls: { max: 1, unitPrice: price.toString() } });
+    if (isVendorTool(r.tool)) {
+      const v = VENDOR_TOOLS[r.tool];
+      const price = v.price(r.args);
+      lines.push({ id: r.id, phaseId: r.id, purpose: r.label, service: v.service(r.args), payeeName: v.payeeName(r.args), payee: v.payee(r.args), rail: "gateway", approved: price.toString(), calls: { max: 1, unitPrice: price.toString() } });
       phases.push({ id: r.id, label: r.label, sub: r.why, dependsOn: [], optional: true, lineId: r.id });
       continue;
     }
@@ -338,12 +340,13 @@ export function toolboxAgent(id: AgentId): AgentDef {
       const mem = ctx.memory as Mem;
       mem.data ??= {};
       const step = p.research.find((r) => r.id === phaseId);
-      if (step?.tool === "oracle_price") {
+      if (step && isVendorTool(step.tool)) {
+        const v = VENDOR_TOOLS[step.tool];
+        const t = RESEARCH[step.tool];
         ctx.progress(0.2, step.label);
-        const sym = step.args.symbol.toLowerCase();
-        const q = await ctx.buyMarketplace!(step.id, `oracle:${sym}`, "oracle.chainlink", () => chainlinkPrice(sym));
-        mem.data[step.id] = q;
-        ctx.progress(1, `${q.description} $${q.price.toLocaleString(undefined, { maximumFractionDigits: 2 })} · ${q.ageMinutes} min old`);
+        const got = await ctx.buyMarketplace!(step.id, t.key(step.args), t.product, () => v.run(step.args, v.price(step.args)));
+        mem.data[step.id] = got;
+        ctx.progress(1, v.note(got));
         return;
       }
       if (step) {
@@ -435,10 +438,7 @@ async function analyse(p: Proposal, mem: Mem, ctx: AgentCtx) {
     const d = mem.data[r.id];
     if (r.tool === "odds_history") return { step: r.label, ...oddsStats(d as gemini.OddsPoint[]) };
     if (r.tool === "spot_candles") return { step: r.label, ...spotStats(d as gemini.OddsPoint[]) };
-    if (r.tool === "oracle_price") {
-      const q = d as OraclePrice | undefined;
-      return { step: r.label, oracle: q?.price, ageMinutes: q?.ageMinutes, source: q ? `${q.description} · Chainlink on Ethereum` : undefined };
-    }
+    if (isVendorTool(r.tool)) return { step: r.label, ...(d ? VENDOR_TOOLS[r.tool].stat(d) : {}) };
     if (r.tool === "trade_tape") {
       const ts = (d as { size: number; side: string }[]) ?? [];
       return { step: r.label, trades: ts.length, buys: ts.filter((x) => x.side === "buy").reduce((s, x) => s + x.size, 0), sells: ts.filter((x) => x.side === "sell").reduce((s, x) => s + x.size, 0) };

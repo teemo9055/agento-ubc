@@ -149,7 +149,7 @@ export default function RunPage({ params }: { params: Promise<{ id: string }> })
   const total = sum(vaultLines.map((l) => l.approved));
   const actual = sum(vaultLines.map((l) => l.actual));
   // Charts and maps only where the job produced one; orders with no research have nothing to draw.
-  const hasVisual = Object.keys(run.feed ?? {}).some((k) => !k.startsWith("oracle:")) || run.proposal?.action?.kind === "itinerary" || !run.proposal;
+  const hasVisual = Object.keys(run.feed ?? {}).some((k) => /^(history|candles|tape|route):/.test(k)) || run.proposal?.action?.kind === "itinerary" || !run.proposal;
   // A job that never had a conversation (a plan step, a repeat) doesn't need an empty chat beside it.
   const hasChat = (run.chat?.length ?? 0) > 0 || exploring || run.status === "draft";
   const showPopup = head && dismissed !== head.id && !approving && !cancelling;

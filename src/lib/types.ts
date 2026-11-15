@@ -302,8 +302,14 @@ export interface PlanStep {
   id: string;
   agent: AgentId;
   proposal: Proposal;
-  /** done: start once the step before finishes. filled: only once its order has filled (e.g. to spend the proceeds). */
+  /** The steps this one waits for (their ids). Empty: it can start right away, alongside others. */
+  after: string[];
+  /** done: start once the steps it waits for finish. filled: only once their orders have filled. */
   gate: "done" | "filled";
+  /** What the host agent asked this step's agent to do. */
+  brief?: string;
+  /** Its budget is what the sell it waits for brought in, set when it starts. */
+  useProceeds?: boolean;
   /** The job running this step, once started. */
   runId?: string;
   status: "waiting" | "running" | "blocked" | "done" | "failed" | "skipped";

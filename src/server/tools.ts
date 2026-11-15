@@ -2,7 +2,10 @@ import { z } from "zod";
 import type { AgentId, MoveAction, MoveCondition, Plan, PlanStep, Proposal, ResearchStep, ToolCall } from "@/lib/types";
 import * as gemini from "./gemini";
 import * as geo from "./geo";
-import { searchServices, networkName, CATEGORIES } from "./marketplace";
+import { findService, networkName, quoteService, searchServices, CATEGORIES } from "./marketplace";
+import { isVendorTool, VENDOR_TOOLS } from "./vendor-tools";
+import { EVM_CHAINS } from "./onchain";
+import { isAddress } from "viem";
 import { spotSymbols } from "./agents/ai-planning";
 import { PRODUCTS } from "./x402";
 import { marketBase, positions as heldPositions, spotFeeBps, tradingVenue, VENUE_NAME } from "./exchange";
@@ -100,13 +103,13 @@ export const FREE_TOOLS: Record<string, FreeTool> = {
     },
   },
   search_services: {
-    description: `Search Circle's Agent Marketplace for paid data and AI services other agents sell over x402. Categories: ${CATEGORIES.join(", ")}. Each result says whether it accepts Arc testnet (payable now) or only mainnet networks.`,
-    params: z.object({ query: z.string(), category: z.enum(CATEGORIES).optional() }),
+    description: `Search Circle's Agent Marketplace for paid data and AI services other agents sell over x402. Categories: ${CATEGORIES.join(", ")}. Each result has payableHere (true = you can buy it right now with a \`service\` research step, using its url, method and input), its price, and what input it takes. Set payable=true to list only what can be bought now.`,
+    params: z.object({ query: z.string(), category: z.enum(CATEGORIES).optional(), payable: z.boolean().optional() }),
     async run(a) {
-      const list = await searchServices(String(a.query ?? ""), a.category as string | undefined);
-      const data = list.map((s) => ({ ...s, networks: s.networks.map(networkName) }));
+      const list = await searchServices(String(a.query ?? ""), a.category as string | undefined, 6, Boolean(a.payable));
+      const data = list.map((s) => ({ name: s.name, provider: s.provider, what: s.description, url: s.resource, method: s.method, input: s.input, priceUsd: s.priceUsd, payableHere: s.payableHere, networks: s.networks.slice(0, 4).map(networkName) }));
       const here = list.filter((s) => s.payableHere).length;
-      return { data, summary: `${list.length} marketplace services for “${a.query}” · ${here} payable on Arc testnet` };
+      return { data, summary: `${list.length} marketplace services for “${a.query}” · ${here} payable now` };
     },
   },
 };
@@ -162,10 +165,38 @@ export const RESEARCH: Record<string, ResearchTool> = {
   },
   oracle_price: {
     product: "oracle.chainlink",
-    description: "Chainlink oracle price read live from Ethereum mainnet, bought from Quicknode on Circle's Agent Marketplace (args: symbol btcusd|ethusd|solusd|linkusd). An independent check on Gemini's price; can be used in a condition",
+    description: `Chainlink oracle price read live from Ethereum mainnet, bought from Quicknode on Circle's Agent Marketplace (args: symbol, one of ${Object.keys(FEEDS).join("|")}; covers coins, gold and silver per ounce, and euro, pound and yen in dollars). An independent check on a price; can be used in a condition`,
     args: ["symbol"],
     key: (a) => `oracle:${a.symbol?.toLowerCase()}`,
     params: (a) => ({ symbol: a.symbol?.toLowerCase() }),
+  },
+  gas_price: {
+    product: "onchain.gas",
+    description: `What a transaction costs right now on a chain, read from Quicknode on Circle's Agent Marketplace (args: chain, one of ${Object.keys(EVM_CHAINS).join("|")})`,
+    args: ["chain"],
+    key: (a) => `onchain:gas:${a.chain?.toLowerCase()}`,
+    params: (a) => ({ chain: a.chain?.toLowerCase() }),
+  },
+  btc_network: {
+    product: "onchain.btc",
+    description: "How busy Bitcoin is right now: the fee to confirm in about 3 blocks and how many payments are waiting, read from Quicknode on Circle's Agent Marketplace (no args)",
+    args: [],
+    key: () => "onchain:btc",
+    params: () => ({}),
+  },
+  wallet_balance: {
+    product: "onchain.balance",
+    description: `USDC and native-coin balance of any wallet address, read from Quicknode on Circle's Agent Marketplace (args: chain, one of ${Object.keys(EVM_CHAINS).join("|")}; address, 0x…)`,
+    args: ["chain", "address"],
+    key: (a) => `onchain:balance:${a.chain?.toLowerCase()}:${a.address?.toLowerCase()}`,
+    params: (a) => ({ chain: a.chain?.toLowerCase(), address: a.address }),
+  },
+  service: {
+    product: "marketplace.service",
+    description: "One paid request to ANY marketplace service with payableHere=true from search_services (args: url, exactly as listed; input, a JSON object as a string with what the service takes: query fields for GET, the body for POST, or {\"method\",\"params\"} for a JSON-RPC node; what, 3-6 words on what you're buying). Code reads the seller's price and payee and adds them to the plan. Reads only: nothing that sends or signs",
+    args: ["url"],
+    key: (a) => `service:${a.url}:${a.input ?? ""}`,
+    params: (a) => ({ url: a.url, input: a.input ?? "{}" }),
   },
   drive_route: {
     product: "routes.drive",
@@ -176,22 +207,23 @@ export const RESEARCH: Record<string, ResearchTool> = {
   },
 };
 
-/** Marketplace research is priced by the seller; this is the listed price (Quicknode: 0.0001 USDC per call). */
-export const MARKETPLACE_PRICE: Record<string, bigint> = { "oracle.chainlink": 100n };
-export const researchPrice = (tool: string) => MARKETPLACE_PRICE[RESEARCH[tool].product] ?? PRODUCTS[RESEARCH[tool].product].price;
-export const isMarketplace = (tool: string) => RESEARCH[tool].product in MARKETPLACE_PRICE;
+/** What a lookup costs: the vendor's price for marketplace tools, our own feed's price otherwise. */
+export const researchPrice = (tool: string, args: Record<string, string> = {}) => (isVendorTool(tool) ? VENDOR_TOOLS[tool].price(args) : PRODUCTS[RESEARCH[tool].product].price);
+export const isMarketplace = isVendorTool;
+/** Most one marketplace request may cost, in USDC base units. */
+const MAX_SERVICE = BigInt(process.env.MARKETPLACE_MAX_PER_REQUEST ?? 10_000);
 
 /** Each agent's own harness: what it can look up for free, what it can buy, and what it can do. */
 export const TOOLKIT: Record<AgentId, { free: string[]; research: string[] }> = {
-  inso: { free: ["search_markets", "get_market", "my_positions", "spot_price", "search_services"], research: ["odds_history", "trade_tape", "oracle_price"] },
-  trado: { free: ["spot_price", "search_markets", "get_market", "my_positions", "search_services"], research: ["spot_candles", "oracle_price", "odds_history"] },
-  travo: { free: ["find_place", "my_positions", "search_services"], research: ["drive_route"] },
+  inso: { free: ["search_markets", "get_market", "my_positions", "spot_price", "search_services"], research: ["odds_history", "trade_tape", "oracle_price", "service"] },
+  trado: { free: ["spot_price", "search_markets", "get_market", "my_positions", "search_services"], research: ["spot_candles", "oracle_price", "odds_history", "gas_price", "btc_network", "wallet_balance", "service"] },
+  travo: { free: ["find_place", "my_positions", "search_services"], research: ["drive_route", "oracle_price", "service"] },
 };
 
 export const researchMenu = (agent?: AgentId) =>
   Object.entries(RESEARCH)
     .filter(([id]) => !agent || TOOLKIT[agent].research.includes(id))
-    .map(([id, t]) => `- ${id}: ${t.description} · ${(Number(researchPrice(id)) / 1e6).toFixed(4)} USDC`)
+    .map(([id, t]) => `- ${id}: ${t.description} · ${id === "service" ? "priced by the seller" : `${(Number(researchPrice(id)) / 1e6).toFixed(4)} USDC`}`)
     .join("\n");
 
 /** What each agent may propose to do. */
@@ -362,6 +394,27 @@ export async function validateProposal(agent: AgentId, input: unknown, id: strin
       const list = await spotSymbols().catch(() => [] as string[]);
       if (list.length && !list.includes(r.args.symbol?.toLowerCase())) return { error: `Unknown spot symbol ${r.args.symbol}` };
     }
+    if ((r.tool === "gas_price" || r.tool === "wallet_balance") && !EVM_CHAINS[r.args.chain?.toLowerCase()]) return { error: `${r.tool}: unknown chain ${r.args.chain}. Known: ${Object.keys(EVM_CHAINS).join(", ")}` };
+    if (r.tool === "wallet_balance" && !isAddress(r.args.address ?? "")) return { error: "wallet_balance needs a full wallet address (0x followed by 40 hex characters). Ask the user for it; never make one up." };
+    if (r.tool === "service") {
+      // The model names the listing; price, payee and method come from the marketplace and the seller, never from the model.
+      const listing = await findService(r.args.url).catch(() => undefined);
+      if (!listing) return { error: `${r.args.url} isn't a marketplace service payable on this network. Use a url from search_services with payableHere=true, or tell the user it needs mainnet.` };
+      let input: Record<string, unknown>;
+      try {
+        input = JSON.parse(r.args.input || "{}");
+        if (!input || typeof input !== "object" || Array.isArray(input)) throw new Error("not an object");
+      } catch {
+        return { error: "service: input must be a JSON object written as a string" };
+      }
+      try {
+        const q = await quoteService(listing, input);
+        if (q.amount > MAX_SERVICE) return { error: `${listing.provider} asks ${Number(q.amount) / 1e6} USDC for this request, above the ${Number(MAX_SERVICE) / 1e6} USDC per-request limit` };
+        r.args = { url: listing.resource, input: JSON.stringify(input), what: (r.args.what || listing.description || listing.name).slice(0, 60), provider: listing.provider, price: q.amount.toString(), payTo: q.payTo };
+      } catch (e) {
+        return { error: `Couldn't get a price from ${listing.provider}: ${(e as Error).message.slice(0, 140)}` };
+      }
+    }
   }
 
   // A condition on the order's own price adds nothing: the exchange enforces the limit, and it keeps resting.
@@ -480,7 +533,7 @@ export async function stillTradable(p: Proposal): Promise<string | null> {
 
 export { pctOf };
 
-// ---------- plans: several moves, possibly for different agents, in order ----------
+// ---------- plans: the task broken into steps, each done by the agent that fits ----------
 
 export const PlanInput = z.object({
   title: z.string().max(70),
@@ -488,13 +541,15 @@ export const PlanInput = z.object({
   steps: z
     .array(
       z.object({
-        agent: z.enum(["inso", "trado", "travo"]).describe("inso: prediction-market orders and sells. trado: spot crypto orders. travo: driving itineraries."),
-        gate: z.enum(["done", "filled"]).describe("done: start once the step before finishes. filled: only once the step before's order has filled (e.g. spend what a sell brought in)."),
-        move: ProposalInput,
+        agent: z.enum(["inso", "trado", "travo"]).describe("inso: prediction-market orders, hedges and sells. trado: spot crypto orders and onchain checks. travo: driving itineraries."),
+        brief: z.string().min(8).max(260).describe("What this agent should do, complete on its own: name the market, coin, places and amounts. That agent builds the move with its own tools; it never sees this conversation."),
+        after: z.array(z.number().int().min(1).max(5)).max(4).describe("Numbers of the earlier steps this one must wait for. Empty when it doesn't depend on any: independent steps run at the same time."),
+        gate: z.enum(["done", "filled"]).describe("done: start once the steps in `after` finish. filled: only once their orders have actually filled."),
+        useProceeds: z.boolean().describe("true when this step should spend what the sell it waits for brought in; its budget is set to that amount when it starts. Needs gate filled."),
       }),
     )
     .min(2)
-    .max(4),
+    .max(5),
   unavailable: z
     .array(z.object({ what: z.string().max(80), why: z.string().max(160) }))
     .max(4)
@@ -502,21 +557,45 @@ export const PlanInput = z.object({
 });
 export type PlanInput = z.infer<typeof PlanInput>;
 
-/** Every step checked as if proposed on its own, by the agent that will run it. */
-export async function validatePlan(input: unknown, id: string): Promise<{ plan: Plan } | { error: string }> {
+/** Turns a brief into a checked move, by the agent that will run it. */
+export type BuildStep = (agent: AgentId, brief: string, id: string) => Promise<{ proposal: Proposal } | { error: string }>;
+
+const placesOrder = (p: Proposal) => Boolean(p.action && p.action.kind !== "itinerary");
+const isSell = (p: Proposal) => (p.action?.kind === "prediction_order" && p.action.trade === "sell") || (p.action?.kind === "spot_order" && p.action.side === "sell");
+
+/** The rules a plan's shape must follow, whoever built its steps. */
+export function checkPlanShape(steps: Pick<PlanStep, "id" | "after" | "gate" | "useProceeds" | "proposal">[]): string | null {
+  for (const [i, s] of steps.entries()) {
+    const n = i + 1;
+    const deps = s.after.map((id) => steps.find((x) => x.id === id));
+    if (deps.some((d) => !d) || s.after.some((id) => Number(id.slice(1)) >= n)) return `Step ${n} can only wait for steps before it`;
+    if (s.gate === "filled" && !s.after.length) return `Step ${n} waits for an order to fill but names no step in \`after\``;
+    if (s.gate === "filled" && deps.some((d) => !placesOrder(d!.proposal))) return `Step ${n} waits for an order to fill, but a step it waits for places no order. Use gate done.`;
+    if (s.useProceeds && (s.gate !== "filled" || deps.filter((d) => isSell(d!.proposal)).length !== 1)) return `Step ${n} spends proceeds, so it must wait (gate filled) for exactly one step that sells something`;
+  }
+  return null;
+}
+
+/** Every step is built by its own agent from the brief, then the plan's shape is checked. */
+export async function validatePlan(input: unknown, id: string, build: BuildStep): Promise<{ plan: Plan } | { error: string }> {
   const parsed = PlanInput.safeParse(input);
   if (!parsed.success) return { error: `Invalid plan: ${parsed.error.issues.map((i) => `${i.path.join(".")} ${i.message}`).join("; ")}` };
   const p = parsed.data;
-  const steps: PlanStep[] = [];
-  for (const [i, s] of p.steps.entries()) {
-    if (i === 0 && s.gate === "filled") return { error: "Step 1 has nothing before it; its gate must be done" };
-    if (s.gate === "filled") {
-      const prev = steps[i - 1].proposal.action;
-      if (!prev || prev.kind === "itinerary") return { error: `Step ${i + 1} waits for an order to fill, but step ${i} places no order. Use gate done.` };
-    }
-    const v = await validateProposal(s.agent, s.move, `${id}-s${i + 1}`);
-    if ("error" in v) return { error: `Step ${i + 1} (${s.agent}): ${v.error}` };
-    steps.push({ id: `s${i + 1}`, agent: s.agent, proposal: v.proposal, gate: s.gate, status: "waiting" });
-  }
+  // Each agent works its own step, all at once.
+  const built = await Promise.all(p.steps.map((s, i) => build(s.agent, s.brief, `${id}-s${i + 1}`)));
+  const failed = built.map((b, i) => ("error" in b ? `Step ${i + 1} (${p.steps[i].agent}): ${b.error}` : null)).filter(Boolean);
+  if (failed.length) return { error: failed.join(" | ") };
+  const steps: PlanStep[] = p.steps.map((s, i) => ({
+    id: `s${i + 1}`,
+    agent: s.agent,
+    proposal: (built[i] as { proposal: Proposal }).proposal,
+    after: [...new Set(s.after)].sort().map((n) => `s${n}`),
+    gate: s.gate,
+    brief: s.brief,
+    useProceeds: s.useProceeds || undefined,
+    status: "waiting",
+  }));
+  const wrong = checkPlanShape(steps);
+  if (wrong) return { error: wrong };
   return { plan: { id, title: p.title, why: p.why, steps, unavailable: p.unavailable, status: "proposed" } };
 }

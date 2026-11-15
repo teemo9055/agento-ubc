@@ -179,9 +179,11 @@ export async function quote(url: string, init: RequestInit = {}) {
 }
 
 /** Pays one request with a Gateway nanopayment and returns the seller's response. */
-export async function payRequest<T>(url: string, init: RequestInit = {}, maxAmount = MAX_PER_REQUEST): Promise<PaidResponse<T>> {
+export async function payRequest<T>(url: string, init: RequestInit = {}, maxAmount = MAX_PER_REQUEST, expectPayTo?: string): Promise<PaidResponse<T>> {
   const { req, option, amount } = await quote(url, init);
+  // Checked before anything is signed: never more than approved, never to someone else.
   if (amount > maxAmount) throw new Error(`Seller asks ${Number(amount) / 1e6} USDC, above the ${Number(maxAmount) / 1e6} USDC limit`);
+  if (expectPayTo && option.payTo.toLowerCase() !== expectPayTo.toLowerCase()) throw new Error(`${new URL(url).host} now asks to be paid at a different address than was approved`);
   if (!req.resource) throw new Error("Seller sent no resource metadata");
   const payload = await batchScheme().createPaymentPayload(req.x402Version, option as never);
   const sig = Buffer.from(JSON.stringify({ ...payload, accepted: option, resource: req.resource })).toString("base64");
