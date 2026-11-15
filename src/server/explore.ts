@@ -8,6 +8,7 @@ import { conditionText } from "./agents/toolbox";
 import { lessonLines, PRIMERS } from "./knowledge";
 import { providerDirectory } from "./providers";
 import { diffMoves } from "./move-diff";
+import { groundReply } from "./grounding";
 import { toProposalInput } from "./tools";
 
 /**
@@ -141,6 +142,8 @@ function factsFrom(tool: string, data: unknown): string {
 }
 
 export interface TurnResult {
+  /** Figures in the reply that couldn't be matched to any data. */
+  unverified?: string[];
   facts?: string;
   text: string;
   tools: ToolCall[];
@@ -187,6 +190,8 @@ export async function exploreTurn(agent: AgentId, chat: ChatMsg[], onTool: (note
   const tools: ToolCall[] = [];
   const usage: AiUsage[] = [];
   const facts: string[] = [];
+  // Everything the tools returned this turn, plus earlier notes and the move on screen: the only numbers a reply may use.
+  const seen: unknown[] = [...chat.map((m) => m.facts).filter(Boolean), ...chat.filter((m) => m.role === "user").map((m) => m.text), onScreen ? toProposalInput(onScreen) : null].filter(Boolean);
   let proposal: Proposal | undefined;
   for (let round = 0; round < MAX_ROUNDS; round++) {
     const last = round === MAX_ROUNDS - 1;
@@ -195,8 +200,11 @@ export async function exploreTurn(agent: AgentId, chat: ChatMsg[], onTool: (note
     usage.push(r.usage);
     messages.push(r.message);
     if (!r.calls.length) {
-      const { text, suggestions } = splitNext(String(r.message.content ?? ""));
-      return { facts: facts.filter(Boolean).join(" || ").slice(0, 1500) || undefined, text: text || (proposal ? proposal.why : "Here's what I found."), tools, proposal, suggestions: proposal ? withAccept(suggestions, proposal) : suggestions, usage };
+      const { text: raw, suggestions } = splitNext(String(r.message.content ?? ""));
+      const g = await groundReply(raw, [...seen, proposal ? toProposalInput(proposal) : null].filter(Boolean), proposal ?? onScreen).catch(() => ({ text: raw, unverified: [] as string[], usage: undefined }));
+      if (g.usage) usage.push(g.usage);
+      const text = g.text;
+      return { unverified: g.unverified.length ? g.unverified : undefined, facts: facts.filter(Boolean).join(" || ").slice(0, 1500) || undefined, text: text || (proposal ? proposal.why : "Here's what I found."), tools, proposal, suggestions: proposal ? withAccept(suggestions, proposal) : suggestions, usage };
     }
     for (const c of r.calls) {
       let content: unknown;
@@ -218,6 +226,7 @@ export async function exploreTurn(agent: AgentId, chat: ChatMsg[], onTool: (note
         const out = await runFreeTool(c.name, c.args);
         tools.push(out.call);
         if (out.call.ok) facts.push(factsFrom(c.name, out.data));
+        seen.push(out.data);
         content = out.data;
       }
       messages.push({ role: "tool", tool_call_id: c.id, name: c.name, content: JSON.stringify(content).slice(0, 7000) });

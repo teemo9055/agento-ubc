@@ -176,6 +176,11 @@ function Bubble({ m, run, onChoose, busy }: { m: ChatMsg; run: Run; onChoose: (i
         <div className={bubble}>
           <Rich text={m.text} />
         </div>
+        {m.unverified && m.unverified.length > 0 && (
+          <p className="mt-1 text-[11.5px] text-warn-ink" data-testid="unverified">
+            Couldn't check {m.unverified.join(", ")} against live data; treat as approximate.
+          </p>
+        )}
         {m.proposal && <MoveCard p={m.proposal} run={run} chosen={run.proposal?.id === m.proposal.id} onChoose={() => onChoose(m.proposal!.id)} busy={busy} />}
       </div>
     </motion.li>
@@ -185,7 +190,7 @@ function Bubble({ m, run, onChoose, busy }: { m: ChatMsg; run: Run; onChoose: (i
 export const CARD_LABEL: Record<Card["kind"], string> = { price: "Price", deliverable: "Deliverable", method: "Method", risk: "Risk" };
 const CARD_HINT: Record<Card["kind"], string> = {
   price: "e.g. big-spend threshold 0.5",
-  deliverable: "e.g. track 5 markets",
+  deliverable: "e.g. make it 5 contracts",
   method: "e.g. add a Chainlink check",
   risk: "e.g. no condition, or max 50¢",
 };

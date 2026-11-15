@@ -148,6 +148,8 @@ export interface ChatMsg {
   text: string;
   at: string;
   tools?: ToolCall[];
+  /** Figures in the reply that couldn't be matched to looked-up data; shown with a warning. */
+  unverified?: string[];
   /** Compact notes from the lookups (symbols, prices), so later turns remember them. */
   facts?: string;
   proposal?: Proposal;
