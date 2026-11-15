@@ -1,5 +1,6 @@
 import { createHmac, randomUUID } from "node:crypto";
 import type { MoveAction, OrderResult, Venue } from "@/lib/types";
+import * as gemini from "./gemini";
 import { PROD_BASE, SANDBOX_BASE } from "./gemini";
 
 /**
@@ -79,6 +80,54 @@ export async function tradingStatus(): Promise<TradingStatus> {
   } catch (e) {
     return { ...base, connected: false, error: (e as Error).message };
   }
+}
+
+export interface CheckStep {
+  step: string;
+  ok: boolean;
+  detail: string;
+}
+
+/**
+ * Test exchange only: proves the whole order path works with the user's keys. Places one
+ * 1-contract YES order at 1¢ (far from any seller, so it can't fill), finds it, cancels it.
+ */
+export async function selfTest(): Promise<CheckStep[]> {
+  const out: CheckStep[] = [];
+  const add = (step: string, ok: boolean, detail: string) => (out.push({ step, ok, detail }), ok);
+  if (tradingVenue() !== "gemini-sandbox") {
+    add("Test exchange", false, tradingVenue() === "paper" ? "No Gemini keys set, so orders are simulated" : "Only runs on the test exchange, never with real money");
+    return out;
+  }
+  const st = await tradingStatus();
+  if (!add("Keys", st.connected, st.connected ? "Signed in to the Gemini test exchange" : `Gemini refused the keys: ${st.error}`)) return out;
+  if (!add("Terms", Boolean(st.termsAccepted), st.termsAccepted ? "Prediction-market terms accepted" : "Accept the terms above first")) return out;
+  add("Balance", (st.usdAvailable ?? 0) > 0, st.usdAvailable != null ? `$${st.usdAvailable.toFixed(2)} USD available` : "Couldn't read the balance (the key may lack the Fund Manager role; orders still work)");
+  const held = await positions().then(
+    (p) => add("Positions", true, `${p.positions.length} open position${p.positions.length === 1 ? "" : "s"}`),
+    (e) => add("Positions", false, (e as Error).message.slice(0, 120)),
+  );
+  void held;
+  const events = await gemini.searchEvents("BTC", 6, SANDBOX_BASE).catch(() => []);
+  const c = events.flatMap((e) => e.contracts.filter((x) => x.open !== false && (!x.expiry || Date.parse(x.expiry) - Date.now() > 60 * 60_000)).map((x) => ({ e, x })))[0];
+  if (!add("Market", Boolean(c), c ? `Using ${c.e.title} · ${c.x.label}` : "No open BTC contract on the test exchange right now")) return out;
+  let orderId: number | undefined;
+  try {
+    const r = await priv<{ orderId: number; status: string }>("/v1/prediction-markets/order", { symbol: c.x.symbol, orderType: "limit", side: "buy", outcome: "yes", quantity: "1", price: "0.01", timeInForce: "good-til-cancel" });
+    orderId = r.orderId;
+    add("Place", true, `Order ${r.orderId} resting at 1¢ (${r.status})`);
+  } catch (e) {
+    add("Place", false, (e as Error).message.slice(0, 160));
+    return out;
+  }
+  try {
+    await priv("/v1/prediction-markets/order/cancel", { orderId });
+    const still = (await priv<{ orders: { orderId: number }[] }>("/v1/prediction-markets/orders/active", { symbol: c.x.symbol, limit: 100 })).orders.some((o) => o.orderId === orderId);
+    add("Cancel", !still, still ? `Order ${orderId} is still open: cancel it on Gemini` : "Cancelled; nothing left open");
+  } catch (e) {
+    add("Cancel", false, `${(e as Error).message.slice(0, 120)}. Cancel order ${orderId} on Gemini.`);
+  }
+  return out;
 }
 
 /** Only on the user's explicit click: accepting terms is their decision. */

@@ -20,6 +20,8 @@ export function ExchangePanel() {
   const [s, setS] = useState<Status | null>(null);
   const [busy, setBusy] = useState(false);
   const [terms, setTerms] = useState<string | null>(null);
+  const [check, setCheck] = useState<{ step: string; ok: boolean; detail: string }[] | null>(null);
+  const [checking, setChecking] = useState(false);
   useEffect(() => {
     fetch("/api/trading")
       .then((r) => r.json())
@@ -40,6 +42,19 @@ export function ExchangePanel() {
       toast((e as Error).message, "bad");
     } finally {
       setBusy(false);
+    }
+  }
+
+  async function runCheck() {
+    setChecking(true);
+    setCheck(null);
+    try {
+      const r = await fetch("/api/trading", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ action: "self-test" }) });
+      setCheck((await r.json()).steps ?? []);
+    } catch (e) {
+      toast((e as Error).message, "bad");
+    } finally {
+      setChecking(false);
     }
   }
 
@@ -81,6 +96,28 @@ export function ExchangePanel() {
                 {busy ? <Spinner /> : "I accept"}
               </Button>
             </span>
+          )}
+        </div>
+      )}
+      {s.venue === "gemini-sandbox" && s.connected && (
+        <div className="mt-2 border-t border-line pt-2">
+          <div className="flex items-center justify-between gap-2">
+            <span className="text-ink-3">Places a 1-contract order at 1¢, then cancels it.</span>
+            <Button variant="ghost" className="h-8 shrink-0 text-[12.5px]" disabled={checking} onClick={runCheck} data-testid="exchange-check">
+              {checking ? <Spinner /> : "Test the connection"}
+            </Button>
+          </div>
+          {check && (
+            <ul className="mt-1.5 space-y-0.5">
+              {check.map((c) => (
+                <li key={c.step} className="flex gap-1.5">
+                  <span className={c.ok ? "text-good" : "text-bad"}>{c.ok ? "✓" : "✗"}</span>
+                  <span>
+                    <span className="font-medium">{c.step}</span> <span className="text-ink-3">{c.detail}</span>
+                  </span>
+                </li>
+              ))}
+            </ul>
           )}
         </div>
       )}

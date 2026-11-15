@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
-import { acceptTerms, getTerms, tradingStatus } from "@/server/exchange";
+import { acceptTerms, getTerms, selfTest, tradingStatus } from "@/server/exchange";
 
 export const dynamic = "force-dynamic";
 
@@ -15,9 +15,10 @@ export async function GET(req: NextRequest) {
   return NextResponse.json(await tradingStatus());
 }
 
-/** Accepts Gemini's prediction-market terms. Only called from the user's own click. */
+/** Accepts Gemini's prediction-market terms, or runs the test-exchange check. Only from the user's own click. */
 export async function POST(req: NextRequest) {
   const body = (await req.json().catch(() => ({}))) as { action?: string };
+  if (body.action === "self-test") return NextResponse.json({ steps: await selfTest() });
   if (body.action !== "accept-terms") return NextResponse.json({ error: "unknown action" }, { status: 400 });
   try {
     await acceptTerms();
