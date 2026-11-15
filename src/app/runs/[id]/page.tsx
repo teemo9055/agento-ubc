@@ -14,6 +14,7 @@ import { Expect } from "@/components/Expect";
 import { FinishCard } from "@/components/Celebrate";
 import { AgentScene } from "@/components/AgentScene";
 import { KITS } from "@/lib/agentKit";
+import { TEMPLATE_LABEL, templateOf } from "@/lib/templates";
 import { Amount, Button, Spinner } from "@/components/ui";
 import { Icon } from "@/components/Icon";
 import { post, useAgentTheme, useRun } from "@/components/useRun";
@@ -301,7 +302,7 @@ export default function RunPage({ params }: { params: Promise<{ id: string }> })
           <Section
             title="Steps"
             label="Plan graph"
-            sub={`${run.phases.length} steps · nothing runs until you approve · click a step to change it`}
+            sub={`${run.proposal ? `${TEMPLATE_LABEL[templateOf(run.proposal)]} · ` : ""}${run.phases.length} steps · nothing runs until you approve · click a step to change it`}
             aside={
               <>
                 {run.status === "draft" && (

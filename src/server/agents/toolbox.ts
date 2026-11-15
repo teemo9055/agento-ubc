@@ -3,7 +3,12 @@ import { SELLERS } from "../sellers";
 import { PRODUCTS } from "../x402";
 import * as gemini from "../gemini";
 import * as geo from "../geo";
-import { describeAction, ExchangeError, marketBase, notionalOf, placeOrder, VENUE_NAME, VENUE_NOTE } from "../exchange";
+import { describeAction, ExchangeError, marketBase, notionalOf, placeOrder, refreshOrder, VENUE_NAME, VENUE_NOTE } from "../exchange";
+import { templateOf, watchesOrder } from "@/lib/templates";
+
+/** How long the job itself follows a resting order before handing it to the background tracker. */
+const WATCH_MINUTES = Number(process.env.WATCH_MINUTES ?? 5);
+const WATCH_POLL_MS = Number(process.env.WATCH_POLL_MS ?? 15_000);
 import { RESEARCH, researchPrice } from "../tools";
 import { chainlinkPrice, type OraclePrice } from "../chainlink";
 import type { AgentCtx, AgentDef, EditResult, LineDraft, PhaseDraft, PlanDraft } from "./types";
@@ -119,16 +124,20 @@ export function planFromProposal(p: Proposal): PlanDraft {
     });
   }
   const research = p.research.map((r) => r.id);
-  phases.push({ id: "check", label: p.condition ? "Check the condition" : "Read the data", sub: p.condition ? conditionText(p.condition) : "on fresh prices", dependsOn: research, optional: false });
   const a = p.action;
+  const template = templateOf(p);
+  // The boxes follow the kind of task: no fixed check or report step when it adds nothing.
+  if (template === "answer") phases.push({ id: "check", label: "Write it up", sub: "what the data says", dependsOn: research, optional: false });
+  if (template === "check_trade") phases.push({ id: "check", label: "Check the condition", sub: conditionText(p.condition!), dependsOn: research, optional: false });
+  const before = template === "check_trade" ? ["check"] : research;
   if (a && a.kind !== "itinerary") {
     const venue = p.venue;
     lines.push({ id: "order", phaseId: "act", purpose: describeAction(a), service: a.kind === "prediction_order" ? "prediction order" : "spot order", payeeName: VENUE_NAME[venue], payee: EXCHANGE_PAYEE, rail: "exchange", approved: usd(notionalOf(a)) });
-    phases.push({ id: "act", label: a.kind === "prediction_order" ? "Place the order" : "Place the trade", sub: describeAction(a), dependsOn: ["check"], optional: false, lineId: "order" });
+    phases.push({ id: "act", label: a.kind === "prediction_order" ? "Place the order" : "Place the trade", sub: describeAction(a), dependsOn: before, optional: false, lineId: "order" });
+    if (watchesOrder(p)) phases.push({ id: "watch", label: "Watch until filled", sub: `up to ${WATCH_MINUTES} min, then tracked in the background`, dependsOn: ["act"], optional: false });
   } else if (a?.kind === "itinerary") {
-    phases.push({ id: "act", label: "Plan the days", sub: `${a.stops.length} stops · ≤ ${a.hoursPerDay} h a day`, dependsOn: ["check"], optional: false });
+    phases.push({ id: "act", label: "Plan the days", sub: `${a.stops.length} stops · ≤ ${a.hoursPerDay} h a day`, dependsOn: before, optional: false });
   }
-  phases.push({ id: "deliver", label: "Report", sub: "what happened and why", dependsOn: [a ? "act" : "check"], optional: false });
 
   const cards: Card[] = [
     { kind: "deliverable", title: p.title, points: [p.ask, ...(a ? [describeAction(a)] : []), ...p.research.map((r) => r.label)].slice(0, 4) },
@@ -342,38 +351,17 @@ export function toolboxAgent(id: AgentId): AgentDef {
         return;
       }
       if (phaseId === "check") {
-        if (ctx.fault("model_error")) throw new PhaseFailure("model_error", "Analysis crashed mid-run");
-        const stats: Record<string, unknown>[] = p.research.map((r) => {
-          const d = mem.data[r.id];
-          if (r.tool === "odds_history") return { step: r.label, ...oddsStats(d as gemini.OddsPoint[]) };
-          if (r.tool === "spot_candles") return { step: r.label, ...spotStats(d as gemini.OddsPoint[]) };
-          if (r.tool === "oracle_price") {
-            const q = d as OraclePrice | undefined;
-            return { step: r.label, oracle: q?.price, ageMinutes: q?.ageMinutes, source: q ? `${q.description} · Chainlink on Ethereum` : undefined };
-          }
-          if (r.tool === "trade_tape") {
-            const ts = (d as { size: number; side: string }[]) ?? [];
-            return { step: r.label, trades: ts.length, buys: ts.filter((x) => x.side === "buy").reduce((s, x) => s + x.size, 0), sells: ts.filter((x) => x.side === "sell").reduce((s, x) => s + x.size, 0) };
-          }
-          const rt = d as geo.Route | undefined;
-          return { step: r.label, km: rt ? Math.round(rt.distanceKm) : null, hours: rt ? Number(rt.hours.toFixed(1)) : null };
-        });
-        if (!p.condition) {
-          mem.check = { met: true, text: "No condition: proceeding", stats };
-        } else {
-          const bought = p.research.find((r) => r.tool === "oracle_price" && r.args.symbol.toLowerCase() === p.condition!.symbol);
-          const v =
-            p.condition.metric === "oracle_price"
-              ? (mem.data[bought?.id ?? ""] as OraclePrice | undefined)?.price
-              : await observe(p.condition, p.action, p.venue).catch(() => undefined);
-          const met = v != null && (p.condition.op === "<=" ? v <= p.condition.value : v >= p.condition.value);
-          mem.check = { met, observed: v, stats, text: v == null ? "Couldn't read a fresh price, so the move is skipped" : `${conditionText(p.condition)} → now ${fmtVal(p.condition.metric, v)} · ${met ? "met" : "not met"}` };
-        }
-        ctx.progress(1, mem.check.text);
+        await analyse(p, mem, ctx);
+        ctx.progress(1, mem.check!.text);
+        return;
+      }
+      if (phaseId === "watch") {
+        await watch(mem, ctx, a0(p));
         return;
       }
       if (phaseId === "act") {
         const a = p.action!;
+        if (a.kind !== "itinerary" && !mem.check) await analyse(p, mem, ctx);
         if (a.kind === "itinerary") {
           mem.places ??= await geocodeAll(a.stops);
           mem.route ??= await geo.drive(mem.places);
@@ -404,25 +392,80 @@ export function toolboxAgent(id: AgentId): AgentDef {
       }
       ctx.progress(1);
     },
-
-    deliver(ctx): Deliverable {
-      const p = (ctx.options as Opts).proposal!;
-      const mem = ctx.memory as Mem;
-      const o = mem.order;
-      const summary = o
-        ? o.status === "skipped"
-          ? `Held off: ${mem.check?.text ?? "condition not met"}`
-          : o.status === "simulated"
-            ? `Simulated (no exchange connected): ${o.detail}`
-            : `${o.status === "filled" ? "Filled" : "Order open"} on ${VENUE_NAME[o.venue]}: ${o.detail}`
-        : mem.days
-          ? `${mem.days.length} driving days · ${Math.round(mem.route?.distanceKm ?? 0)} km`
-          : (mem.check?.text ?? p.title);
-      return {
-        summary,
-        method: `${p.research.length} paid lookup${p.research.length === 1 ? "" : "s"} via x402 on Arc${o ? ` · ${VENUE_NAME[o.venue]}` : ""}`,
-        data: { move: p, check: mem.check, order: o, days: mem.days, places: mem.places, route: mem.route },
-      };
-    },
+    deliver: deliverFor,
   };
+}
+
+const a0 = (p: Proposal) => p.action!;
+
+/** Reads what the paid lookups returned and evaluates the condition. Used by the check step, or by the order step when there's none. */
+async function analyse(p: Proposal, mem: Mem, ctx: AgentCtx) {
+  if (ctx.fault("model_error")) throw new PhaseFailure("model_error", "Analysis crashed mid-run");
+  const stats: Record<string, unknown>[] = p.research.map((r) => {
+    const d = mem.data[r.id];
+    if (r.tool === "odds_history") return { step: r.label, ...oddsStats(d as gemini.OddsPoint[]) };
+    if (r.tool === "spot_candles") return { step: r.label, ...spotStats(d as gemini.OddsPoint[]) };
+    if (r.tool === "oracle_price") {
+      const q = d as OraclePrice | undefined;
+      return { step: r.label, oracle: q?.price, ageMinutes: q?.ageMinutes, source: q ? `${q.description} · Chainlink on Ethereum` : undefined };
+    }
+    if (r.tool === "trade_tape") {
+      const ts = (d as { size: number; side: string }[]) ?? [];
+      return { step: r.label, trades: ts.length, buys: ts.filter((x) => x.side === "buy").reduce((s, x) => s + x.size, 0), sells: ts.filter((x) => x.side === "sell").reduce((s, x) => s + x.size, 0) };
+    }
+    const rt = d as geo.Route | undefined;
+    return { step: r.label, km: rt ? Math.round(rt.distanceKm) : null, hours: rt ? Number(rt.hours.toFixed(1)) : null };
+  });
+  if (!p.condition) {
+    mem.check = { met: true, text: p.action ? "No condition: going ahead" : "Data read", stats };
+  } else {
+    const bought = p.research.find((r) => r.tool === "oracle_price" && r.args.symbol.toLowerCase() === p.condition!.symbol);
+    const v =
+      p.condition.metric === "oracle_price"
+        ? (mem.data[bought?.id ?? ""] as OraclePrice | undefined)?.price
+        : await observe(p.condition, p.action, p.venue).catch(() => undefined);
+    const met = v != null && (p.condition.op === "<=" ? v <= p.condition.value : v >= p.condition.value);
+    mem.check = { met, observed: v, stats, text: v == null ? "Couldn't read a fresh price, so the move is skipped" : `${conditionText(p.condition)} → now ${fmtVal(p.condition.metric, v)} · ${met ? "met" : "not met"}` };
+  }
+}
+
+/** Follows a resting order on the exchange for a few minutes; after that the background tracker keeps it current. */
+async function watch(mem: Mem, ctx: AgentCtx, action: MoveAction) {
+  const o = mem.order;
+  if (!o || o.status !== "open") {
+    ctx.progress(1, o ? (o.status === "filled" ? "Filled" : o.status === "skipped" ? "Nothing to watch: order not placed" : `Order ${o.status}`) : "No order");
+    return;
+  }
+  const until = Date.now() + WATCH_MINUTES * 60_000;
+  let cur = o;
+  while (Date.now() < until && cur.status === "open") {
+    await new Promise((r) => setTimeout(r, WATCH_POLL_MS));
+    const next = await refreshOrder(cur, action.kind).catch(() => cur);
+    if (JSON.stringify(next) !== JSON.stringify(cur)) ctx.order?.(next);
+    cur = next;
+    mem.order = cur;
+    const left = Math.max(0, Math.round((until - Date.now()) / 60_000));
+    ctx.progress(Math.min(0.95, 1 - (until - Date.now()) / (WATCH_MINUTES * 60_000)), cur.status === "open" ? `Filled ${cur.filledQuantity ?? 0} of ${cur.quantity ?? "?"} · ${left} min left` : `Order ${cur.status}`);
+  }
+  ctx.progress(1, cur.status === "filled" ? "Filled" : cur.status === "open" ? "Still resting; tracked in the background" : `Order ${cur.status}`);
+}
+
+function deliverFor(ctx: AgentCtx): Deliverable {
+const p = (ctx.options as Opts).proposal!;
+const mem = ctx.memory as Mem;
+const o = mem.order;
+const summary = o
+  ? o.status === "skipped"
+    ? `Held off: ${mem.check?.text ?? "condition not met"}`
+    : o.status === "simulated"
+      ? `Simulated (no exchange connected): ${o.detail}`
+      : `${o.status === "filled" ? "Filled" : "Order open"} on ${VENUE_NAME[o.venue]}: ${o.detail}`
+  : mem.days
+    ? `${mem.days.length} driving days · ${Math.round(mem.route?.distanceKm ?? 0)} km`
+    : (mem.check?.text ?? p.title);
+return {
+  summary,
+  method: `${p.research.length} paid lookup${p.research.length === 1 ? "" : "s"} via x402 on Arc${o ? ` · ${VENUE_NAME[o.venue]}` : ""}`,
+  data: { move: p, check: mem.check, order: o, days: mem.days, places: mem.places, route: mem.route },
+};
 }
