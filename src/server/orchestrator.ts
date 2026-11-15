@@ -26,6 +26,7 @@ import { cancelOrder, refreshOrder } from "./exchange";
 import { stillTradable } from "./tools";
 import { depositToGateway, gatewayBalance } from "./nanopay";
 import { recordOrder } from "./knowledge";
+import { aiEditMove } from "./edit-move";
 import { offVault, type ChatMsg, type Proposal } from "@/lib/types";
 import { PhaseFailure, type AgentCtx, type PlanDraft } from "./agents/types";
 import { FACTORY, USDC, addresses, factoryAbi, liveReady, publicClient, vaultAbi } from "./chain";
@@ -368,6 +369,14 @@ function trackAi(ctl: Ctl, purpose: string, usage: AiUsage) {
 
 /** AI edit first (keeps the model's card copy in sync), rule-based edit as fallback. */
 async function editOptions(ctl: Ctl, card: Card["kind"], prompt: string, step?: string) {
+  const current = ctl.options.proposal as Proposal | undefined;
+  if (current && aiEnabled()) {
+    const ai = await aiEditMove(ctl.run.agent, current, prompt, step).catch((e) => (console.warn("ai edit", (e as Error).message), null));
+    if (ai) {
+      trackAi(ctl, "edit", ai.usage);
+      return ai.ok && ai.proposal ? { ok: true, message: ai.message, options: { ...ctl.options, proposal: ai.proposal } } : { ok: false, message: ai.message, alternatives: ai.alternatives };
+    }
+  }
   const r = AGENTS[ctl.run.agent].edit(card, prompt, ctl.options, step);
   return r.ok && r.options ? { ...r, options: { ...ctl.options, ...r.options } } : r;
 }

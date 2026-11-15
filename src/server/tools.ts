@@ -343,6 +343,20 @@ export async function validateProposal(agent: AgentId, input: unknown, id: strin
   };
 }
 
+/** A stored move in the shape the model writes and the validator reads. */
+export function toProposalInput(p: Proposal): ProposalInput {
+  const a = p.action;
+  return {
+    title: p.title,
+    why: p.why,
+    ask: p.ask,
+    research: p.research.map((r) => ({ tool: r.tool, args: r.args, label: r.label, why: r.why })),
+    action: !a ? null : a.kind === "prediction_order" ? { ...a, stopPrice: a.stopPrice ?? null } : a,
+    condition: p.condition ?? null,
+    budgetUsd: p.budgetUsd ?? null,
+  } as ProposalInput;
+}
+
 /** Right before approval: is the move still placeable? Markets close and contracts expire while you think. */
 export async function stillTradable(p: Proposal): Promise<string | null> {
   const a = p.action;

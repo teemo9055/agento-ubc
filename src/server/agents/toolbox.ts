@@ -246,7 +246,7 @@ function edit(_card: Card["kind"], prompt: string, o: Record<string, unknown>, s
   let changed = false;
   const qty = t.match(/(\d+)\s*(contracts?|shares?|x\b)/);
   const cents = t.match(/(\d{1,2})\s*(¢|c\b|cents?)/);
-  const dollars = t.match(/\$\s*(\d+(?:\.\d+)?)/);
+  const dollars = t.match(/\$\s*(\d+(?:\.\d+)?)/) ?? t.match(/(\d+(?:\.\d+)?)\s*(?:dollars?|bucks|usd|usdc)\b/);
   const a = next.action;
   if (a?.kind === "prediction_order" && qty) (a.quantity = Math.min(100, Math.max(1, Number(qty[1])))), (changed = true);
   if (a?.kind === "prediction_order" && cents) (a.maxPrice = Math.min(0.99, Math.max(0.01, Number(cents[1]) / 100))), (changed = true);
@@ -268,9 +268,35 @@ function edit(_card: Card["kind"], prompt: string, o: Record<string, unknown>, s
 }
 
 const TAGLINES: Record<AgentId, { name: string; tagline: string; examples: string[] }> = {
-  inso: { name: "Inso", tagline: "Reads prediction-market odds and asks before it places an order.", examples: ["Is BTC going to close above 100k this week?", "Which NBA game tonight has the most lopsided odds?", "What do markets think the Fed does next?"] },
-  trado: { name: "Trado", tagline: "Spots price trends and trades only when you approve.", examples: ["Is ETH in an uptrend right now?", "Should I buy SOL on this dip?", "Compare BTC and ETH this week"] },
-  travo: { name: "Travo", tagline: "Plans driving routes and day trips.", examples: ["Drive from Vancouver to San Francisco in 3 days", "How long is Calgary to Banff?", "Road trip Toronto to Montreal via Ottawa"] },
+  inso: {
+    name: "Inso",
+    tagline: "Reads prediction-market odds and asks before it places an order.",
+    examples: [
+      "Put $5 on BTC above $65k tonight, but only if Chainlink agrees",
+      "Bet $4 on ETH above $2,000 this month, but only if it gets cheaper",
+      "What does the market think the Fed does in December?",
+      "Who's the underdog in tonight's Lakers game?",
+    ],
+  },
+  trado: {
+    name: "Trado",
+    tagline: "Spots price trends and trades only when you approve.",
+    examples: [
+      "Is ETH in an uptrend? Buy $10 only if it is",
+      "Buy $20 of SOL if it dips 2% from here",
+      "Check BTC against Chainlink, then buy $10 if they agree",
+      "BTC or ETH: which looks stronger this week?",
+    ],
+  },
+  travo: {
+    name: "Travo",
+    tagline: "Plans driving routes and day trips.",
+    examples: [
+      "Vancouver to San Francisco in 3 days: where should I sleep?",
+      "Toronto to Montreal via Ottawa, max 4 hours of driving a day",
+      "Calgary to Banff and back this weekend",
+    ],
+  },
 };
 
 export function toolboxAgent(id: AgentId): AgentDef {

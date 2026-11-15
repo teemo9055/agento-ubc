@@ -8,6 +8,8 @@ import { z } from "zod";
 const BASE = process.env.AI_BASE_URL ?? "https://generativelanguage.googleapis.com/v1beta/openai";
 const MODEL = process.env.AI_MODEL ?? "gemini-flash-latest";
 const FALLBACK_MODEL = process.env.AI_FALLBACK_MODEL ?? "gemini-flash-lite-latest";
+/** Cheap, fast model for small structured jobs (edits, rewrites); the main model does exploring and planning. */
+export const FAST_MODEL = process.env.AI_FAST_MODEL ?? "gemini-flash-lite-latest";
 const KEY = process.env.AI_API_KEY ?? process.env.GEMINI_API_KEY;
 const TIMEOUT_MS = Number(process.env.AI_TIMEOUT_MS ?? 20_000);
 /** How hard the model thinks before answering. "low" is faster and spends fewer hidden tokens. */
@@ -24,11 +26,13 @@ export interface AiUsage {
 
 export async function aiJson<T extends z.ZodType>(
   schema: T,
-  opts: { name: string; system: string; user: string; maxTokens?: number },
+  opts: { name: string; system: string; user: string; maxTokens?: number; model?: string },
 ): Promise<{ value: z.infer<T>; usage: AiUsage } | null> {
   if (!aiEnabled()) return null;
-  // One retry on a lighter model when the main one is overloaded or slow.
-  return (await attempt(schema, opts, MODEL)) ?? (FALLBACK_MODEL !== MODEL ? await attempt(schema, opts, FALLBACK_MODEL) : null);
+  const first = opts.model ?? MODEL;
+  // One retry on the other model when the first is overloaded or slow.
+  const second = first === MODEL ? FALLBACK_MODEL : MODEL;
+  return (await attempt(schema, opts, first)) ?? (second !== first ? await attempt(schema, opts, second) : null);
 }
 
 async function attempt<T extends z.ZodType>(

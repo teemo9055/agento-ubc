@@ -47,66 +47,72 @@ export function VenueBadge({ venue }: { venue: Venue }) {
 }
 
 /** A proposed move. In chat it carries the "Build graph" button; once chosen it is the plan's summary. */
+/** Short labels for paid steps, so the card reads as a sentence, not a spreadsheet. */
+const STEP_LABEL: Record<string, (r: Proposal["research"][number]) => string> = {
+  oracle_price: (r) => `Chainlink ${r.args.symbol?.replace(/usd$/i, "").toUpperCase()}`,
+  odds_history: () => "Odds history",
+  trade_tape: () => "Trade flow",
+  spot_candles: (r) => `${r.args.symbol?.replace(/usd$/i, "").toUpperCase()} chart`,
+  drive_route: () => "Route",
+};
+
+/** Only the notes that change the decision, said briefly. */
+function notes(p: Proposal) {
+  return (p.adjustments ?? [])
+    .filter((x) => !/^Price rounded/.test(x))
+    .map((x) =>
+      x
+        .replace(/^Contract closes \w+, (\d+) (\w+) \d{4} (\d\d:\d\d) UTC$/, "Closes $2 $1, $3 UTC")
+        .replace(/^Fills now: cheapest (YES|NO) seller is at (\d+¢)$/, "Fills now at $2")
+        .replace(/^Waits on the book: cheapest (YES|NO) seller is at (\d+¢) now$/, "Waits until the price drops (now $2)")
+        .replace(/^Price check folded into the order.*$/, "Waits on the exchange until the price is right"),
+    );
+}
+
 export function MoveCard({ p, run, chosen, onChoose, busy }: { p: Proposal; run: Run; chosen?: boolean; onChoose?: () => void; busy?: boolean }) {
   const research = p.research.reduce((s, r) => s + (RESEARCH_PRICE[r.tool] ?? 0), 0);
+  const total = research + maxCost(p.action);
+  const steps = [
+    ...p.research.map((r) => ({ key: r.id, text: (STEP_LABEL[r.tool] ?? (() => r.label))(r), price: RESEARCH_PRICE[r.tool], title: r.why })),
+    ...(p.condition ? [{ key: "check", text: `Only if ${conditionLabel(p.condition)}`, price: undefined, title: "Checked on fresh data right before acting" }] : []),
+    ...(p.action ? [{ key: "act", text: p.action.kind === "itinerary" ? "Day-by-day plan" : "Order", price: maxCost(p.action) || undefined, title: actionText(p.action) }] : []),
+  ];
+  const n = notes(p);
   return (
     <div className={`mt-2 rounded-xl border-[1.5px] bg-panel p-3.5 ${chosen ? "border-line" : "border-ink shadow-[3px_3px_0_0_var(--agent)]"}`} data-testid="move-card">
-      <div className="flex flex-wrap items-center justify-between gap-x-2 gap-y-1.5">
-        <span className="font-pixel text-[12px] text-agent-ink">Proposed move</span>
-        <span className="flex flex-wrap items-center gap-1.5">
-          {p.action && p.action.kind !== "itinerary" && <VenueBadge venue={p.venue ?? "paper"} />}
-          {chosen && (
-            <span className="inline-flex items-center gap-1 text-[12px] font-semibold text-good">
-              <Icon name="check" size={13} stroke={2.6} /> In the plan
-            </span>
-          )}
-        </span>
+      <div className="flex items-start justify-between gap-2">
+        <div className="text-[15px] font-semibold leading-snug">{p.title}</div>
+        {chosen ? (
+          <span className="inline-flex shrink-0 items-center gap-1 text-[12px] font-semibold text-good">
+            <Icon name="check" size={13} stroke={2.6} /> In the plan
+          </span>
+        ) : (
+          p.action && p.action.kind !== "itinerary" && <VenueBadge venue={p.venue ?? "paper"} />
+        )}
       </div>
-      <div className="mt-1 text-[15px] font-semibold leading-snug">{p.title}</div>
-      <p className="mt-1 text-[13.5px] text-ink">{p.ask}</p>
-      <ol className="mt-2.5 space-y-1.5 text-[13px] text-ink-2">
-        {p.research.map((r, i) => (
-          <li key={r.id} className="flex gap-2">
-            <span className="num w-4 shrink-0 text-ink-3">{i + 1}</span>
-            <span className="min-w-0 flex-1">
-              {r.label} <span className="text-ink-3">· {r.why}</span>
+      <p className="mt-1 text-[13.5px] leading-snug text-ink-2">{p.ask}</p>
+      <ol className="mt-2.5 flex flex-wrap items-center gap-1 text-[12.5px]" aria-label="Steps">
+        {steps.map((st, i) => (
+          <li key={st.key} className="flex items-center gap-1" title={st.title}>
+            {i > 0 && <span className="text-ink-3" aria-hidden>→</span>}
+            <span className="num inline-flex items-center gap-1 rounded-md bg-[#f1f0ec] px-2 py-0.5 text-ink">
+              {st.text}
+              {st.price != null && <span className="text-ink-3">{st.key === "act" ? `≤ $${st.price.toFixed(2)}` : `$${usdc(st.price)}`}</span>}
             </span>
-            <span className="num shrink-0 text-ink-3">{RESEARCH_PRICE[r.tool] != null ? usdc(RESEARCH_PRICE[r.tool]) : "?"} USDC</span>
           </li>
         ))}
-        {p.condition && (
-          <li className="flex gap-2">
-            <span className="num w-4 shrink-0 text-ink-3">{p.research.length + 1}</span>
-            <span>
-              Check on fresh price: <b className="font-medium text-ink">{conditionLabel(p.condition)}</b>
-            </span>
-          </li>
-        )}
-        {p.action && (
-          <li className="flex gap-2">
-            <span className="num w-4 shrink-0 text-ink-3">{p.research.length + (p.condition ? 2 : 1)}</span>
-            <span className="min-w-0 flex-1 font-medium text-ink">{actionText(p.action)}</span>
-            {maxCost(p.action) > 0 && <span className="num shrink-0 text-ink-3">≤ ${maxCost(p.action).toFixed(2)}</span>}
-          </li>
-        )}
       </ol>
-      {p.adjustments && p.adjustments.length > 0 && (
-        <ul className="mt-2 space-y-0.5 text-[12px] text-ink-3">
-          {p.adjustments.map((x) => (
-            <li key={x}>Adjusted: {x}</li>
-          ))}
-        </ul>
-      )}
-      <div className="mt-3 flex flex-wrap items-center justify-between gap-2 border-t border-[#f1f0ec] pt-2.5">
-        <span className="num text-[12px] text-ink-3">
-          Research {usdc(research)} USDC from your vault{maxCost(p.action) > 0 ? ` · order ≤ $${maxCost(p.action).toFixed(2)} ${p.venue === "paper" ? "simulated" : "on the exchange"}` : ""}
-        </span>
-        {onChoose && !chosen && (
+      {n.length > 0 && <p className="mt-2 text-[12px] text-ink-3">{n.join(" · ")}</p>}
+      {onChoose && !chosen && (
+        <div className="mt-3 flex items-center justify-between gap-2 border-t border-[#f1f0ec] pt-2.5">
+          <span className="num text-[12.5px] text-ink-2">
+            ≤ ${total < 0.01 ? usdc(total) : total.toFixed(2)} total{p.venue === "paper" && maxCost(p.action) > 0 ? " · simulated" : ""}
+          </span>
           <Button onClick={onChoose} disabled={busy || run.status !== "exploring"} variant="agent" className="h-9" data-testid="adopt-move">
             {busy ? <Spinner /> : null} Build graph
           </Button>
-        )}
-      </div>
+        </div>
+      )}
     </div>
   );
 }
