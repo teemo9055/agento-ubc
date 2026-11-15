@@ -78,7 +78,7 @@ Measured network fee per `authorize` call, paid by the agent: about 0.0026 USDC.
    2. Check the policy against the approved line.
    3. Authorize from the vault.
    4. The seller settles onchain and returns the data.
-6. **Check, then act.** An optional check on a different number (e.g. BTC spot before buying a BTC contract) is read fresh right before acting. The order then goes to Gemini as a real resting order: a **limit** order covers "buy if it drops to X", a **stop-limit** order covers "buy once it rises to X". The app tracks it (open, filled, cancelled), refreshes it, and can cancel it.
+6. **Check, then act.** Optional checks on other numbers (e.g. BTC spot before buying a BTC contract) are read fresh right before acting. A move can carry up to three, and all must pass: "only if Chainlink and Gemini spot both have BTC above $64,000" buys the oracle price, reads the spot price, and places the order only when two independent sources agree. Each check's reading is shown on the job. The order then goes to Gemini as a real resting order: a **limit** order covers "buy if it drops to X", a **stop-limit** order covers "buy once it rises to X". The app tracks it (open, filled, cancelled), refreshes it, and can cancel it.
    - Every move is labelled where it goes: **Live** (real money), **Gemini sandbox** (real orders, test money) or **Practice** (no exchange connected, nothing sent). The agent can only trade markets listed on the connected exchange.
 7. **Change → ask.** If the policy blocks a spend, that step pauses and you get a re-approval popup. Other steps keep going.
 8. **Fail → choose.** A failed step offers retry, skip (optional steps only), top up, or cancel. Purchases are cached per request key, so a retry never pays twice.
@@ -109,6 +109,10 @@ Ask for several things at once ("check gold and Bitcoin fees, and separately pla
 - **Results are handed over.** When a step starts it is told what the steps before it did.
 
 The plan is one card with one Start button, plus a plain list of what can't be done here (hotel and flight booking services on Circle's marketplace take mainnet only). Each step runs as its own job with its own approval limits and receipt. Stop cancels whatever is running and returns unspent funds. Plans pick up again after a restart.
+
+### Trips
+
+Travo plans the drive, splits it into days that fit your hours on the road, and where each day ends lists a few places to sleep (name, street, website) from OpenStreetMap, closest first. It can also list hotels, EV chargers, fuel or food near any stop while you chat. These are options to choose from: it doesn't check prices or availability, and it never books. Flight and hotel booking services exist on Circle's marketplace but take mainnet or Base only.
 
 ### What agents buy, and from whom
 
@@ -154,6 +158,7 @@ The app is also an MCP server at `/api/mcp`, so Claude Code, Claude Desktop, Cur
 | `look_up` | Run a free tool (market search, spot price, place, marketplace catalog) |
 | `ask_agent` | Chat with a built-in agent; it explores and may propose a move |
 | `propose_move` | Your AI's own move, validated against live data and priced as a draft work order |
+| `propose_plan` | Your AI's own plan: 2-5 moves for different agents, with what each waits for. Every move and the plan's shape are validated; the user starts it in the app |
 | `edit_work_order` | Change a draft by request; re-priced or refused with a reason |
 | `get_job`, `list_jobs` | Status, chat, cost, steps, what it is waiting for |
 | `get_job_data`, `get_receipt` | Results for your AI to analyse; itemized receipt |

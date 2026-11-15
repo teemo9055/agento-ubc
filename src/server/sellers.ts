@@ -12,8 +12,8 @@ const addr = (v: string | undefined, fallback: Hex) => (v as Hex) ?? fallback;
 export const SELLERS: Record<Seller["id"], Seller> = {
   primary: {
     id: "primary",
-    // Agento's own x402 seller: it packages Gemini's public market data. Named plainly so nobody mistakes it for a third party.
-    name: "Agento data feed (Gemini public data)",
+    // Agento's own x402 seller: it packages public data (Gemini market data, OpenStreetMap routes). Named plainly so nobody mistakes it for a third party.
+    name: "Agento data feed",
     address: addr(process.env.SELLER_ADDRESS, "0x000000000000000000000000000000000000dA7A"),
     markup: 100n,
   },
