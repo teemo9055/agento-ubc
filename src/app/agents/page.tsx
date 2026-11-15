@@ -21,7 +21,7 @@ export default function AgentDirectory() {
     return AGENTS.filter((a) => {
       const k = KITS[a];
       const topics = records?.[a].topics.map((x) => x.topic) ?? [];
-      return [THEMES[a].name, THEMES[a].domain, k.title, k.headline, k.acts, ...k.free, ...k.paid.map((x) => x.label), ...topics].join(" ").toLowerCase().includes(t);
+      return [THEMES[a].name, THEMES[a].domain, k.title, k.headline, k.acts, ...k.can, ...k.free, ...k.paid.map((x) => x.label), ...topics].join(" ").toLowerCase().includes(t);
     });
   }, [q, records]);
 
@@ -30,7 +30,7 @@ export default function AgentDirectory() {
       <header className="flex flex-wrap items-end justify-between gap-4">
         <div>
           <h1 className="font-pixel text-[30px] leading-tight sm:text-[34px]">Agent directory</h1>
-          <p className="mt-1 text-[15px] text-ink-2">Who does what, what they charge for, and what they've done for you so far.</p>
+          <p className="mt-1 text-[15px] text-ink-2">Who does what, and what they've done for you so far.</p>
         </div>
         <label className="ring-agent flex h-10 min-w-[240px] flex-1 items-center gap-2 rounded-lg border border-line bg-panel px-3 sm:max-w-xs">
           <Icon name="search" size={15} className="text-ink-3" />
@@ -58,10 +58,10 @@ export default function AgentDirectory() {
                 <h2 className="mt-2 font-pixel text-[20px] text-agent-ink">{THEMES[a].name}</h2>
                 <div className="text-[15px] font-semibold">{k.title}</div>
                 <p className="mt-0.5 text-[13.5px] leading-snug text-ink-2">{k.headline}</p>
-                <ul className="mt-3 flex flex-wrap gap-1.5" aria-label="Skills">
-                  {[...k.free, ...k.paid.map((x) => x.label)].map((s) => (
-                    <li key={s} className="inline-flex h-6 items-center rounded-md bg-agent-soft px-2 text-[12px] font-medium text-agent-ink">
-                      {s}
+                <ul className="mt-3 space-y-1 text-[13px] text-ink-2" aria-label="What you can ask for">
+                  {k.can.slice(0, 4).map((x) => (
+                    <li key={x} className="flex gap-1.5">
+                      <Icon name="check" size={13} stroke={2.4} className="mt-[3px] shrink-0 text-agent-ink" /> {x}
                     </li>
                   ))}
                 </ul>

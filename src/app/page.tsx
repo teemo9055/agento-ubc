@@ -24,7 +24,7 @@ const SECTIONS: { key: Section; title: string; match: (r: RunSummary) => boolean
   { key: "saved", title: "Saved", match: (r) => r.saved },
   { key: "chats", title: "Chats", match: (r) => r.status === "exploring" && !r.saved },
   { key: "running", title: "Running", match: (r) => (r.status === "running" || r.status === "funding") && r.needsYou === 0 },
-  { key: "drafts", title: "Drafts awaiting approval", match: (r) => r.status === "draft" },
+  { key: "drafts", title: "Waiting for your approval", match: (r) => r.status === "draft" },
   { key: "finished", title: "Finished", match: (r) => (r.status === "done" || r.status === "cancelled") && !r.saved },
 ];
 
@@ -97,9 +97,8 @@ function JobCard({ r }: { r: RunSummary }) {
           <div className="min-w-0 flex-1">
             <div className="flex flex-wrap items-center gap-1.5 text-[12px] text-ink-3">
               <span className="font-semibold text-agent-ink">{THEMES[r.agent].name}</span>
-              <span>· {r.mode === "live" ? "Arc testnet" : "demo"}</span>
-              {r.planner === "ai" && <span>· AI plan</span>}
               <span>· {ago(r.finishedAt ?? r.createdAt)}</span>
+              {r.mode !== "live" && <span>· practice</span>}
             </div>
             <div className="mt-0.5 line-clamp-2 text-[15px] font-semibold leading-snug" style={{ viewTransitionName: `task-${r.id}` }}>
               {r.task}
@@ -135,25 +134,15 @@ function JobCard({ r }: { r: RunSummary }) {
           <p className="mt-2 line-clamp-2 text-[13px] leading-relaxed text-ink-2">Move: {r.move}</p>
         ) : null}
 
-        <div className="num mt-3 flex items-center justify-between border-t border-[#f1f0ec] pt-2.5 text-[12px] text-ink-3">
-          <span>
-            {r.status === "exploring" ? (
-              "Nothing spent while exploring"
-            ) : (
-              <>
-                {r.status === "draft" ? "Quoted" : "Spent"} <b className="font-semibold text-ink">{fmt(r.status === "draft" ? r.approved : r.spent)}</b>
-                {r.status !== "draft" && <> / {fmt(r.approved)}</>} USDC
-              </>
-            )}
-          </span>
-          {r.refunded && BigInt(r.refunded) > 0n ? (
-            <span className="text-good">{fmt(r.refunded)} returned</span>
-          ) : (
-            <span className="reveal inline-flex items-center gap-1 opacity-0 transition-opacity group-hover:opacity-100">
-              Open <Icon name="arrow" size={13} />
+        {r.status !== "exploring" && (BigInt(r.approved || "0") > 0n || (r.refunded && BigInt(r.refunded) > 0n)) && (
+          <div className="num mt-3 flex items-center justify-between border-t border-[#f1f0ec] pt-2.5 text-[12px] text-ink-3">
+            <span>
+              {r.status === "draft" ? "Quoted" : "Spent"} <b className="font-semibold text-ink">{fmt(r.status === "draft" ? r.approved : r.spent)}</b>
+              {r.status !== "draft" && <> / {fmt(r.approved)}</>} USDC
             </span>
-          )}
-        </div>
+            {r.refunded && BigInt(r.refunded) > 0n && <span className="text-good">{fmt(r.refunded)} returned</span>}
+          </div>
+        )}
       </Link>
     </motion.li>
   );
@@ -216,7 +205,12 @@ function Dashboard() {
       <div className="flex flex-wrap items-end justify-between gap-5">
         <div>
           <h1 className="font-pixel text-[30px] leading-tight sm:text-[34px]">{folder === "all" ? "Your jobs" : `${THEMES[folder].name} jobs`}</h1>
-          <p className="mt-1 text-[15px] text-ink-2">{folder === "all" ? "Everything your agents are doing, in one place." : THEMES[folder].tagline}</p>
+          <p className="num mt-1 text-[14px] text-ink-2" data-testid="jobs-summary">
+            {tiles
+              .filter((t) => Number(t.value) > 0)
+              .map((t) => `${t.value}${t.unit ? ` ${t.unit}` : ""} ${t.label.toLowerCase().replace("on arc", "on Arc")}`)
+              .join(" · ") || (folder === "all" ? "Everything your agents have done for you." : THEMES[folder].tagline)}
+          </p>
         </div>
         <div className="flex items-center gap-2">
           {connection === "reconnecting" && (
@@ -224,21 +218,8 @@ function Dashboard() {
               <Spinner /> Reconnecting
             </span>
           )}
-          <NotifyToggle />
         </div>
       </div>
-
-      <dl className="grid grid-cols-2 overflow-hidden rounded-xl border border-line bg-panel sm:grid-cols-4">
-        {tiles.map((t, i) => (
-          <div key={t.label} className={`px-5 py-3 ${i % 2 ? "border-l" : ""} ${i > 1 ? "border-t sm:border-t-0" : ""} ${i === 2 ? "sm:border-l" : ""} border-line`}>
-            <dt className={`text-[12px] ${t.warn ? "font-medium text-warn-ink" : "text-ink-3"}`}>{t.label}</dt>
-            <dd className={`num mt-0.5 text-[22px] font-semibold ${t.label === "Returned to you" ? "text-good" : ""}`}>
-              {t.value}
-              {t.unit && <span className="ml-1 text-[12px] font-medium text-ink-3">{t.unit}</span>}
-            </dd>
-          </div>
-        ))}
-      </dl>
 
       {showNeeds && (
         <section aria-label="Needs you" className="overflow-hidden rounded-2xl border-[1.5px] border-ink bg-warn-soft shadow-[3px_3px_0_0_var(--color-warn)]">
@@ -309,7 +290,7 @@ function Dashboard() {
           <kbd className="hidden rounded border border-line px-1 text-[10px] text-ink-3 sm:inline">/</kbd>
         </div>
         <div className="flex gap-1 overflow-x-auto rounded-[9px] bg-[#f1f0ec] p-[3px]" role="tablist" aria-label="Status">
-          {[{ key: null, title: "All" }, ...SECTIONS.map((s) => ({ key: s.key, title: s.key === "drafts" ? "Drafts" : s.title }))].map((s) => (
+          {[{ key: null, title: "All" }, ...SECTIONS.filter((s) => s.key !== "needs").map((s) => ({ key: s.key, title: s.key === "drafts" ? "To approve" : s.title }))].map((s) => (
             <button
               key={s.title}
               role="tab"

@@ -6,7 +6,7 @@ import type { Phase, Run } from "@/lib/types";
 import { paidInUsdc } from "@/lib/types";
 import { fmt, sum } from "@/lib/money";
 import { outcomeOf } from "@/lib/outcome";
-import { conditionLabel, VenueBadge } from "./Chat";
+import { VenueBadge } from "./Chat";
 import { Button, Spinner } from "./ui";
 import { Icon } from "./Icon";
 import { post } from "./useRun";
@@ -87,11 +87,6 @@ export function ReviewCard({ run }: { run: Run }) {
           This is insurance for {p.hedge.protects}.{" "}
           {p.hedge.covered < p.hedge.lossUsd - 0.5 ? `It covers about $${Math.round(p.hedge.covered)} of your $${p.hedge.lossUsd}. ` : ""}
           If it doesn&apos;t happen, the ${p.hedge.cost.toFixed(2)} is what the cover cost you.
-        </p>
-      )}
-      {p?.condition && (
-        <p className="mx-4 mb-3 text-[13px] text-ink-2">
-          Only goes ahead if <b className="font-semibold text-ink">{conditionLabel(p.condition)}</b> on a fresh price.
         </p>
       )}
       <div className="flex flex-wrap items-baseline justify-between gap-x-6 gap-y-1 border-t border-[#f1f0ec] px-4 py-3 text-[13.5px]">

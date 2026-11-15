@@ -90,8 +90,9 @@ Prediction markets work as cheap insurance. Tell Inso what you'd lose and when (
 
 ### What you see
 
-- **Ask.** Pick an agent and type. Each agent lists what it can and can't do here.
-- **Review.** One card: the steps in plain words, the most it can cost, and Approve. The graph and every cost line are one click away, not in the way.
+- **Ask.** Say what you want done, or start from a goal (protect against a cost, bet on an outcome, plan a drive…). The agent that fits is picked for you.
+- **Guided conversation.** The conversation fills the page while you talk. When the agent needs something from you it asks one question with answers to tap (what cost? how much?), then proposes a single card with one button. Short answers come with a clearly-first next step.
+- **Review.** One card: the steps in plain words, the most it can cost, and one Approve button (a second confirmation only when your own passkey wallet has to sign). The graph and every cost line are one click away, not in the way.
 - **Status.** After approval the page leads with one line that answers "what happened?": step 2 of 3, order placed and waiting to fill, filled, not placed and why, paused because it needs you.
 - **Receipt.** Its own printable page laid out like an invoice: billed to, work done by, items with payee and transaction hash, totals, the exchange order and its Arc fingerprint, the approval trail. Exports to CSV and JSON.
 - **Run again / Save.** A finished job can be repeated: the same move is re-checked against today's prices and limits and comes back as a fresh draft to approve.

@@ -149,7 +149,7 @@ export default function RunPage({ params }: { params: Promise<{ id: string }> })
   const total = sum(vaultLines.map((l) => l.approved));
   const actual = sum(vaultLines.map((l) => l.actual));
   // Charts and maps only where the job produced one; orders with no research have nothing to draw.
-  const hasVisual = Boolean(run.feed && Object.keys(run.feed).length) || run.proposal?.action?.kind === "itinerary" || !run.proposal;
+  const hasVisual = Object.keys(run.feed ?? {}).some((k) => !k.startsWith("oracle:")) || run.proposal?.action?.kind === "itinerary" || !run.proposal;
   // A job that never had a conversation (a plan step, a repeat) doesn't need an empty chat beside it.
   const hasChat = (run.chat?.length ?? 0) > 0 || exploring || run.status === "draft";
   const showPopup = head && dismissed !== head.id && !approving && !cancelling;
@@ -210,15 +210,6 @@ export default function RunPage({ params }: { params: Promise<{ id: string }> })
         </div>
       </div>
       <div className="flex items-end gap-4">
-        {!exploring && !draft && !planning && total > 0n && (
-          <div className="text-right">
-            <div className="text-[12px] text-ink-3">{finished ? "Paid for data" : "Spent so far"}</div>
-            <div className="text-[22px] font-semibold leading-none tracking-tight sm:text-[30px]" data-testid="big-number">
-              <Amount key="run" value={actual} />
-            </div>
-            <div className="num text-[12px] text-ink-3 sm:mt-1">of {fmt(total)} approved</div>
-          </div>
-        )}
         {wide && !exploring && !draft && (run.chat?.length ?? 0) > 0 && (
           <Button variant="quiet" className="h-9 text-[13px]" onClick={() => setShowChat((v) => !v)} aria-pressed={showChat} data-testid="toggle-chat">
             <Icon name="chat" size={15} /> {showChat ? "Hide conversation" : "Conversation"}
