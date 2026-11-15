@@ -8,7 +8,7 @@ import { Mascot } from "@/components/Mascot";
 import { CancelModal, FailureModal, ReapprovalModal } from "@/components/RunPopups";
 import { transitionReady } from "@/components/transitions";
 import { ApproveModal, Cards, CostTable, MethodPicker } from "@/components/WorkOrder";
-import { Chat, MoveCard, actionText } from "@/components/Chat";
+import { Chat, MoveCard, actionText, stepTarget, targetKey, type EditTarget } from "@/components/Chat";
 import { OrderStatus } from "@/components/OrderStatus";
 import { Expect } from "@/components/Expect";
 import { AgentScene } from "@/components/AgentScene";
@@ -144,7 +144,7 @@ function NoGraphYet({ run, onBuilt }: { run: Run; onBuilt: () => void }) {
 export default function RunPage({ params }: { params: Promise<{ id: string }> }) {
   const { id } = use(params);
   const { run, missing, lastEvent, connection, isLive } = useRun(id);
-  const [focus, setFocus] = useState<Card["kind"] | null>(null);
+  const [focus, setFocus] = useState<EditTarget | null>(null);
   const [tab, setTab] = useState<"plan" | "chat" | null>(null);
   const [approving, setApproving] = useState(false);
   const [cancelling, setCancelling] = useState(false);
@@ -222,10 +222,15 @@ export default function RunPage({ params }: { params: Promise<{ id: string }> })
   const failure = head?.kind === "fail" ? run.pendingFailures.find((f) => f.id === head.id) : undefined;
 
   /** Edit on a card hands that card to the chat (and on phones, opens the chat). Pressing it again lets go. */
-  const editCard = (k: Card["kind"]) => {
-    setFocus((f) => (f === k ? null : k));
-    if (!wide && focus !== k) setTab("chat");
+  /** Hand a card or a graph step to the chat; pressing the same one again lets go. Phones jump to the chat. */
+  const focusOn = (t: EditTarget | null) => {
+    const same = targetKey(t) === targetKey(focus);
+    setFocus(same ? null : t);
+    if (!wide && !same && t) setTab("chat");
   };
+  const editCard = (k: Card["kind"]) => focusOn({ kind: "card", card: k });
+  const editStep = (id: string) => focusOn(stepTarget(run, id));
+  const editableSteps = run.status === "draft" ? run.phases.filter((p) => stepTarget(run, p.id)).map((p) => p.id) : [];
 
   const header = (
     <motion.header initial={{ opacity: 0, y: 6 }} animate={{ opacity: 1, y: 0 }} className="flex flex-wrap items-end justify-between gap-4">
@@ -301,7 +306,14 @@ export default function RunPage({ params }: { params: Promise<{ id: string }> })
               </div>
             }
           >
-            <PhaseGraph phases={run.phases} lines={run.lines} simulated={run.mode === "demo"} />
+            <PhaseGraph
+              phases={run.phases}
+              lines={run.lines}
+              simulated={run.mode === "demo"}
+              editable={editableSteps}
+              focusedId={focus?.kind === "step" ? focus.step : null}
+              onEditStep={editStep}
+            />
             {run.proposal && (
               <details className="group mt-3 border-t border-[#f1f0ec] pt-3">
                 <summary className="flex cursor-pointer list-none items-center gap-1.5 text-[13px] font-medium text-ink-2 hover:text-ink">
@@ -312,7 +324,7 @@ export default function RunPage({ params }: { params: Promise<{ id: string }> })
             )}
           </Section>
 
-          <Cards run={run} onEdit={run.status === "draft" ? editCard : undefined} focused={focus} />
+          <Cards run={run} onEdit={run.status === "draft" ? editCard : undefined} focused={focus?.kind === "card" ? focus.card : null} />
           <MethodPicker run={run} />
           <CostTable run={run} />
           <AnimatePresence>
@@ -471,12 +483,16 @@ export default function RunPage({ params }: { params: Promise<{ id: string }> })
       <Link href="/" className="mb-3 inline-flex min-h-8 items-center gap-1.5 text-[13px] text-ink-2 hover:text-ink">
         <Icon name="back" size={15} /> All jobs
       </Link>
-      {header}
+      {/* Desktop: the header sits over the plan only, so the chat starts at the top and its message box is on screen. */}
+      {!wide && header}
 
       {wide ? (
-        <div className="mt-6 grid grid-cols-[minmax(0,1fr)_400px] items-start gap-6">
-          <div className="min-w-0">{plan}</div>
-          <aside className="sticky top-[84px] h-[calc(100dvh-108px)] min-h-[480px]" aria-label="Chat">
+        <div className="grid grid-cols-[minmax(0,1fr)_400px] items-start gap-6">
+          <div className="min-w-0">
+            {header}
+            <div className="mt-6">{plan}</div>
+          </div>
+          <aside className="sticky top-[84px] h-[calc(100dvh-152px)] min-h-[480px]" aria-label="Chat">
             {chatPanel}
           </aside>
         </div>
@@ -493,7 +509,7 @@ export default function RunPage({ params }: { params: Promise<{ id: string }> })
               >
                 <Icon name={t === "plan" ? "graph" : "chat"} size={16} />
                 {t === "plan" ? "Plan" : "Chat"}
-                {t === "chat" && focus && <span className="absolute right-3 top-2 h-2 w-2 rounded-[2px] bg-agent" aria-label="editing a card" />}
+                {t === "chat" && focus && <span className="absolute right-3 top-2 h-2 w-2 rounded-[2px] bg-agent" aria-label="editing" />}
               </button>
             ))}
           </div>

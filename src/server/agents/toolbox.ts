@@ -131,16 +131,108 @@ export function planFromProposal(p: Proposal): PlanDraft {
         "Prices can move after the check",
       ].slice(0, 3),
     },
-    { kind: "method", title: "Pay per request", points: [p.research.length ? `${p.research.length} paid lookups via x402 on Arc` : "No paid lookups", "Paid from your vault only", a && a.kind !== "itinerary" ? (p.venue === "paper" ? "Order simulated, not sent" : `Order on ${VENUE_NAME[p.venue]}`) : "Built-in analysis"] },
+    { kind: "method", title: "Pay per request", points: [p.research.length ? `${p.research.length} paid lookup${p.research.length === 1 ? "" : "s"} via x402 on Arc` : "No paid lookups", "Paid from your vault only", a && a.kind !== "itinerary" ? (p.venue === "paper" ? "Order simulated, not sent" : `Order on ${VENUE_NAME[p.venue]}`) : "Built-in analysis"] },
   ];
   return { cards, lines, phases };
 }
 
-function edit(_card: Card["kind"], prompt: string, o: Record<string, unknown>): EditResult {
+const DROP = /\b(drop|remove|skip|delete|without|don'?t|no need)\b/;
+const TF: Record<string, [RegExp, string][]> = {
+  odds_history: [
+    [/\b5\s*-?\s*m(in(ute)?s?)?\b/, "5m"],
+    [/\b15\s*-?\s*m(in(ute)?s?)?\b/, "15m"],
+    [/\b(1\s*h(ou)?r?|hourly|hour)\b/, "1hr"],
+  ],
+  spot_candles: [
+    [/\b(1\s*h(ou)?r?|hourly|hour)\b/, "1hr"],
+    [/\b(1\s*d(ay)?|daily|day)\b/, "1day"],
+  ],
+};
+const TF_LABEL: Record<string, string> = { "5m": "5-minute", "15m": "15-minute", "1hr": "hourly", "1day": "daily" };
+
+/** An edit aimed at one step of the graph: a paid lookup (r1, r2…), the condition check, or the move itself. */
+function editStep(next: Proposal, step: string, t: string): EditResult {
+  const a = next.action;
+  const r = next.research.find((x) => x.id === step);
+  if (r) {
+    if (r.tool === "drive_route") {
+      const stops = r.args.stops.split("|").map((s) => s.trim()).filter(Boolean);
+      const add = t.match(/\b(?:add|via|stop (?:at|in))\s+([a-z .'-]{2,40})/i);
+      const del = t.match(/\b(?:remove|drop|skip)\s+([a-z .'-]{2,40})/i);
+      const delIdx = del ? stops.findIndex((s) => s.toLowerCase() === del[1].trim().toLowerCase()) : -1;
+      if (add) {
+        const place = add[1].trim().replace(/\b\w/g, (c) => c.toUpperCase());
+        stops.splice(Math.max(1, stops.length - 1), 0, place);
+      } else if (delIdx > 0 && delIdx < stops.length - 1) {
+        stops.splice(delIdx, 1);
+      }
+      if (add || (delIdx > 0 && delIdx < stops.length)) {
+        r.args.stops = stops.join("|");
+        if (a?.kind === "itinerary") a.stops = stops;
+        return { ok: true, message: `Route: ${stops.join(" → ")}`, options: { proposal: next } };
+      }
+    }
+    if (DROP.test(t)) {
+      next.research = next.research.filter((x) => x.id !== step);
+      return { ok: true, message: `Dropped “${r.label}”`, options: { proposal: next } };
+    }
+    if (r.tool === "drive_route") return { ok: false, message: "For the route, add or remove a stop.", alternatives: ["Add Kamloops", "Drop this step"] };
+    const tf = TF[r.tool]?.find(([re]) => re.test(t))?.[1];
+    if (tf) {
+      r.args.tf = tf;
+      return { ok: true, message: `“${r.label}” now uses ${TF_LABEL[tf]} data`, options: { proposal: next } };
+    }
+    const opts = TF[r.tool]?.filter(([, v]) => v !== r.args.tf).map(([, v]) => `Use ${TF_LABEL[v]} data`) ?? [];
+    return { ok: false, message: "This step buys one piece of data. You can drop it or change its timeframe.", alternatives: [...opts.slice(0, 2), "Drop this step"] };
+  }
+
+  if (step === "check") {
+    const c = next.condition;
+    if (!c) return { ok: false, message: "There is no condition to change. To add one, ask in the chat." };
+    if (DROP.test(t)) {
+      next.condition = undefined;
+      return { ok: true, message: "Dropped the check: the move goes ahead once the data is read", options: { proposal: next } };
+    }
+    const op = /\b(above|over|at least|higher|more than)\b|>/.test(t) ? ">=" : /\b(below|under|at most|lower|less than)\b|</.test(t) ? "<=" : c.op;
+    const spot = c.metric === "spot_price";
+    const num = spot ? t.match(/\$?\s*(\d[\d,]*(?:\.\d+)?)/) : t.match(/(\d{1,2})\s*(?:¢|c\b|cents?|%)?/);
+    if (num || op !== c.op) {
+      if (num) c.value = spot ? Number(num[1].replace(/,/g, "")) : Math.min(0.99, Math.max(0.01, Number(num[1]) / 100));
+      c.op = op;
+      return { ok: true, message: `Only acts if ${conditionText(c)}`, options: { proposal: next } };
+    }
+    return {
+      ok: false,
+      message: "Say the new threshold, or drop the check.",
+      alternatives: spot ? [`Only if below $${Math.round(c.value * 0.98).toLocaleString("en-US")}`, "Drop the check"] : [`Only if below ${Math.round(c.value * 100) - 3}¢`, "Drop the check"],
+    };
+  }
+
+  if (step === "act") {
+    if (a?.kind === "itinerary") {
+      const h = t.match(/(\d{1,2})\s*(h|hours?)\b/);
+      if (h) {
+        a.hoursPerDay = Math.min(12, Math.max(1, Number(h[1])));
+        return { ok: true, message: `At most ${a.hoursPerDay} h of driving a day`, options: { proposal: next } };
+      }
+      return { ok: false, message: "Say how many hours of driving a day.", alternatives: ["4 hours a day", "6 hours a day"] };
+    }
+    if (a && /\b(drop|remove|skip|no|don'?t)\b.*\b(order|trade|buy|sell)\b/.test(t)) {
+      next.action = undefined;
+      next.condition = undefined;
+      return { ok: true, message: "No order: the job only reads the data and reports", options: { proposal: next } };
+    }
+    return { ok: false, message: "Say the new size or price limit.", alternatives: a?.kind === "prediction_order" ? ["5 contracts", "Max 50¢", "Don't place the order"] : ["$5", "Don't place the trade"] };
+  }
+  return { ok: false, message: "This step has nothing to change on its own." };
+}
+
+function edit(_card: Card["kind"], prompt: string, o: Record<string, unknown>, step?: string): EditResult {
   const p = (o as Opts).proposal;
   if (!p) return { ok: false, message: "Agree a move in chat first." };
   const next: Proposal = JSON.parse(JSON.stringify(p));
   const t = prompt.toLowerCase();
+  if (step && step !== "act") return editStep(next, step, t);
   let changed = false;
   const qty = t.match(/(\d+)\s*(contracts?|shares?|x\b)/);
   const cents = t.match(/(\d{1,2})\s*(¢|c\b|cents?)/);
@@ -155,8 +247,14 @@ function edit(_card: Card["kind"], prompt: string, o: Record<string, unknown>): 
     changed = true;
   }
   if (/(no|drop|remove|without)\b.*\bcondition/.test(t)) (next.condition = undefined), (changed = true);
+  if (!changed && step === "act") return editStep(next, step, t);
   if (!changed) return { ok: false, message: "To change the move itself, ask in the chat.", alternatives: a?.kind === "prediction_order" ? ["5 contracts", "Max 50¢", "Drop the trade tape"] : ["Drop the research"] };
-  return { ok: true, message: "Updated", options: { proposal: next } };
+  const what = [
+    JSON.stringify(a) !== JSON.stringify(p.action) && a ? `Order: ${describeAction(a)}` : "",
+    next.research.length !== p.research.length ? `${p.research.length - next.research.length} paid lookup${p.research.length - next.research.length === 1 ? "" : "s"} dropped` : "",
+    !next.condition && p.condition ? "Check dropped" : "",
+  ].filter(Boolean);
+  return { ok: true, message: what.join(" · ") || "Updated", options: { proposal: next } };
 }
 
 const TAGLINES: Record<AgentId, { name: string; tagline: string; examples: string[] }> = {
@@ -271,7 +369,7 @@ export function toolboxAgent(id: AgentId): AgentDef {
           : (mem.check?.text ?? p.title);
       return {
         summary,
-        method: `${p.research.length} paid lookups via x402 on Arc${o ? ` · ${VENUE_NAME[o.venue]}` : ""}`,
+        method: `${p.research.length} paid lookup${p.research.length === 1 ? "" : "s"} via x402 on Arc${o ? ` · ${VENUE_NAME[o.venue]}` : ""}`,
         data: { move: p, check: mem.check, order: o, days: mem.days, places: mem.places, route: mem.route },
       };
     },

@@ -8,7 +8,7 @@ import type { CostLine, Phase } from "@/lib/types";
 import { txUrl } from "@/lib/format";
 import { Icon } from "./Icon";
 
-type PhaseNodeData = { phase: Phase; line?: CostLine; step: number; vertical: boolean; simulated: boolean };
+type PhaseNodeData = { phase: Phase; line?: CostLine; step: number; vertical: boolean; simulated: boolean; onEdit?: () => void; focused?: boolean; dim?: boolean };
 
 const NODE_W = 188;
 const NODE_H = 92;
@@ -33,12 +33,12 @@ const STATE_TEXT: Partial<Record<Phase["status"], string>> = {
 };
 
 function PhaseNode({ data }: NodeProps<Node<PhaseNodeData>>) {
-  const { phase: p, line, step, vertical, simulated } = data;
+  const { phase: p, line, step, vertical, simulated, onEdit, focused, dim } = data;
   const active = p.status === "active";
   const needs = p.status === "awaiting_reapproval" || p.status === "failed_waiting";
   const last = p.payments[p.payments.length - 1];
   const paid = p.payments.filter((x) => x.txState === "settled").length;
-  const frame = active
+  const frame = focused || active
     ? "border-[1.5px] border-ink shadow-[3px_3px_0_0_var(--agent)]"
     : needs
       ? "border-[1.5px] border-ink shadow-[3px_3px_0_0_var(--color-warn)]"
@@ -48,13 +48,22 @@ function PhaseNode({ data }: NodeProps<Node<PhaseNodeData>>) {
           ? "border border-dashed border-line opacity-60"
           : "border border-line";
   const sub = p.error && (p.status === "failed_waiting" || p.status === "failed") ? p.error.message : p.note && active ? p.note : p.sub;
+  // Editable steps are real buttons; the whole box hands this step to the chat.
+  const Box = onEdit ? "button" : "div";
   return (
-    <div
-      className={`relative flex flex-col overflow-hidden rounded-xl bg-panel px-3.5 pb-2.5 pt-3 text-left transition-[box-shadow,border-color] duration-300 ${frame}`}
+    <Box
+      type={onEdit ? "button" : undefined}
+      onClick={onEdit}
+      aria-pressed={onEdit ? Boolean(focused) : undefined}
+      aria-label={onEdit ? `Step ${step}: ${p.label}. Edit in chat` : undefined}
+      className={`nodrag group relative flex flex-col overflow-hidden rounded-xl bg-panel px-3.5 pb-2.5 pt-3 text-left transition-[box-shadow,border-color,opacity,transform] duration-200 ${frame} ${
+        onEdit && !focused ? "cursor-pointer hover:-translate-y-0.5 hover:border-ink hover:shadow-[3px_3px_0_0_var(--agent)]" : ""
+      } ${dim ? "opacity-55" : ""}`}
       style={{ width: NODE_W, height: NODE_H }}
       data-testid={`phase-${p.id}`}
       data-status={p.status}
     >
+
       <Handle type="target" position={vertical ? Position.Top : Position.Left} className="!h-1 !w-1 !min-h-0 !min-w-0 !border-0 !bg-transparent" />
       <div className="flex items-start gap-2.5">
         <StateMark p={p} step={step} />
@@ -81,7 +90,16 @@ function PhaseNode({ data }: NodeProps<Node<PhaseNodeData>>) {
         ) : (
           <span className="text-ink-3">Free</span>
         )}
-        {last?.txHash ? (
+        {onEdit ? (
+          <span
+            className={`inline-flex shrink-0 items-center gap-1 rounded-md px-1.5 py-0.5 text-[11px] font-semibold transition-opacity ${
+              focused ? "bg-ink text-white opacity-100" : "reveal bg-[#f1f0ec] text-ink-2 opacity-0 group-hover:opacity-100 group-focus-visible:opacity-100"
+            }`}
+            aria-hidden
+          >
+            <Icon name={focused ? "chat" : "edit"} size={11} /> {focused ? "In chat" : "Edit"}
+          </span>
+        ) : last?.txHash ? (
           <a href={txUrl(last.txHash)} target="_blank" rel="noreferrer" className="nodrag inline-flex shrink-0 items-center gap-0.5 text-ink-3 hover:text-ink" aria-label={`Transaction for ${p.label}`}>
             tx <Icon name="external" size={11} />
           </a>
@@ -95,7 +113,7 @@ function PhaseNode({ data }: NodeProps<Node<PhaseNodeData>>) {
         </div>
       )}
       <Handle type="source" position={vertical ? Position.Bottom : Position.Right} className="!h-1 !w-1 !min-h-0 !min-w-0 !border-0 !bg-transparent" />
-    </div>
+    </Box>
   );
 }
 
@@ -154,7 +172,22 @@ function depthCount(phases: Phase[]) {
   return Math.max(0, ...Object.values(depth)) + 1;
 }
 
-export function PhaseGraph({ phases, lines, simulated }: { phases: Phase[]; lines: CostLine[]; simulated: boolean }) {
+export function PhaseGraph({
+  phases,
+  lines,
+  simulated,
+  editable,
+  focusedId,
+  onEditStep,
+}: {
+  phases: Phase[];
+  lines: CostLine[];
+  simulated: boolean;
+  /** Step ids that can be edited (draft only). */
+  editable?: string[];
+  focusedId?: string | null;
+  onEditStep?: (id: string) => void;
+}) {
   const [box, width] = useWidth();
   // Left to right whenever it fits at 85% size or more (it reads like a timeline); top to bottom only on narrow screens.
   const vertical = width > 0 && (depthCount(phases) * (NODE_W + 44) - 44 + 16) * 0.85 > width;
@@ -180,9 +213,20 @@ export function PhaseGraph({ phases, lines, simulated }: { phases: Phase[]; line
         id: p.id,
         type: "phase",
         position: vertical ? { x: cross, y: main } : { x: main, y: cross },
-        data: { phase: p, line: lines.find((l) => l.id === p.lineId), step: i + 1, vertical, simulated },
+        data: {
+          phase: p,
+          line: lines.find((l) => l.id === p.lineId),
+          step: i + 1,
+          vertical,
+          simulated,
+          onEdit: editable?.includes(p.id) && onEditStep ? () => onEditStep(p.id) : undefined,
+          focused: focusedId === p.id,
+          dim: Boolean(focusedId) && focusedId !== p.id,
+        },
         draggable: false,
         selectable: false,
+        // React Flow makes non-selectable nodes click-through; editable steps must take clicks.
+        style: editable?.includes(p.id) ? { pointerEvents: "all" as const } : undefined,
       };
     });
 
@@ -197,7 +241,7 @@ export function PhaseGraph({ phases, lines, simulated }: { phases: Phase[]; line
     const cols_n = Object.keys(cols).length;
     const size = vertical ? { h: cols_n * GAP_MAIN + 24 } : { h: maxRows * GAP_CROSS + 24 };
     return { nodes, edges, size };
-  }, [phases, lines, vertical, simulated]);
+  }, [phases, lines, vertical, simulated, editable, focusedId, onEditStep]);
 
   return (
     <div ref={box} className="w-full" style={{ height: size.h }} aria-label="Phase graph">

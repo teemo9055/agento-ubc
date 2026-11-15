@@ -173,8 +173,31 @@ const CARD_HINT: Record<Card["kind"], string> = {
   price: "e.g. big-spend threshold 0.5",
   deliverable: "e.g. track 5 markets",
   method: "e.g. use the backup seller",
-  risk: "Say what to change",
+  risk: "e.g. no condition, or max 50¢",
 };
+
+/** What the chat is editing: a card of the plan, or one step of the graph. */
+export type EditTarget = { kind: "card"; card: Card["kind"] } | { kind: "step"; step: string; label: string; hint: string };
+
+/** The edit target for a graph step, with a hint matched to what that step can change; null for steps with nothing to edit. */
+export function stepTarget(run: Run, phaseId: string): EditTarget | null {
+  const ph = run.phases.find((p) => p.id === phaseId);
+  const p = run.proposal;
+  if (!ph || !p) return null;
+  const r = p.research.find((x) => x.id === phaseId);
+  let hint = "";
+  if (r) hint = r.tool === "drive_route" ? "e.g. add Kamloops" : r.tool === "odds_history" ? "e.g. use hourly data, or drop it" : r.tool === "spot_candles" ? "e.g. use daily data, or drop it" : "e.g. drop this step";
+  else if (phaseId === "check") {
+    if (!p.condition) return null;
+    hint = p.condition.metric === "spot_price" ? `e.g. only if below $${Math.round(p.condition.value * 0.98).toLocaleString("en-US")}, or drop the check` : "e.g. only if below 40¢, or drop the check";
+  } else if (phaseId === "act") hint = p.action?.kind === "itinerary" ? "e.g. 4 hours a day" : p.action?.kind === "spot_order" ? "e.g. $5, or don't place the trade" : "e.g. 8 contracts, max 50¢";
+  else return null;
+  return { kind: "step", step: phaseId, label: ph.label, hint };
+}
+
+export const targetKey = (t?: EditTarget | null) => (!t ? "" : t.kind === "card" ? `card:${t.card}` : `step:${t.step}`);
+const targetName = (t: EditTarget) => (t.kind === "card" ? CARD_LABEL[t.card] : t.label);
+const targetBody = (t: EditTarget) => (t.kind === "card" ? { card: t.card } : { step: t.step });
 
 interface Preview {
   ok: boolean;
@@ -187,7 +210,7 @@ interface Preview {
 /** A card edit asked in chat: the request, then a priced preview to apply or drop. Lives only in this browser tab. */
 interface EditTurn {
   id: number;
-  card: Card["kind"];
+  target: EditTarget;
   prompt: string;
   state: "checking" | "preview" | "applying" | "applied" | "dropped";
   preview?: Preview;
@@ -272,7 +295,7 @@ function EditReply({ t, run, onApply, onDrop, onTry, last }: { t: EditTurn; run:
  * The conversation with the agent, docked beside the plan for the whole job.
  * With a card in focus, messages edit that card: the agent re-prices and you apply or drop the change.
  */
-export function Chat({ run, focus, onFocusClear, onAdopted }: { run: Run; focus?: Card["kind"] | null; onFocusClear?: () => void; onAdopted?: () => void }) {
+export function Chat({ run, focus, onFocusClear, onAdopted }: { run: Run; focus?: EditTarget | null; onFocusClear?: () => void; onAdopted?: () => void }) {
   const [text, setText] = useState("");
   const [sending, setSending] = useState(false);
   const [adopting, setAdopting] = useState(false);
@@ -297,11 +320,11 @@ export function Chat({ run, focus, onFocusClear, onAdopted }: { run: Run; focus?
 
   const patch = (id: number, p: Partial<EditTurn>) => setEdits((xs) => xs.map((x) => (x.id === id ? { ...x, ...p } : x)));
 
-  async function checkEdit(card: Card["kind"], prompt: string) {
+  async function checkEdit(target: EditTarget, prompt: string) {
     const id = Date.now();
-    setEdits((xs) => [...xs.map((x) => (x.state === "preview" ? { ...x, state: "dropped" as const } : x)), { id, card, prompt, state: "checking" }]);
+    setEdits((xs) => [...xs.map((x) => (x.state === "preview" ? { ...x, state: "dropped" as const } : x)), { id, target, prompt, state: "checking" }]);
     try {
-      const preview = await post<Preview>(`/api/runs/${run.id}/preview`, { card, prompt });
+      const preview = await post<Preview>(`/api/runs/${run.id}/preview`, { ...targetBody(target), prompt });
       patch(id, { state: "preview", preview });
     } catch (e) {
       patch(id, { state: "preview", preview: { ok: false, message: (e as Error).message } });
@@ -311,7 +334,7 @@ export function Chat({ run, focus, onFocusClear, onAdopted }: { run: Run; focus?
   async function applyEdit(t: EditTurn) {
     patch(t.id, { state: "applying" });
     try {
-      await post<Run>(`/api/runs/${run.id}/edit`, { card: t.card, prompt: t.prompt });
+      await post<Run>(`/api/runs/${run.id}/edit`, { ...targetBody(t.target), prompt: t.prompt });
       patch(t.id, { state: "applied" });
       toast(t.preview?.message ?? "Plan updated", "good");
       onFocusClear?.();
@@ -354,7 +377,7 @@ export function Chat({ run, focus, onFocusClear, onAdopted }: { run: Run; focus?
 
   const accept = (s: string) => /^(yes|set it up|build|do it|ok)/i.test(s);
   const latestMove = [...chat].reverse().find((m) => m.proposal)?.proposal;
-  const placeholder = editing && focus ? `Change the ${CARD_LABEL[focus].toLowerCase()}… ${CARD_HINT[focus]}` : run.status === "draft" ? "Ask for a different move (rebuilds the graph)" : `Ask ${THEMES[run.agent].name} anything`;
+  const placeholder = editing && focus ? (focus.kind === "card" ? CARD_HINT[focus.card] : focus.hint) : run.status === "draft" ? "Ask for a different move (rebuilds the graph)" : `Ask ${THEMES[run.agent].name} anything`;
 
   return (
     <section className="flex h-full min-h-0 flex-col" aria-label="Chat with the agent">
@@ -376,14 +399,14 @@ export function Chat({ run, focus, onFocusClear, onAdopted }: { run: Run; focus?
           {edits.map((t, i) => (
             <li key={t.id} className="space-y-4">
               <ul className="space-y-4">
-                <UserRow tag={`Editing ${CARD_LABEL[t.card]}`}>{t.prompt}</UserRow>
+                <UserRow tag={`Editing ${targetName(t.target)}`}>{t.prompt}</UserRow>
                 <EditReply
                   t={t}
                   run={run}
                   last={i === edits.length - 1}
                   onApply={() => applyEdit(t)}
                   onDrop={() => patch(t.id, { state: "dropped" })}
-                  onTry={(alt) => checkEdit(t.card, alt)}
+                  onTry={(alt) => checkEdit(t.target, alt)}
                 />
               </ul>
             </li>
@@ -395,7 +418,8 @@ export function Chat({ run, focus, onFocusClear, onAdopted }: { run: Run; focus?
         <div className="border-t border-line bg-panel px-3 pb-3 pt-2.5">
           {!busy && run.status === "exploring" && last?.role === "agent" && last.suggestions && last.suggestions.length > 0 && (
             <div className="mb-2.5 flex flex-wrap gap-1.5">
-              {last.suggestions.map((s) => (
+              {/* "Yes, set it up" only makes sense when there is a move to accept. */}
+              {last.suggestions.filter((s) => latestMove || !accept(s)).map((s) => (
                 <button
                   key={s}
                   type="button"
@@ -411,7 +435,8 @@ export function Chat({ run, focus, onFocusClear, onAdopted }: { run: Run; focus?
             {editing && focus && (
               <motion.div initial={{ opacity: 0, y: 6 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0, y: 6 }} transition={{ type: "spring", stiffness: 500, damping: 32 }} className="mb-2 flex">
                 <span className="inline-flex h-8 items-center gap-1.5 rounded-lg border-[1.5px] border-ink bg-agent-soft pl-2.5 pr-1 text-[13px] font-semibold text-agent-ink" data-testid="chat-focus">
-                  <Icon name="edit" size={13} /> Editing {CARD_LABEL[focus]}
+                  <Icon name="edit" size={13} /> Editing {focus.kind === "step" ? "step: " : ""}
+                  {targetName(focus)}
                   <button type="button" onClick={onFocusClear} aria-label="Stop editing this card" className="inline-flex h-6 w-6 items-center justify-center rounded-md text-ink-2 hover:bg-panel hover:text-ink">
                     <Icon name="x" size={13} stroke={2.2} />
                   </button>
@@ -441,7 +466,7 @@ export function Chat({ run, focus, onFocusClear, onAdopted }: { run: Run; focus?
               placeholder={placeholder}
               className="max-h-32 min-h-10 min-w-0 flex-1 resize-none bg-transparent px-2 py-2 text-[14px] leading-snug outline-none placeholder:text-ink-3"
               maxLength={600}
-              aria-label={editing && focus ? `Change the ${CARD_LABEL[focus].toLowerCase()}` : "Message"}
+              aria-label={editing && focus ? `Change ${targetName(focus)}` : "Message"}
               data-testid="chat-input"
             />
             <button

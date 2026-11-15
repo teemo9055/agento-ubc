@@ -15,63 +15,115 @@ import { usePasskeyWallet } from "./passkey/usePasskey";
 import { fundCalls, sendCalls } from "./passkey/wallet";
 import type { Hex } from "viem";
 
-const CARD_ORDER: Card["kind"][] = ["price", "deliverable", "method", "risk"];
+// Read left to right like the job itself: what you get, how it's done, its limits, what it costs.
+const CARD_ORDER: Card["kind"][] = ["deliverable", "method", "risk", "price"];
 const CARD_LABEL: Record<Card["kind"], string> = { price: "Price", deliverable: "Deliverable", method: "Method", risk: "Risk" };
+const CARD_STEP: Record<Card["kind"], string> = { deliverable: "What you get", method: "How", risk: "Limits", price: "Cost" };
 
-/** The four cards of the plan. Edit hands the card to the chat; the focused card stays highlighted while you talk about it. */
+/**
+ * The plan's four cards as a step-by-step row. Hover (or keyboard focus) widens a card and shows all its points;
+ * clicking hands it to the chat and keeps it open. Phones stack the row and expand the tapped card.
+ */
 export function Cards({ run, onEdit, focused }: { run: Run; onEdit?: (k: Card["kind"]) => void; focused?: Card["kind"] | null }) {
   const cards = CARD_ORDER.map((k) => run.cards.find((c) => c.kind === k)).filter(Boolean) as Card[];
   return (
-    <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 2xl:grid-cols-4">
+    <ol className="flex flex-col gap-3 sm:flex-row sm:gap-2.5" aria-label="Plan cards">
       {cards.map((c, i) => {
         const on = focused === c.kind;
         const dim = Boolean(focused) && !on;
+        const price = c.kind === "price";
         return (
-        <motion.button
-          key={c.kind}
-          initial={{ opacity: 0, y: 10 }}
-          animate={{ opacity: 1, y: 0 }}
-          transition={{ delay: i * 0.05, duration: 0.3, ease: [0.2, 0.8, 0.2, 1] }}
-          whileHover={onEdit ? { y: -2 } : undefined}
-          disabled={!onEdit}
-          onClick={() => onEdit?.(c.kind)}
-          aria-pressed={onEdit ? on : undefined}
-          aria-label={onEdit ? `${CARD_LABEL[c.kind]}: ${c.title}. Edit in chat` : undefined}
-          data-testid={`card-${c.kind}`}
-          className={`pix-edit pressable group relative overflow-hidden rounded-2xl p-4 text-left transition-opacity disabled:cursor-default ${
-            on ? "border-[1.5px] border-ink shadow-[3px_3px_0_0_var(--agent)]" : "border"
-          } ${c.kind === "price" ? "border-agent/30 bg-agent-soft" : "border-line bg-panel"} ${on ? "!border-ink" : ""} ${dim ? "opacity-55" : ""}`}
-        >
-          <div className={`flex items-center justify-between text-[12px] font-semibold uppercase tracking-wide ${c.kind === "price" ? "text-agent-ink" : "text-ink-3"}`}>
-            <span>{CARD_LABEL[c.kind]}</span>
-            {onEdit &&
-              (on ? (
-                <span className="inline-flex items-center gap-1 rounded-md bg-ink px-1.5 py-0.5 font-semibold normal-case tracking-normal text-white">
-                  <Icon name="chat" size={12} /> In chat
+          <motion.li
+            key={c.kind}
+            initial={{ opacity: 0, y: 10 }}
+            animate={{ opacity: 1, y: 0 }}
+            transition={{ delay: i * 0.05, duration: 0.3, ease: [0.2, 0.8, 0.2, 1] }}
+            className={`group/card relative min-w-0 transition-[flex-grow,opacity] sm:basis-0 duration-300 ease-[cubic-bezier(0.2,0.8,0.2,1)] sm:flex-1 ${
+              on ? "sm:grow-[2.2]" : "sm:hover:grow-[1.7] sm:focus-within:grow-[1.7]"
+            } ${dim ? "opacity-60 hover:opacity-100" : ""}`}
+          >
+            {/* Step marker and the rail that joins the cards. */}
+            <div className="mb-2 flex items-center gap-2" aria-hidden>
+              <span
+                className={`num inline-flex h-[22px] w-[22px] shrink-0 items-center justify-center rounded-[5px] text-[11px] font-semibold ${
+                  on ? "border-[1.5px] border-ink bg-agent text-agent-on" : price ? "bg-agent text-agent-on" : "border-[1.5px] border-[#d5d4ce] bg-panel text-ink-2"
+                }`}
+              >
+                {i + 1}
+              </span>
+              <span className="whitespace-nowrap text-[12px] font-semibold uppercase tracking-wide text-ink-3">{CARD_STEP[c.kind]}</span>
+              {i < cards.length - 1 && <span className="hidden h-px flex-1 border-t border-dashed border-[#c9c8c2] sm:block" />}
+            </div>
+            <button
+              type="button"
+              disabled={!onEdit}
+              onClick={() => onEdit?.(c.kind)}
+              aria-pressed={onEdit ? on : undefined}
+              aria-expanded={on}
+              aria-label={onEdit ? `${CARD_LABEL[c.kind]}: ${c.title}. Edit in chat` : undefined}
+              data-testid={`card-${c.kind}`}
+              className={`pressable flex w-full flex-col rounded-2xl p-4 text-left sm:h-full transition-[border-color,box-shadow,transform] duration-200 disabled:cursor-default ${
+                on
+                  ? "border-[1.5px] border-ink shadow-[3px_3px_0_0_var(--agent)]"
+                  : `border ${onEdit ? "enabled:hover:-translate-y-0.5 enabled:hover:border-ink enabled:hover:shadow-[3px_3px_0_0_var(--agent)]" : ""}`
+              } ${price ? "border-agent/30 bg-agent-soft" : "border-line bg-panel"} ${on ? "!border-ink" : ""}`}
+            >
+              <span className="flex items-start justify-between gap-2">
+                <span className={`text-[12px] font-semibold ${price ? "text-agent-ink" : "text-ink-3"}`}>{CARD_LABEL[c.kind]}</span>
+                {onEdit &&
+                  (on ? (
+                    <span className="inline-flex shrink-0 items-center gap-1 rounded-md bg-ink px-1.5 py-0.5 text-[11px] font-semibold text-white">
+                      <Icon name="chat" size={11} /> In chat
+                    </span>
+                  ) : (
+                    <span className="reveal inline-flex shrink-0 items-center gap-1 text-[12px] font-medium text-ink-2 opacity-0 transition-opacity group-hover/card:opacity-100 group-focus-within/card:opacity-100">
+                      <Icon name="edit" size={12} /> Edit
+                    </span>
+                  ))}
+              </span>
+              <AnimatePresence mode="popLayout" initial={false}>
+                <motion.span
+                  key={c.title}
+                  initial={{ opacity: 0, y: 4 }}
+                  animate={{ opacity: 1, y: 0 }}
+                  exit={{ opacity: 0, y: -4 }}
+                  className={`num mt-1 block font-semibold leading-snug ${price ? "text-[20px]" : "text-[16px]"} ${on ? "" : "line-clamp-2"}`}
+                >
+                  {c.title}
+                </motion.span>
+              </AnimatePresence>
+              {/* The first point always shows; the rest open on hover, focus or click. */}
+              {c.points[0] && <span className={`mt-1.5 block text-[13px] leading-snug text-ink-2 ${on ? "" : "line-clamp-2"}`}>{c.points[0]}</span>}
+              {c.points.length > 1 && (
+                <span
+                  className={`grid transition-[grid-template-rows,opacity] duration-300 ease-[cubic-bezier(0.2,0.8,0.2,1)] ${
+                    on ? "grid-rows-[1fr] opacity-100" : "grid-rows-[1fr] opacity-100 sm:grid-rows-[0fr] sm:opacity-0 group-hover/card:grid-rows-[1fr] group-hover/card:opacity-100 group-focus-within/card:grid-rows-[1fr] group-focus-within/card:opacity-100"
+                  }`}
+                >
+                  <span className="min-h-0 overflow-hidden">
+                    <span className="mt-2 block space-y-1 border-t border-black/5 pt-2 text-[13px] leading-snug text-ink-2">
+                      {c.points.slice(1).map((p) => (
+                        <span key={p} className="flex gap-1.5">
+                          <span aria-hidden className="text-ink-3">
+                            ·
+                          </span>
+                          {p}
+                        </span>
+                      ))}
+                    </span>
+                  </span>
                 </span>
-              ) : (
-                <span className="reveal inline-flex items-center gap-1 font-medium normal-case tracking-normal text-ink-2 opacity-0 transition-opacity group-hover:opacity-100 group-focus-visible:opacity-100">
-                  <Icon name="edit" size={13} /> Edit
+              )}
+              {c.points.length > 1 && !on && (
+                <span className="mt-auto hidden pt-2 text-[12px] text-ink-3 transition-opacity sm:block group-hover/card:opacity-0 group-focus-within/card:opacity-0" aria-hidden>
+                  +{c.points.length - 1} more
                 </span>
-              ))}
-          </div>
-          <AnimatePresence mode="popLayout" initial={false}>
-            <motion.div key={c.title} initial={{ opacity: 0, y: 4 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0, y: -4 }} className="num mt-1.5 text-[17px] font-semibold">
-              {c.title}
-            </motion.div>
-          </AnimatePresence>
-          <ul className="mt-2 space-y-1 text-[13px] leading-snug text-ink-2">
-            {c.points.map((p) => (
-              <li key={p} className="flex gap-1.5">
-                <span aria-hidden className="text-ink-3">·</span>
-                {p}
-              </li>
-            ))}
-          </ul>
-        </motion.button>
+              )}
+            </button>
+          </motion.li>
         );
       })}
-    </div>
+    </ol>
   );
 }
 

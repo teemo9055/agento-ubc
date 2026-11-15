@@ -68,6 +68,22 @@ test("card edit happens in the chat: explains why it can't, offers alternatives,
   await expect(page.getByTestId("chat-focus")).toHaveCount(0);
 });
 
+test("graph steps are editable in the chat: focus a step, preview, apply", async ({ page }) => {
+  await draft(page, [], "BTC odds step edit");
+  const step = page.getByTestId("phase-r1");
+  // Centre it so the sticky approve bar isn't on top.
+  await step.evaluate((e) => e.scrollIntoView({ block: "center" }));
+  await step.click();
+  await expect(step).toHaveAttribute("aria-pressed", "true");
+  await expect(page.getByTestId("chat-focus")).toContainText("step");
+  await page.getByTestId("chat-input").fill("drop it");
+  await page.keyboard.press("Enter");
+  await expect(page.getByTestId("edit-preview")).toBeVisible();
+  await page.getByTestId("apply-edit").click();
+  await expect(page.getByTestId("phase-r1")).toHaveCount(0);
+  await expect(page.getByTestId("chat-focus")).toHaveCount(0);
+});
+
 test("method picker re-prices and AI IDE adds a 0 USDC subscription line", async ({ page }) => {
   await draft(page, [], "BTC odds");
   const before = await page.getByTestId("big-number").innerText();
