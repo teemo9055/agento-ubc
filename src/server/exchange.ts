@@ -89,13 +89,16 @@ export async function acceptTerms() {
 // ---------- orders ----------
 
 /** Most the order can cost, in USD. */
-export const notionalOf = (a: MoveAction) => (a.kind === "prediction_order" ? a.maxPrice * a.quantity : a.kind === "spot_order" ? a.amountUsd : 0);
+/** What the move can spend. Selling spends nothing: it returns money. */
+export const notionalOf = (a: MoveAction) => (a.kind === "prediction_order" ? (a.trade === "sell" ? 0 : a.maxPrice * a.quantity) : a.kind === "spot_order" ? a.amountUsd : 0);
 
 const cents = (x: number) => `${Math.round(x * 100)}¢`;
 export function describeAction(a: MoveAction) {
   if (a.kind === "prediction_order")
     return a.orderType === "stop-limit"
-      ? `${a.quantity} × ${a.side.toUpperCase()} “${a.label}” once it rises to ${cents(a.stopPrice ?? a.maxPrice)}, paying ≤ ${cents(a.maxPrice)}`
+      ? a.trade === "sell"
+        ? `Sell ${a.quantity} × ${a.side.toUpperCase()} “${a.label}” at ≥ ${cents(a.maxPrice)}`
+        : `${a.quantity} × ${a.side.toUpperCase()} “${a.label}” once it rises to ${cents(a.stopPrice ?? a.maxPrice)}, paying ≤ ${cents(a.maxPrice)}`
       : `${a.quantity} × ${a.side.toUpperCase()} “${a.label}” at ≤ ${cents(a.maxPrice)}`;
   if (a.kind === "spot_order") return `${a.side === "buy" ? "Buy" : "Sell"} $${a.amountUsd} of ${a.symbol.replace(/usd$/, "").toUpperCase()} at ${a.side === "buy" ? "≤" : "≥"} $${a.limitPrice}`;
   return `Itinerary: ${a.stops.join(" → ")}`;
@@ -111,7 +114,7 @@ async function alreadyPlaced(action: Extract<MoveAction, { kind: "prediction_ord
   const active = await priv<{ orders: (PmOrder & { price: string; outcome: string; side: string; createdAt: string })[] }>("/v1/prediction-markets/orders/active", { symbol: action.symbol, limit: 100 });
   return active.orders.find(
     (o) =>
-      o.side === "buy" &&
+      o.side === (action.trade ?? "buy") &&
       o.outcome === action.side &&
       Number(o.price) === action.maxPrice &&
       Number(o.quantity) === action.quantity &&
@@ -144,12 +147,18 @@ export async function placeOrder(action: MoveAction, since = Date.now()): Promis
     const terms = await priv<{ hasAcceptedLatest: boolean }>("/v1/prediction-markets/terms/status", {}, "GET");
     if (!terms.hasAcceptedLatest) throw new ExchangeError("Accept Gemini's prediction-market terms first (New job → Exchange)", "terms");
     const dup = await alreadyPlaced(action, since).catch(() => undefined);
+    if (!dup && action.trade === "sell") {
+      // Never sell more than is held and free (not already on hold for another order).
+      const held = (await positions()).positions.find((x) => x.symbol === action.symbol && x.outcome === action.side);
+      if (!held || held.available < action.quantity)
+        throw new ExchangeError(`You hold ${held?.available ?? 0} free ${action.side.toUpperCase()} contracts of ${action.label}; can't sell ${action.quantity}`);
+    }
     if (dup)
       return { venue, status: dup.status === "filled" ? "filled" : "open", detail, orderId: String(dup.orderId), notional, symbol: action.symbol, quantity: action.quantity, filledQuantity: Number(dup.filledQuantity ?? 0), updatedAt: now() };
     const r = await priv<{ orderId: number; status: string; filledQuantity?: string; avgExecutionPrice?: string | null }>("/v1/prediction-markets/order", {
       symbol: action.symbol,
       orderType: action.orderType,
-      side: "buy",
+      side: action.trade ?? "buy",
       outcome: action.side,
       quantity: String(action.quantity),
       price: action.maxPrice.toFixed(2),
@@ -201,6 +210,61 @@ export async function placeOrder(action: MoveAction, since = Date.now()): Promis
     filledQuantity: filled,
     avgPrice: Number(r.avg_execution_price) || undefined,
     updatedAt: now(),
+  };
+}
+
+export interface Position {
+  symbol: string;
+  eventTicker: string;
+  label: string;
+  event: string;
+  outcome: "yes" | "no";
+  quantity: number;
+  /** Not on hold for an open order, so it can be sold now. */
+  available: number;
+  avgPrice: number;
+  /** Best price someone pays for it right now (what a sell gets). */
+  sellPrice: number | null;
+  marketValue: number;
+  unrealizedPnl: number;
+  expiry?: string;
+}
+
+/** What the user holds on the connected exchange. Simulation holds nothing. */
+export async function positions(): Promise<{ venue: Venue; positions: Position[] }> {
+  const venue = tradingVenue();
+  if (venue === "paper") return { venue, positions: [] };
+  type Raw = {
+    symbol: string;
+    totalQuantity: string;
+    quantityOnHold?: string;
+    avgPrice: string;
+    outcome: "yes" | "no";
+    contractMetadata?: { contractName?: string; eventTicker?: string; eventName?: string; expiryDate?: string | null; contractStatus?: string };
+    prices?: { sell?: { yes?: string | null; no?: string | null } } | null;
+    marketValue?: string;
+    unrealizedPnl?: string;
+  };
+  const r = await priv<{ positions: Raw[] }>("/v1/prediction-markets/positions", {});
+  const n = (v: unknown) => (v == null || v === "" ? null : Number(v));
+  return {
+    venue,
+    positions: (r.positions ?? [])
+      .filter((p) => Number(p.totalQuantity) > 0)
+      .map((p) => ({
+        symbol: p.symbol,
+        eventTicker: p.contractMetadata?.eventTicker ?? "",
+        label: p.contractMetadata?.contractName ?? p.symbol,
+        event: p.contractMetadata?.eventName ?? "",
+        outcome: p.outcome,
+        quantity: Number(p.totalQuantity),
+        available: Number(p.totalQuantity) - Number(p.quantityOnHold ?? 0),
+        avgPrice: Number(p.avgPrice),
+        sellPrice: n(p.prices?.sell?.[p.outcome]),
+        marketValue: Number(p.marketValue ?? 0),
+        unrealizedPnl: Number(p.unrealizedPnl ?? 0),
+        expiry: p.contractMetadata?.expiryDate ?? undefined,
+      })),
   };
 }
 

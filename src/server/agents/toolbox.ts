@@ -142,7 +142,7 @@ export function planFromProposal(p: Proposal): PlanDraft {
   if (a && a.kind !== "itinerary") {
     const venue = p.venue;
     lines.push({ id: "order", phaseId: "act", purpose: describeAction(a), service: a.kind === "prediction_order" ? "prediction order" : "spot order", payeeName: VENUE_NAME[venue], payee: EXCHANGE_PAYEE, rail: "exchange", approved: usd(notionalOf(a)) });
-    phases.push({ id: "act", label: a.kind === "prediction_order" ? "Place the order" : "Place the trade", sub: describeAction(a), dependsOn: before, optional: false, lineId: "order" });
+    phases.push({ id: "act", label: a.kind === "prediction_order" ? (a.trade === "sell" ? "Place the sell" : "Place the order") : "Place the trade", sub: describeAction(a), dependsOn: before, optional: false, lineId: "order" });
     if (watchesOrder(p)) phases.push({ id: "watch", label: "Watch until filled", sub: `up to ${WATCH_MINUTES} min, then tracked in the background`, dependsOn: ["act"], optional: false });
   } else if (a?.kind === "itinerary") {
     phases.push({ id: "act", label: "Plan the days", sub: `${a.stops.length} stops · ≤ ${a.hoursPerDay} h a day`, dependsOn: before, optional: false });

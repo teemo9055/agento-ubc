@@ -5,7 +5,7 @@ import * as geo from "./geo";
 import { searchServices, networkName, CATEGORIES } from "./marketplace";
 import { spotSymbols } from "./agents/ai-planning";
 import { PRODUCTS } from "./x402";
-import { marketBase, tradingVenue, VENUE_NAME } from "./exchange";
+import { marketBase, positions as heldPositions, tradingVenue, VENUE_NAME } from "./exchange";
 import { FEEDS } from "./chainlink";
 
 /**
@@ -65,6 +65,30 @@ export const FREE_TOOLS: Record<string, FreeTool> = {
       if (list.length && !list.includes(sym)) throw new Error(`unknown symbol ${sym}`);
       const q = await gemini.spotTicker(sym);
       return { data: q, summary: `${sym.replace(/usd$/, "").toUpperCase()} $${q.last.toLocaleString()} (${q.change24h == null ? "—" : `${(q.change24h * 100).toFixed(1)}%`} 24h)` };
+    },
+  },
+  my_positions: {
+    description:
+      "The user's open prediction-market positions on the connected exchange: contract, YES/NO, quantity (and how many are free to sell), average entry price, what a sell gets now, profit so far. Each has `swing24h`, how far its price moved in the last 24h on the live market (high minus low, in cents); sorted calmest first by default. Use it before proposing to sell.",
+    params: z.object({ sort: z.enum(["calmest", "wildest", "biggest"]).optional() }),
+    async run(a) {
+      const { venue, positions } = await heldPositions();
+      if (venue === "paper") return { data: { venue: VENUE_NAME[venue], positions: [], note: "No exchange is connected, so there are no positions. Connect Gemini (New job → Exchange) to trade and hold contracts." }, summary: "No exchange connected" };
+      const day = Date.now() - 86_400_000;
+      const withSwing = await Promise.all(
+        positions.slice(0, 12).map(async (p) => {
+          const pts = (await gemini.oddsHistory(p.symbol, "1hr").catch(() => [])).filter((x) => x.t >= day).map((x) => (p.outcome === "yes" ? x.p : 1 - x.p));
+          const swing24h = pts.length >= 2 ? Math.round((Math.max(...pts) - Math.min(...pts)) * 100) : null;
+          return { ...p, swing24h };
+        }),
+      );
+      const sort = a.sort ?? "calmest";
+      const key = (p: (typeof withSwing)[number]) => (sort === "biggest" ? -p.marketValue : sort === "wildest" ? -(p.swing24h ?? -1) : (p.swing24h ?? 999));
+      withSwing.sort((x, y) => key(x) - key(y));
+      return {
+        data: { venue: VENUE_NAME[venue], positions: withSwing, sortedBy: sort },
+        summary: withSwing.length ? `${withSwing.length} positions on ${VENUE_NAME[venue]}` : `No open positions on ${VENUE_NAME[venue]}`,
+      };
     },
   },
   find_place: {
@@ -157,8 +181,8 @@ export const isMarketplace = (tool: string) => RESEARCH[tool].product in MARKETP
 
 /** Each agent's own harness: what it can look up for free, what it can buy, and what it can do. */
 export const TOOLKIT: Record<AgentId, { free: string[]; research: string[] }> = {
-  inso: { free: ["search_markets", "get_market", "spot_price", "search_services"], research: ["odds_history", "trade_tape", "oracle_price"] },
-  trado: { free: ["spot_price", "search_markets", "get_market", "search_services"], research: ["spot_candles", "oracle_price", "odds_history"] },
+  inso: { free: ["search_markets", "get_market", "my_positions", "spot_price", "search_services"], research: ["odds_history", "trade_tape", "oracle_price"] },
+  trado: { free: ["spot_price", "search_markets", "get_market", "my_positions", "search_services"], research: ["spot_candles", "oracle_price", "odds_history"] },
   travo: { free: ["find_place", "search_services"], research: ["drive_route"] },
 };
 
@@ -193,10 +217,15 @@ export const ProposalInput = z.object({
         symbol: z.string().describe("Exact contract symbol from the tradable list"),
         label: z.string().max(60),
         side: z.enum(["yes", "no"]),
+        trade: z
+          .enum(["buy", "sell"])
+          .nullable()
+          .optional()
+          .describe("buy (default) opens a position. sell closes contracts the user holds (from my_positions): side is the outcome held, maxPrice is the LOWEST price accepted, orderType limit, quantity at most what's free."),
         orderType: z
           .enum(["limit", "stop-limit"])
           .describe("limit: rests on the book and buys at maxPrice or cheaper, so it covers 'buy if it drops to X'. stop-limit: waits until the price rises to stopPrice, then buys at up to maxPrice, for 'buy once it breaks out to X'."),
-        maxPrice: z.number().min(0.01).max(0.99).describe("Highest price per contract (0-1)"),
+        maxPrice: z.number().min(0.01).max(0.99).describe("Buy: highest price per contract (0-1). Sell: lowest price accepted."),
         stopPrice: z.number().min(0.01).max(0.99).nullable().describe("stop-limit only: trigger price, at or above the last trade and at or below maxPrice"),
         quantity: z.number().int().min(1).max(500),
       }),
@@ -251,6 +280,15 @@ export async function validateProposal(agent: AgentId, input: unknown, id: strin
     if (left < MIN_EXPIRY_MS) return { error: `${c.label} closes ${left <= 0 ? "now" : `in ${Math.max(1, Math.round(left / 60_000))} min`}; too soon for an order to rest. Pick a later contract.` };
     const maxPrice = round2(raw.maxPrice);
     let quantity = raw.quantity;
+    if (raw.trade === "sell") {
+      const sold = await checkSell(raw, c, maxPrice, venue);
+      if ("error" in sold) return sold;
+      action = sold.action;
+      adjustments.push(...sold.notes);
+      if (Number.isFinite(left)) adjustments.push(`Contract closes ${new Date(Date.parse(c.expiry!)).toUTCString().replace(/:\d\d GMT$/, " UTC")}`);
+      eventContracts = ev.contracts.map((x) => x.symbol);
+      market = { ask: raw.side === "yes" ? c.ask : c.bid != null ? round2(1 - c.bid) : null, bid: sold.bidNow, closesAt: c.expiry };
+    } else {
     let stopPrice = raw.stopPrice != null ? round2(raw.stopPrice) : undefined;
     if (raw.orderType === "stop-limit") {
       if (stopPrice == null) return { error: "stop-limit needs stopPrice" };
@@ -273,6 +311,7 @@ export async function validateProposal(agent: AgentId, input: unknown, id: strin
     if (Number.isFinite(left)) adjustments.push(`Contract closes ${new Date(Date.parse(c.expiry!)).toUTCString().replace(/:\d\d GMT$/, " UTC")}`);
     eventContracts = ev.contracts.map((x) => x.symbol);
     market = { ask: raw.side === "yes" ? c.ask : c.bid != null ? round2(1 - c.bid) : null, bid: raw.side === "yes" ? c.bid : c.ask != null ? round2(1 - c.ask) : null, closesAt: c.expiry };
+    }
   } else if (raw?.kind === "spot_order") {
     const symbol = raw.symbol.toLowerCase();
     const list = await spotSymbols().catch(() => [] as string[]);
@@ -357,6 +396,30 @@ export async function validateProposal(agent: AgentId, input: unknown, id: strin
 }
 
 /** A stored move in the shape the model writes and the validator reads. */
+type RawPrediction = Extract<NonNullable<ProposalInput["action"]>, { kind: "prediction_order" }>;
+
+/** A sell must close contracts the user actually holds and has free, as a resting limit. */
+async function checkSell(raw: RawPrediction, c: gemini.MarketContract, price: number, venue: Proposal["venue"]): Promise<{ action: MoveAction; notes: string[]; bidNow: number | null } | { error: string }> {
+  if (venue === "paper") return { error: "No exchange is connected, so the user holds nothing to sell. Say so; selling needs Gemini connected (New job → Exchange)." };
+  if (raw.orderType !== "limit") return { error: "Sells are plain limit orders: set orderType limit and maxPrice to the lowest price the user accepts." };
+  const held = (await heldPositions().catch(() => null))?.positions.find((x) => x.symbol === raw.symbol && x.outcome === raw.side);
+  if (!held) return { error: `The user holds no ${raw.side.toUpperCase()} contracts of ${raw.symbol}. Check my_positions and sell only what's there.` };
+  if (held.available < 1) return { error: `All ${held.quantity} ${raw.side.toUpperCase()} contracts of ${held.label} are on hold for an open order. Cancel that order first.` };
+  const notes: string[] = [];
+  let quantity = raw.quantity;
+  if (quantity > held.available) {
+    quantity = held.available;
+    notes.push(`Quantity cut to ${quantity}, all you hold free`);
+  }
+  if (price !== raw.maxPrice) notes.push(`Price rounded to ${Math.round(price * 100)}¢`);
+  // Someone buying YES pays the YES bid; someone buying NO pays 1 − the YES ask.
+  const bidNow = raw.side === "yes" ? c.bid : c.ask != null ? round2(1 - c.ask) : null;
+  notes.push(bidNow == null ? "Waits on the book: no buyers right now" : price <= bidNow ? `Sells now: best buyer pays ${Math.round(bidNow * 100)}¢` : `Waits on the book: best buyer pays ${Math.round(bidNow * 100)}¢ now`);
+  const pnl = Math.round((price - held.avgPrice) * quantity * 100) / 100;
+  notes.push(`You paid ${Math.round(held.avgPrice * 100)}¢ avg, so this ${pnl >= 0 ? "locks in" : "takes a loss of"} about $${Math.abs(pnl).toFixed(2)}`);
+  return { action: { kind: "prediction_order", eventTicker: raw.eventTicker, symbol: raw.symbol, label: raw.label, side: raw.side, trade: "sell", orderType: "limit", maxPrice: price, quantity }, notes, bidNow };
+}
+
 export function toProposalInput(p: Proposal): ProposalInput {
   const a = p.action;
   return {
@@ -364,7 +427,7 @@ export function toProposalInput(p: Proposal): ProposalInput {
     why: p.why,
     ask: p.ask,
     research: p.research.map((r) => ({ tool: r.tool, args: r.args, label: r.label, why: r.why })),
-    action: !a ? null : a.kind === "prediction_order" ? { ...a, stopPrice: a.stopPrice ?? null } : a,
+    action: !a ? null : a.kind === "prediction_order" ? { ...a, trade: a.trade ?? null, stopPrice: a.stopPrice ?? null } : a,
     condition: p.condition ?? null,
     budgetUsd: p.budgetUsd ?? null,
   } as ProposalInput;

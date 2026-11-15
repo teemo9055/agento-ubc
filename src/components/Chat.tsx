@@ -16,6 +16,7 @@ const usdc = (x: number) => (x < 0.01 ? x.toFixed(4) : x.toFixed(2));
 const cents = (x: number) => `${Math.round(x * 100)}¢`;
 
 export function actionText(a: MoveAction) {
+  if (a.kind === "prediction_order" && a.trade === "sell") return `Sell ${a.quantity} × ${a.side.toUpperCase()} “${a.label}” at ≥ ${cents(a.maxPrice)}, resting until filled`;
   if (a.kind === "prediction_order")
     return a.orderType === "stop-limit"
       ? `${a.quantity} × ${a.side.toUpperCase()} “${a.label}” once it rises to ${cents(a.stopPrice ?? a.maxPrice)}, paying ≤ ${cents(a.maxPrice)}`
@@ -29,7 +30,7 @@ export function conditionLabel(c: MoveCondition) {
   const dollars = c.metric === "spot_price" || c.metric === "oracle_price";
   return `${what} ${c.op === "<=" ? "≤" : "≥"} ${dollars ? `$${c.value.toLocaleString()}` : cents(c.value)}`;
 }
-const maxCost = (a?: MoveAction) => (!a ? 0 : a.kind === "prediction_order" ? a.maxPrice * a.quantity : a.kind === "spot_order" ? a.amountUsd : 0);
+const maxCost = (a?: MoveAction) => (!a ? 0 : a.kind === "prediction_order" ? (a.trade === "sell" ? 0 : a.maxPrice * a.quantity) : a.kind === "spot_order" ? a.amountUsd : 0);
 
 const VENUE_BADGE: Record<Venue, { label: string; title: string; cls: string }> = {
   gemini: { label: "Live · real money", title: "Orders go to your Gemini account with real money", cls: "border-bad/50 bg-bad/10 text-bad" },

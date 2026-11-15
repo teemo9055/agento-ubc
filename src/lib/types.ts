@@ -173,6 +173,8 @@ export type MoveAction =
       symbol: string;
       label: string;
       side: "yes" | "no";
+      /** buy (default) opens or adds to a position; sell closes contracts you hold, at maxPrice or better (i.e. at least maxPrice). */
+      trade?: "buy" | "sell";
       /** limit: rests on the book and fills at maxPrice or better. stop-limit: goes on the book once the price rises to stopPrice. */
       orderType: "limit" | "stop-limit";
       maxPrice: number;
