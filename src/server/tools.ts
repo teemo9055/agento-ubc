@@ -288,7 +288,7 @@ export async function validateProposal(agent: AgentId, input: unknown, id: strin
     const maxPrice = round2(raw.maxPrice);
     let quantity = raw.quantity;
     // A hedge is sized by code: enough contracts that the payout, after their cost, covers the loss.
-    if (p.hedge && raw.trade !== "sell" && budget == null) {
+    if (p.hedge && raw.trade !== "sell") {
       const need = Math.min(500, Math.max(1, Math.ceil(p.hedge.lossUsd / (1 - maxPrice) - 1e-9)));
       const fits = Math.max(1, Math.floor(limits().maxOrderUsd / maxPrice));
       const sized = Math.min(need, fits);
@@ -423,7 +423,8 @@ export async function validateProposal(agent: AgentId, input: unknown, id: strin
 /** Cost and payout of a hedge, from the order as it will actually be placed. */
 function hedgeOf(h: ProposalInput["hedge"], a: MoveAction | undefined): Proposal["hedge"] {
   if (!h || a?.kind !== "prediction_order" || a.trade === "sell") return undefined;
-  return { protects: h.protects, lossUsd: h.lossUsd, cost: round2(a.maxPrice * a.quantity), payout: a.quantity };
+  return {
+    covered: Math.min(h.lossUsd, round2(a.quantity * (1 - a.maxPrice))), protects: h.protects, lossUsd: h.lossUsd, cost: round2(a.maxPrice * a.quantity), payout: a.quantity };
 }
 
 type RawPrediction = Extract<NonNullable<ProposalInput["action"]>, { kind: "prediction_order" }>;

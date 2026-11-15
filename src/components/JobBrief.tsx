@@ -80,7 +80,7 @@ export function ReviewCard({ run }: { run: Run }) {
       </ol>
       {p?.hedge && (
         <p className="mx-4 mb-3 rounded-lg bg-agent-soft px-3 py-2 text-[13px] text-ink" data-testid="hedge-line">
-          <b className="font-semibold">Insurance for {p.hedge.protects}:</b> costs up to ${p.hedge.cost.toFixed(2)}. If it happens you get ${p.hedge.payout} back; if not, the ${p.hedge.cost.toFixed(2)} is the price of cover.
+          <b className="font-semibold">Insurance for {p.hedge.protects}:</b> costs up to ${p.hedge.cost.toFixed(2)}. If it happens you get ${p.hedge.payout} back{p.hedge.covered < p.hedge.lossUsd - 0.5 ? `, which covers about $${Math.round(p.hedge.covered)} of your $${p.hedge.lossUsd}` : ""}; if not, the ${p.hedge.cost.toFixed(2)} is the price of cover.
         </p>
       )}
       {p?.condition && (

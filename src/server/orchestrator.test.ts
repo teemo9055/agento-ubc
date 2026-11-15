@@ -366,3 +366,21 @@ describe("method, preview and edited re-approval", () => {
     expect(run.decisions.some((d) => d.kind === "reapproval" && d.outcome === "edited")).toBe(true);
   });
 });
+
+describe("limits from Settings", () => {
+  it("a job over the per-job data budget can't be approved; an order over the order limit can't be proposed", async () => {
+    const settings = await import("@/server/settings");
+    const before = settings.limits();
+    try {
+      const d = await draft("BTC odds over the limit");
+      settings.setLimits({ maxJobUsdc: 0.05 });
+      await expect(orch.approve(d.id)).rejects.toThrow(/over your 0.05 USDC per-job limit/);
+      settings.setLimits({ maxJobUsdc: before.maxJobUsdc, maxOrderUsd: 2 });
+      const { validateProposal, toProposalInput } = await import("@/server/tools");
+      const v = await validateProposal("inso", toProposalInput(d.proposal!), "lim1");
+      expect("error" in v && v.error).toMatch(/per-order limit/);
+    } finally {
+      settings.setLimits(before);
+    }
+  });
+});

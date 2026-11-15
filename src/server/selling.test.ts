@@ -107,12 +107,12 @@ describe("hedging an everyday cost", () => {
     if (!("proposal" in r)) throw new Error(r.error);
     // 30 / (1 - 0.20) = 37.5 -> 38 contracts: costs $7.60, pays $38, nets $30.40.
     expect(r.proposal.action).toMatchObject({ quantity: 38 });
-    expect(r.proposal.hedge).toEqual({ protects: "a pricier ride", lossUsd: 30, cost: 7.6, payout: 38 });
+    expect(r.proposal.hedge).toEqual({ protects: "a pricier ride", lossUsd: 30, cost: 7.6, payout: 38, covered: 30 });
     expect(r.proposal.ask).toBe("Pay up to $7.60 now; get $38 back if “Higher” happens?");
   });
   it("a budget wins over full cover", async () => {
     const r = await validateProposal("inso", hedge({ budgetUsd: 5, action: { kind: "prediction_order", eventTicker: "BTC-1", symbol: "GEMI-BTC-2", label: "Higher", side: "yes", orderType: "limit", maxPrice: 0.2, stopPrice: null, quantity: 100 } }), "h2");
     if (!("proposal" in r)) throw new Error(r.error);
-    expect(r.proposal.hedge).toMatchObject({ cost: 5, payout: 25 });
+    expect(r.proposal.hedge).toMatchObject({ cost: 5, payout: 25, covered: 20 });
   });
 });

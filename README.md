@@ -79,10 +79,23 @@ Measured network fee per `authorize` call, paid by the agent: about 0.0026 USDC.
    3. Authorize from the vault.
    4. The seller settles onchain and returns the data.
 6. **Check, then act.** An optional check on a different number (e.g. BTC spot before buying a BTC contract) is read fresh right before acting. The order then goes to Gemini as a real resting order: a **limit** order covers "buy if it drops to X", a **stop-limit** order covers "buy once it rises to X". The app tracks it (open, filled, cancelled), refreshes it, and can cancel it.
-   - Every move is labelled where it goes: **Live** (real money), **Gemini sandbox** (real orders, test money) or **Simulation** (no exchange connected, nothing sent). The agent can only trade markets listed on the connected exchange.
+   - Every move is labelled where it goes: **Live** (real money), **Gemini sandbox** (real orders, test money) or **Practice** (no exchange connected, nothing sent). The agent can only trade markets listed on the connected exchange.
 7. **Change → ask.** If the policy blocks a spend, that step pauses and you get a re-approval popup. Other steps keep going.
 8. **Fail → choose.** A failed step offers retry, skip (optional steps only), top up, or cancel. Purchases are cached per request key, so a retry never pays twice.
 9. **Close.** The vault closes, unspent USDC returns to you, and you get the receipt.
+
+### Hedging everyday costs
+
+Prediction markets work as cheap insurance. Tell Inso what you'd lose and when ("a cold snap would cost me $20 in rides tomorrow in NYC", "I hold BTC, cover me for $30 if it drops below $60k"). It finds the Gemini market for that event and proposes buying the side that pays out if the bad thing happens. Code, not the model, sizes the order so the payout after its own cost covers the loss (or fits your budget), and the card states it like insurance: what you pay now, what you get back if it happens. If Gemini lists no market for the risk (there are no rain markets, only daily temperature by city), the agent says so.
+
+### What you see
+
+- **Ask.** Pick an agent and type. Each agent lists what it can and can't do here.
+- **Review.** One card: the steps in plain words, the most it can cost, and Approve. The graph and every cost line are one click away, not in the way.
+- **Status.** After approval the page leads with one line that answers "what happened?": step 2 of 3, order placed and waiting to fill, filled, not placed and why, paused because it needs you.
+- **Receipt.** Its own printable page laid out like an invoice: billed to, work done by, items with payee and transaction hash, totals, the exchange order and its Arc fingerprint, the approval trail. Exports to CSV and JSON.
+- **Run again / Save.** A finished job can be repeated: the same move is re-checked against today's prices and limits and comes back as a fresh draft to approve.
+- **Settings.** Spending limits, wallet, network, exchange connection, notifications and test switches are set once there, not on every job.
 
 ### Plans across agents
 
@@ -100,10 +113,11 @@ Ask for several things at once ("buy 5 YES on BTC, then plan a drive from Dallas
 | Only the agent can spend; only the client changes the plan | Vault (`NotAgent`, `NotPayer`) |
 | No double payment on retry | Request-key cache, unique refs and nonces (`RefUsed`), authorization state check |
 | Re-approval timeout counts as deny | Orchestrator (`REAPPROVAL_TIMEOUT_MS`, default 2 min) |
-| Big spends listed and approved up front | Work order (default threshold 0.25 USDC, editable on the price card) |
+| Big spends listed and approved up front | Work order (threshold set in Settings, default 0.25 USDC) |
+| Per-job data budget | Settings (default 5 USDC); approval is refused if a job's vault would hold more |
 | Cancel anytime, funds returned | `vault.close()` by client or agent |
 | Orders only as approved | The order line (side, contract, max price, size) is part of the approved work order; the condition is re-checked on fresh data |
-| Order size | Your stated budget (quantity cut to fit, shown on the card) and `MAX_ORDER_USD` (default 50); the order is paid on the exchange, never from the vault |
+| Order size | Your stated budget (quantity cut to fit, shown on the card) and the largest-order limit in Settings (default 50 USD); the order is paid on the exchange, never from the vault |
 | Exchange terms | Gemini's prediction-market terms are shown and accepted only by your click, never by the agent |
 | Model output is untrusted | Every move is validated against live data before it is shown; tool results are marked as third-party data |
 

@@ -215,7 +215,7 @@ export interface Proposal {
   /** What this version changed compared with the move before it, e.g. "+ Odds history", "$5 → $10". */
   changes?: string[];
   /** The order is insurance against something: what it protects, and the numbers, computed by code. */
-  hedge?: { protects: string; lossUsd: number; cost: number; payout: number };
+  hedge?: { protects: string; lossUsd: number; cost: number; payout: number; /** How much of the loss the payout covers after its own cost. */ covered: number };
   /** Changes code made to the model's move (rounding, budget), shown to the user. */
   adjustments?: string[];
 }
