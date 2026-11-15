@@ -181,7 +181,7 @@ export const CARD_LABEL: Record<Card["kind"], string> = { price: "Price", delive
 const CARD_HINT: Record<Card["kind"], string> = {
   price: "e.g. big-spend threshold 0.5",
   deliverable: "e.g. track 5 markets",
-  method: "e.g. use the backup seller",
+  method: "e.g. add a Chainlink check",
   risk: "e.g. no condition, or max 50¢",
 };
 

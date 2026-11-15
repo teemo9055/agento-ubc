@@ -6,6 +6,7 @@ import { describeAction, tradingVenue, VENUE_NAME, VENUE_NOTE } from "./exchange
 import { ACTIONS, FREE_TOOLS, ProposalInput, researchMenu, runFreeTool, TOOLKIT, validateProposal } from "./tools";
 import { conditionText } from "./agents/toolbox";
 import { lessonLines, PRIMERS } from "./knowledge";
+import { providerDirectory } from "./providers";
 
 /**
  * Explore: the agent answers questions with free tools, then turns the
@@ -52,6 +53,7 @@ function system(agent: AgentId) {
       ? "CHAINLINK: you CAN check crypto prices against Chainlink's oracle (BTC, ETH, SOL, LINK). It isn't a free lookup: add a research step {tool: oracle_price, args: {symbol: 'btcusd'}} to the move, and to make the order depend on it add condition {metric: 'oracle_price', symbol: 'btcusd', op, value}. It's bought for 0.0001 USDC right before the check. Never tell the user you can't access Chainlink."
       : "",
     `PAID RESEARCH you can attach to a move (bought after approval; Gemini data from the user's vault over x402 on Arc, Chainlink prices from Quicknode on Circle's Agent Marketplace via Gateway nanopayments):\n${researchMenu(agent)}\nAttach 1-2 lookups only when they could change the decision and say why in each; skip research the free tools already answered. Research symbols must be live markets with data.`,
+    `PROVIDERS YOU KNOW (say plainly what each sells and whether you can use it now):\n${providerDirectory()}`,
     "MARKETPLACE: use search_services when the user wants deeper data than the free tools. Be honest: most of Circle's Agent Marketplace charges on Arc mainnet or Base with real USDC; only services marked payableHere=true work with this app's Arc testnet vault today.",
     `KNOWLEDGE (shared notes; use them, don't recite them):\n- ${[...PRIMERS[agent], ...lessonLines(agent).map((l) => `Learned from past jobs: ${l}`)].join("\n- ")}`,
     "TRUTH: never invent tickers, symbols, prices, odds or places; use what the tools returned in this conversation (see 'facts' in earlier turns) or look them up again. Prices of prediction contracts are 0-1; say them as cents or %. Don't promise fills or profits. This isn't financial advice; say so only if asked for advice.",

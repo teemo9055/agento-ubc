@@ -325,7 +325,18 @@ export async function validateProposal(agent: AgentId, input: unknown, id: strin
     condition = undefined;
     adjustments.push("Price check folded into the limit order");
   }
-  const research: ResearchStep[] = p.research.map((r, i) => ({ id: `r${i + 1}`, tool: r.tool, args: r.args, label: r.label, why: r.why }));
+  // The same lookup twice is the same data paid for twice: keep one.
+  const seen = new Set<string>();
+  const unique = p.research.filter((r) => {
+    const k = `${r.tool}:${JSON.stringify(Object.fromEntries(Object.entries(r.args).map(([a, v]) => [a, String(v).toLowerCase()]).sort()))}`;
+    if (seen.has(k)) {
+      adjustments.push(`Already includes ${r.label}; not buying it twice`);
+      return false;
+    }
+    seen.add(k);
+    return true;
+  });
+  const research: ResearchStep[] = unique.map((r, i) => ({ id: `r${i + 1}`, tool: r.tool, args: r.args, label: r.label, why: r.why }));
   return {
     proposal: {
       id,

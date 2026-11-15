@@ -1,7 +1,8 @@
 import { z } from "zod";
 import type { AgentId, Proposal } from "@/lib/types";
 import { aiJson, FAST_MODEL, type AiUsage } from "./ai";
-import { ProposalInput, toProposalInput, validateProposal } from "./tools";
+import { ProposalInput, RESEARCH, researchMenu, TOOLKIT, toProposalInput, validateProposal } from "./tools";
+import { providerDirectory, providersIn } from "./providers";
 
 const Reply = z.object({
   understood: z.boolean().describe("false if the request can't be done by changing this move"),
@@ -9,6 +10,18 @@ const Reply = z.object({
   alternatives: z.array(z.string().max(40)).max(3).describe("If not understood: 1-3 edits that would work, phrased as the user would type them"),
   move: ProposalInput.nullable().describe("The full updated move, or null if nothing changes"),
 });
+
+/** A note on providers the user named, so the model can't confuse a data seller with a market. */
+function named(prompt: string, agent: AgentId) {
+  const ps = providersIn(prompt);
+  if (!ps.length) return "";
+  return `\nPROVIDERS NAMED: ${ps
+    .map((p) => {
+      const usable = (p.tools ?? []).filter((t) => TOOLKIT[agent].research.includes(t) && RESEARCH[t]);
+      return `${p.name} sells ${p.sells}; ${p.payable === "now" ? (usable.length ? `usable now via ${usable.join(", ")}` : "usable now but not by this agent") : p.payable === "mainnet" ? "only payable with Arc mainnet USDC, not available on testnet yet" : "only payable on another network, not wired up yet"}`;
+    })
+    .join(" | ")}`;
+}
 
 const STEP: Record<string, string> = { check: "the price check (condition)", act: "the order/action itself" };
 
@@ -29,9 +42,14 @@ export async function aiEditMove(agent: AgentId, current: Proposal, prompt: stri
       "Keep symbols, tickers and event names exactly as they are; never invent new ones. Keep `ask` and `title` consistent with the new numbers (update the cost and payout in `ask`).",
       "Vague requests get a sensible concrete value; say what you picked in `message`: 'a bit cheaper' = about 1-2% lower price (1-2¢ for contracts), 'smaller'/'bigger' = about half/double the size, 'safer' = smaller size and a lower limit.",
       "A different coin, contract or market can't be done here because it needs fresh prices: set understood=false, move=null, message 'Switching markets needs fresh prices, so ask me in the chat.' and alternatives = [the user's request phrased for the chat, e.g. 'Buy $30 of ETH instead'].",
-      "Anything else the move can't express: understood=false, move=null, and 1-3 alternatives that would work, using real numbers from the current move.",
+      "Data and providers: you may add, swap or drop paid lookups (`research`) using ONLY this agent's tools listed below, with real symbols from the current move (for crypto lookups, a symbol like solusd). A lookup can back a condition (e.g. oracle_price for metric oracle_price).",
+      "If the user names a provider, use the directory below. If its data is one of this agent's tools, apply it. If it sells something else, or can't be paid yet (mainnet only / another network), set understood=false and say in one line what it actually sells and why it can't be used here; then offer the closest edits that DO work, using this agent's tools (e.g. 'Add a Chainlink SOL check', 'Add hourly SOL candles').",
+      "A provider is never a market or an exchange: never suggest 'buy on <provider>'.",
+      "Anything else the move can't express: understood=false, move=null, and 1-3 alternatives that would work on this move, using real numbers from it.",
+      `THIS AGENT'S PAID LOOKUPS:\n${researchMenu(agent)}`,
+      `PROVIDER DIRECTORY:\n${providerDirectory()}`,
     ].join("\n"),
-    user: `The user is editing ${target}.\nCURRENT MOVE: ${JSON.stringify(toProposalInput(current))}\nEDIT (from the user): ${prompt}`,
+    user: `The user is editing ${target}.\nCURRENT MOVE: ${JSON.stringify(toProposalInput(current))}\nEDIT (from the user): ${prompt}${named(prompt, agent)}`,
   });
   if (!r) return null;
   const { understood, message, alternatives, move } = r.value;

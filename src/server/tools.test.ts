@@ -114,6 +114,14 @@ describe("moves are validated by code, whoever wrote them", () => {
     expect("proposal" in ok && ok.proposal.condition).toMatchObject({ metric: "oracle_price" });
   });
 
+  it("never buys the same lookup twice", async () => {
+    const twice = [{ tool: "oracle_price", args: { symbol: "btcusd" }, label: "Chainlink", why: "a" }, { tool: "oracle_price", args: { symbol: "BTCUSD" }, label: "Chainlink again", why: "b" }];
+    const r = await validateProposal("inso", move({ research: twice }), "p21");
+    if (!("proposal" in r)) throw new Error(r.error);
+    expect(r.proposal.research).toHaveLength(1);
+    expect(r.proposal.adjustments?.join(" ")).toMatch(/not buying it twice/);
+  });
+
   it("rejects out-of-range prices via the schema", async () => {
     const r = await validateProposal("inso", move({ action: { kind: "prediction_order", eventTicker: "BTC-1", symbol: "GEMI-BTC-1", label: "Up", side: "yes", orderType: "limit", stopPrice: null, maxPrice: 1.5, quantity: 1 } }), "p5");
     expect(r).toMatchObject({ error: expect.stringContaining("maxPrice") });
