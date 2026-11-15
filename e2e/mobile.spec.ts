@@ -25,9 +25,17 @@ test("bottom tab bar navigates", async ({ page }) => {
   await expect(page).toHaveURL(/\/new$/);
 });
 
+test("Edit on a card opens the chat focused on that card", async ({ page }) => {
+  await newDemoJob(page, "BTC odds focus test");
+  await page.getByTestId("card-price").click();
+  await expect(page.getByRole("tab", { name: /Chat/ })).toHaveAttribute("aria-selected", "true");
+  await expect(page.getByTestId("chat-focus")).toContainText("Price");
+  await expect(page.getByRole("dialog")).toHaveCount(0);
+});
+
 test("sheets swipe down to dismiss", async ({ page }) => {
   await newDemoJob(page, "BTC odds swipe test");
-  await page.getByTestId("card-deliverable").click();
+  await page.getByTestId("open-approve").click();
   const dialog = page.getByRole("dialog");
   await expect(dialog).toBeVisible();
   await page.waitForTimeout(400); // let the sheet finish sliding up before grabbing its handle

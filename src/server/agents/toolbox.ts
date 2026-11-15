@@ -160,9 +160,9 @@ function edit(_card: Card["kind"], prompt: string, o: Record<string, unknown>): 
 }
 
 const TAGLINES: Record<AgentId, { name: string; tagline: string; examples: string[] }> = {
-  inso: { name: "Inso", tagline: "Reads the odds, then asks before it bets.", examples: ["Is BTC going to close above 100k this week?", "Which NBA game tonight has the most lopsided odds?", "What do markets think the Fed does next?"] },
-  trado: { name: "Trado", tagline: "Spot trends, with a trade only if you say so.", examples: ["Is ETH in an uptrend right now?", "Should I buy SOL on this dip?", "Compare BTC and ETH this week"] },
-  travo: { name: "Travo", tagline: "Plans the drive, you take the wheel.", examples: ["Drive from Vancouver to San Francisco in 3 days", "How long is Calgary to Banff?", "Road trip Toronto to Montreal via Ottawa"] },
+  inso: { name: "Inso", tagline: "Reads prediction-market odds and asks before it places an order.", examples: ["Is BTC going to close above 100k this week?", "Which NBA game tonight has the most lopsided odds?", "What do markets think the Fed does next?"] },
+  trado: { name: "Trado", tagline: "Spots price trends and trades only when you approve.", examples: ["Is ETH in an uptrend right now?", "Should I buy SOL on this dip?", "Compare BTC and ETH this week"] },
+  travo: { name: "Travo", tagline: "Plans driving routes and day trips.", examples: ["Drive from Vancouver to San Francisco in 3 days", "How long is Calgary to Banff?", "Road trip Toronto to Montreal via Ottawa"] },
 };
 
 export function toolboxAgent(id: AgentId): AgentDef {

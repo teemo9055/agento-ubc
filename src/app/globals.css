@@ -300,7 +300,62 @@ body {
   animation: flow 0.8s linear infinite;
 }
 
+/* ---------- agent scenes (empty plan) ---------- */
+.scene-bar {
+  y: calc(84px - var(--a));
+  height: var(--a);
+  animation: odds 2.6s steps(6, end) infinite alternate;
+}
+@keyframes odds {
+  to {
+    y: calc(84px - var(--b));
+    height: var(--b);
+  }
+}
+.scene-candle {
+  animation: print 2.8s steps(1, end) infinite;
+}
+@keyframes print {
+  0% {
+    opacity: 0.15;
+  }
+  12%,
+  100% {
+    opacity: 1;
+  }
+}
+.scene-trend {
+  animation: march 1.2s linear infinite;
+}
+@keyframes march {
+  to {
+    stroke-dashoffset: -14;
+  }
+}
+.scene-route {
+  stroke-dasharray: 100;
+  animation: route 3.2s ease-in-out infinite;
+}
+@keyframes route {
+  0% {
+    stroke-dashoffset: 100;
+  }
+  70%,
+  100% {
+    stroke-dashoffset: 0;
+  }
+}
+
 @media (prefers-reduced-motion: reduce) {
+  .scene-bar,
+  .scene-candle,
+  .scene-trend,
+  .scene-route {
+    animation: none;
+  }
+  .scene-route {
+    stroke-dashoffset: 0;
+  }
   .mascot,
   .mascot *,
   .pix-bubble,

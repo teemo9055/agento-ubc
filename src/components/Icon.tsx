@@ -56,6 +56,25 @@ const PATHS = {
   ),
   external: <path d="M7 17 17 7M8 7h9v9" />,
   download: <path d="M12 4v12M6 11l6 6 6-6M5 20h14" />,
+  send: <path d="M12 19V5M5 12l7-7 7 7" />,
+  chevron: <path d="m9 6 6 6-6 6" />,
+  receipt: (
+    <>
+      <path d="M5 3h14v18l-3-2-2 2-2-2-2 2-2-2-3 2z" />
+      <path d="M9 8h6M9 12h6" />
+    </>
+  ),
+  bolt: <path d="M13 2 4 14h7l-1 8 9-12h-7z" />,
+  free: <path d="M20 12v8H4v-8M2 7h20v5H2zM12 22V7M12 7H7.5a2.5 2.5 0 0 1 0-5C11 2 12 7 12 7ZM12 7h4.5a2.5 2.5 0 0 0 0-5C13 2 12 7 12 7Z" />,
+  chat: <path d="M21 12a8 8 0 0 1-11.6 7.1L4 20l1-4.6A8 8 0 1 1 21 12Z" />,
+  graph: (
+    <>
+      <rect x="3" y="4" width="6" height="5" rx="1.5" />
+      <rect x="15" y="4" width="6" height="5" rx="1.5" />
+      <rect x="9" y="15" width="6" height="5" rx="1.5" />
+      <path d="M6 9v2a2 2 0 0 0 2 2h8a2 2 0 0 0 2-2V9M12 13v2" />
+    </>
+  ),
 } as const;
 
 export type IconName = keyof typeof PATHS;

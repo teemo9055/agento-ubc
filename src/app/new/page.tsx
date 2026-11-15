@@ -9,6 +9,7 @@ import { THEMES } from "@/lib/themes";
 import type { AgentId, FailureCode, Run } from "@/lib/types";
 import { outfitFor } from "@/lib/outfit";
 import { Icon } from "@/components/Icon";
+import { KITS } from "@/lib/agentKit";
 import { WalletPanel } from "@/components/passkey/WalletPanel";
 import { ExchangePanel } from "@/components/ExchangePanel";
 import { usePasskeyWallet } from "@/components/passkey/usePasskey";
@@ -167,6 +168,29 @@ export default function Home() {
         })}
       </div>
 
+      <AnimatePresence mode="wait" initial={false}>
+        <motion.div
+          key={agent}
+          initial={{ opacity: 0, y: -4 }}
+          animate={{ opacity: 1, y: 0 }}
+          exit={{ opacity: 0, y: 4 }}
+          transition={{ duration: 0.18 }}
+          className="-mt-2 flex flex-wrap items-center gap-x-5 gap-y-1.5 px-1 text-[13px] text-ink-2"
+          data-agent={agent}
+          aria-live="polite"
+        >
+          <span className="inline-flex items-center gap-1.5">
+            <Icon name="search" size={14} className="text-agent-ink" /> Free: {KITS[agent].free.join(", ")}
+          </span>
+          <span className="num inline-flex items-center gap-1.5">
+            <Icon name="vault" size={14} className="text-agent-ink" /> Paid after approval: {KITS[agent].paid.map((x) => `${x.label} ${x.price}`).join(", ")} USDC
+          </span>
+          <span className="inline-flex items-center gap-1.5">
+            <Icon name="bolt" size={14} className="text-agent-ink" /> {KITS[agent].acts}
+          </span>
+        </motion.div>
+      </AnimatePresence>
+
       <form onSubmit={submit} className="rounded-[14px] border-[1.5px] border-ink bg-panel p-4 shadow-[4px_4px_0_0_var(--color-ink)] transition-shadow focus-within:shadow-[4px_4px_0_0_var(--agent)] sm:p-5">
         <label htmlFor="task" className="sr-only">
           Task for {theme.name}
@@ -256,7 +280,7 @@ export default function Home() {
         {(agent === "inso" || agent === "trado") && <ExchangePanel />}
         {err && <p className="mt-3 text-sm text-bad">{err}</p>}
         {cfg?.setup && cfg.setup.length > 0 && (
-          <div className="mt-3 rounded-lg border border-warn bg-warn/10 px-3 py-2 text-[12.5px] text-[#7a5000]" data-testid="setup-problems">
+          <div className="mt-3 rounded-lg border border-warn bg-warn/10 px-3 py-2 text-[12.5px] text-warn-ink" data-testid="setup-problems">
             <b>Setup on this machine:</b>
             <ul className="mt-1 list-disc pl-4">
               {cfg.setup.map((x) => (

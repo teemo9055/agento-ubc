@@ -18,11 +18,15 @@ import type { Hex } from "viem";
 const CARD_ORDER: Card["kind"][] = ["price", "deliverable", "method", "risk"];
 const CARD_LABEL: Record<Card["kind"], string> = { price: "Price", deliverable: "Deliverable", method: "Method", risk: "Risk" };
 
-export function Cards({ run, onEdit }: { run: Run; onEdit?: (k: Card["kind"]) => void }) {
+/** The four cards of the plan. Edit hands the card to the chat; the focused card stays highlighted while you talk about it. */
+export function Cards({ run, onEdit, focused }: { run: Run; onEdit?: (k: Card["kind"]) => void; focused?: Card["kind"] | null }) {
   const cards = CARD_ORDER.map((k) => run.cards.find((c) => c.kind === k)).filter(Boolean) as Card[];
   return (
-    <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-4">
-      {cards.map((c, i) => (
+    <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 2xl:grid-cols-4">
+      {cards.map((c, i) => {
+        const on = focused === c.kind;
+        const dim = Boolean(focused) && !on;
+        return (
         <motion.button
           key={c.kind}
           initial={{ opacity: 0, y: 10 }}
@@ -31,18 +35,25 @@ export function Cards({ run, onEdit }: { run: Run; onEdit?: (k: Card["kind"]) =>
           whileHover={onEdit ? { y: -2 } : undefined}
           disabled={!onEdit}
           onClick={() => onEdit?.(c.kind)}
+          aria-pressed={onEdit ? on : undefined}
+          aria-label={onEdit ? `${CARD_LABEL[c.kind]}: ${c.title}. Edit in chat` : undefined}
           data-testid={`card-${c.kind}`}
-          className={`pix-edit pressable group relative overflow-hidden rounded-2xl border p-4 text-left disabled:cursor-default ${
-            c.kind === "price" ? "border-agent/30 bg-agent-soft" : "border-line bg-panel"
-          }`}
+          className={`pix-edit pressable group relative overflow-hidden rounded-2xl p-4 text-left transition-opacity disabled:cursor-default ${
+            on ? "border-[1.5px] border-ink shadow-[3px_3px_0_0_var(--agent)]" : "border"
+          } ${c.kind === "price" ? "border-agent/30 bg-agent-soft" : "border-line bg-panel"} ${on ? "!border-ink" : ""} ${dim ? "opacity-55" : ""}`}
         >
           <div className={`flex items-center justify-between text-[12px] font-semibold uppercase tracking-wide ${c.kind === "price" ? "text-agent-ink" : "text-ink-3"}`}>
             <span>{CARD_LABEL[c.kind]}</span>
-            {onEdit && (
-              <span className="reveal inline-flex items-center gap-1 font-medium normal-case tracking-normal text-ink-2 opacity-0 transition-opacity group-hover:opacity-100 group-focus-visible:opacity-100">
-                <Icon name="edit" size={13} /> Edit
-              </span>
-            )}
+            {onEdit &&
+              (on ? (
+                <span className="inline-flex items-center gap-1 rounded-md bg-ink px-1.5 py-0.5 font-semibold normal-case tracking-normal text-white">
+                  <Icon name="chat" size={12} /> In chat
+                </span>
+              ) : (
+                <span className="reveal inline-flex items-center gap-1 font-medium normal-case tracking-normal text-ink-2 opacity-0 transition-opacity group-hover:opacity-100 group-focus-visible:opacity-100">
+                  <Icon name="edit" size={13} /> Edit
+                </span>
+              ))}
           </div>
           <AnimatePresence mode="popLayout" initial={false}>
             <motion.div key={c.title} initial={{ opacity: 0, y: 4 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0, y: -4 }} className="num mt-1.5 text-[17px] font-semibold">
@@ -58,7 +69,8 @@ export function Cards({ run, onEdit }: { run: Run; onEdit?: (k: Card["kind"]) =>
             ))}
           </ul>
         </motion.button>
-      ))}
+        );
+      })}
     </div>
   );
 }
@@ -189,7 +201,7 @@ export function CostTable({ run, compact = false }: { run: Run; compact?: boolea
                   <td className="px-4 py-2.5">
                     <div className="font-medium">{l.purpose}</div>
                     {l.rail === "exchange" && <span className="mt-0.5 block text-[11px] text-ink-3">Order limit · paid on the exchange, not from your vault</span>}
-                    {l.bigSpend && l.rail !== "exchange" && <span className="mt-0.5 inline-block rounded-md bg-warn/20 px-1.5 py-px text-[10.5px] font-medium text-[#7a5000]">Big spend · approved up front</span>}
+                    {l.bigSpend && l.rail !== "exchange" && <span className="mt-0.5 inline-block rounded-md bg-warn/20 px-1.5 py-px text-[10.5px] font-medium text-warn-ink">Big spend · approved up front</span>}
                   </td>
                   <td className="px-2 py-2.5 text-ink-2">
                     {l.payeeName}
@@ -254,140 +266,6 @@ export function CostTable({ run, compact = false }: { run: Run; compact?: boolea
       </table>
       </div>
     </div>
-  );
-}
-
-interface Preview {
-  ok: boolean;
-  message: string;
-  alternatives?: string[];
-  before?: { total: string; lines: { purpose: string; approved: string }[] };
-  after?: { total: string; lines: { purpose: string; approved: string }[] };
-}
-
-export function EditCardModal({ run, kind, onClose }: { run: Run; kind: Card["kind"] | null; onClose: () => void }) {
-  const [prompt, setPrompt] = useState("");
-  const [busy, setBusy] = useState(false);
-  const [preview, setPreview] = useState<(Preview & { prompt: string }) | null>(null);
-  const card = run.cards.find((c) => c.kind === kind);
-
-  async function check(text = prompt) {
-    if (!kind || !text.trim()) return;
-    setBusy(true);
-    try {
-      const p = await post<Preview>(`/api/runs/${run.id}/preview`, { card: kind, prompt: text });
-      setPreview({ ...p, prompt: text });
-      setPrompt(text);
-    } finally {
-      setBusy(false);
-    }
-  }
-  async function apply() {
-    if (!kind || !preview?.ok) return;
-    setBusy(true);
-    try {
-      await post<Run>(`/api/runs/${run.id}/edit`, { card: kind, prompt: preview.prompt });
-      toast(preview.message, "good");
-      onClose();
-    } finally {
-      setBusy(false);
-    }
-  }
-
-  const delta = preview?.ok && preview.before && preview.after ? BigInt(preview.after.total) - BigInt(preview.before.total) : 0n;
-  return (
-    <Modal open={!!kind} onClose={onClose} title={kind ? `Edit ${CARD_LABEL[kind].toLowerCase()}` : ""}>
-      {card && (
-        <div className="mb-4 rounded-xl border border-line bg-surface p-3 text-[13px]">
-          <div className="font-semibold">{card.title}</div>
-          <div className="text-ink-2">{card.points.join(" · ")}</div>
-        </div>
-      )}
-      <form
-        onSubmit={(e) => {
-          e.preventDefault();
-          if (preview?.ok && preview.prompt === prompt) apply();
-          else check();
-        }}
-      >
-        <div className="ring-agent flex items-center gap-2 rounded-xl border border-line bg-panel px-3">
-          <Icon name="edit" size={15} className="text-agent-ink" />
-          <input
-            autoFocus
-            value={prompt}
-            onChange={(e) => {
-              setPrompt(e.target.value);
-              if (preview && e.target.value !== preview.prompt) setPreview(null);
-            }}
-            maxLength={200}
-            placeholder={kind === "price" ? "e.g. big-spend threshold 0.5" : "Say what to change"}
-            className="h-11 w-full bg-transparent text-sm outline-none"
-          />
-        </div>
-
-        {busy && !preview && (
-          <motion.div initial={{ opacity: 0, y: 4 }} animate={{ opacity: 1, y: 0 }} className="mt-4 flex items-center gap-3 rounded-xl border border-line bg-surface p-3 text-[13px]" aria-live="polite">
-            <AgentIcon agent={run.agent} size={34} mood="working" />
-            <div className="min-w-0">
-              <div className="truncate font-medium">“{prompt}”</div>
-              <div className="text-ink-3">{run.planner === "ai" ? "Thinking it through and re-pricing…" : "Re-pricing…"}</div>
-            </div>
-          </motion.div>
-        )}
-        <AnimatePresence mode="wait">
-          {preview && !preview.ok && (
-            <motion.div key="no" role="alert" initial={{ opacity: 0, y: 4 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0 }} className="mt-4 rounded-xl border border-bad/30 bg-bad/5 p-3 text-[13px]">
-              <div className="font-medium text-bad">Can&apos;t do that</div>
-              <div className="mt-0.5 text-ink-2">{preview.message}</div>
-              {preview.alternatives && (
-                <div className="mt-2 flex flex-wrap gap-1.5">
-                  <span className="text-[12px] text-ink-3">Try:</span>
-                  {preview.alternatives.map((a) => (
-                    <button key={a} type="button" onClick={() => check(a)} className="pressable tap rounded-full border border-line bg-panel px-2.5 py-1 text-xs transition-colors hover:border-agent">
-                      {a}
-                    </button>
-                  ))}
-                </div>
-              )}
-            </motion.div>
-          )}
-          {preview?.ok && preview.before && preview.after && (
-            <motion.div key="yes" initial={{ opacity: 0, y: 4 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0 }} className="mt-4 rounded-xl border border-line p-3 text-[13px]" data-testid="edit-preview">
-              <div className="flex items-baseline justify-between">
-                <span className="font-medium">{preview.message}</span>
-                <span className="num">
-                  {fmt(preview.before.total)} → <b>{fmt(preview.after.total)}</b>
-                  {delta !== 0n && <span className={`ml-1.5 text-[11.5px] ${delta < 0n ? "text-good" : "text-ink-3"}`}>{delta < 0n ? `−${fmt(-delta)}` : `+${fmt(delta)}`}</span>}
-                </span>
-              </div>
-              <ul className="mt-2 space-y-0.5 text-[12px] text-ink-2">
-                {preview.after.lines.map((l) => (
-                  <li key={l.purpose} className="flex justify-between">
-                    <span>{l.purpose}</span>
-                    <span className="num">{fmt(l.approved)}</span>
-                  </li>
-                ))}
-              </ul>
-            </motion.div>
-          )}
-        </AnimatePresence>
-
-        <div className="mt-5 flex justify-end gap-2">
-          <Button type="button" variant="ghost" onClick={onClose}>
-            Cancel
-          </Button>
-          {preview?.ok && preview.prompt === prompt ? (
-            <Button type="button" onClick={apply} disabled={busy} variant="agent" data-testid="apply-edit">
-              {busy ? "Applying…" : "Apply change"}
-            </Button>
-          ) : (
-            <Button type="submit" disabled={busy || !prompt.trim()}>
-              {busy ? "Checking…" : "Preview"}
-            </Button>
-          )}
-        </div>
-      </form>
-    </Modal>
   );
 }
 

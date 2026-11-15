@@ -351,6 +351,8 @@ export async function adopt(runId: string, proposalId: string) {
 /** Back to chat from the work order, keeping the conversation. */
 export function backToChat(runId: string) {
   const ctl = ctlOf(runId);
+  // Already back in chat (e.g. a second click, or a message sent right after): nothing to do.
+  if (ctl.run.status === "exploring") return ctl.run;
   if (ctl.run.status !== "draft") throw new Error("only before approval");
   emit(ctl, { type: "workorder.updated", run: { ...ctl.run, status: "exploring", cards: [], lines: [], phases: [], proposal: undefined, editNote: undefined } });
   return ctl.run;
