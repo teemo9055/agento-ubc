@@ -4,13 +4,14 @@ export default defineConfig({
   testDir: "e2e",
   timeout: 90_000,
   fullyParallel: true,
-  retries: 1, // tests use live third-party market data
+  // Market and map data come from e2e/fixtures/market.json (MARKET_DATA=record to refresh it; =live for the real network).
+  retries: process.env.MARKET_DATA === "live" ? 1 : 0,
   use: { baseURL: "http://localhost:3100", trace: "off" },
   webServer: {
     command: "npm run build && npx next start -p 3100",
     url: "http://localhost:3100/api/config",
     reuseExistingServer: true,
     timeout: 240_000,
-    env: { DEMO_DELAY_SCALE: "0.2", FAULT_TIMEOUT_MS: "1500", AI_DISABLED: "true", PERSIST: "false" },
+    env: { DEMO_DELAY_SCALE: "0.2", FAULT_TIMEOUT_MS: "1500", AI_DISABLED: "true", PERSIST: "false", MARKET_DATA: process.env.MARKET_DATA === "live" ? "" : (process.env.MARKET_DATA ?? "replay") },
   },
 });

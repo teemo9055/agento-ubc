@@ -8,7 +8,9 @@
     "test": "vitest run",
     "test:contracts": "cd contracts && forge test",
     "typecheck": "tsc --noEmit",
-    "test:e2e": "playwright test --trace off"
+    "test:e2e": "playwright test --trace off",
+    "test:e2e:live": "MARKET_DATA=live playwright test --trace off",
+    "test:e2e:record": "MARKET_DATA=record playwright test --trace off"
   },
   "repository": {
     "type": "git",

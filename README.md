@@ -174,7 +174,9 @@ The app keeps a live connection per job and runs jobs in the background, so it n
 ```bash
 npm test               # policy, reducer and orchestrator tests, one per fault switch
 npm run test:contracts # vault and factory, incl. x402 via ERC-1271 and fuzzing
-npm run test:e2e       # Playwright: one browser test per fault switch
+npm run test:e2e       # Playwright: one browser test per fault switch, on recorded market data
+npm run test:e2e:live  # same tests against the live Gemini and map APIs
+npm run test:e2e:record  # refresh e2e/fixtures/market.json from the live APIs
 ```
 
 Test mode on the home page injects faults:
