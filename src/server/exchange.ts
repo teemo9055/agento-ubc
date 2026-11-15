@@ -89,6 +89,20 @@ export async function acceptTerms() {
 // ---------- orders ----------
 
 /** Most the order can cost, in USD. */
+let feeCache: { at: number; bps: { maker: number; taker: number } } | undefined;
+/**
+ * The account's own spot fee rates, from Gemini (basis points). Simulation charges nothing.
+ * If the account can't be read, assumes a conservative 0.4% so the budget still holds.
+ */
+export async function spotFeeBps(): Promise<{ maker: number; taker: number }> {
+  if (tradingVenue() === "paper") return { maker: 0, taker: 0 };
+  if (feeCache && Date.now() - feeCache.at < 3_600_000) return feeCache.bps;
+  const r = await priv<{ api_maker_fee_bps?: number; api_taker_fee_bps?: number }>("/v1/notionalvolume").catch(() => null);
+  const bps = { maker: Number(r?.api_maker_fee_bps ?? 40), taker: Number(r?.api_taker_fee_bps ?? 40) };
+  feeCache = { at: Date.now(), bps };
+  return bps;
+}
+
 /** What the move can spend. Selling spends nothing: it returns money. */
 export const notionalOf = (a: MoveAction) => (a.kind === "prediction_order" ? (a.trade === "sell" ? 0 : a.maxPrice * a.quantity) : a.kind === "spot_order" ? a.amountUsd : 0);
 

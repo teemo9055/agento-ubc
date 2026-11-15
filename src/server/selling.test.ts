@@ -29,7 +29,7 @@ vi.mock("@/server/exchange", async (orig) => {
     { symbol: "GEMI-BTC-1", eventTicker: "BTC-1", label: "Up", event: "BTC today", outcome: "yes", quantity: 10, available: 10, avgPrice: 0.4, sellPrice: 0.58, marketValue: 5.8, unrealizedPnl: 1.8 },
     { symbol: "GEMI-BTC-2", eventTicker: "BTC-1", label: "Higher", event: "BTC today", outcome: "yes", quantity: 4, available: 0, avgPrice: 0.25, sellPrice: 0.19, marketValue: 0.76, unrealizedPnl: -0.24 },
   ];
-  return { ...real, tradingVenue: () => "gemini-sandbox", positions: async () => ({ venue: "gemini-sandbox", positions: held }) };
+  return { ...real, tradingVenue: () => "gemini-sandbox", positions: async () => ({ venue: "gemini-sandbox", positions: held }), spotFeeBps: async () => ({ maker: 20, taker: 40 }) };
 });
 
 const { validateProposal, runFreeTool } = await import("./tools");
@@ -78,5 +78,14 @@ describe("selling what you hold", () => {
   it("sells are plain limit orders", async () => {
     const r = await validateProposal("inso", sell({ orderType: "stop-limit", stopPrice: 0.6, maxPrice: 0.61 }), "s5");
     expect("error" in r && r.error).toMatch(/limit/);
+  });
+});
+
+describe("fees stay inside the budget", () => {
+  it("cuts a spot buy so amount plus fee fits, and shows the fee", async () => {
+    const r = await validateProposal("trado", { title: "Buy BTC", why: "dip", ask: "Buy $10 of BTC?", research: [], action: { kind: "spot_order", symbol: "btcusd", side: "buy", limitPrice: 60000, amountUsd: 10 }, condition: null, budgetUsd: 10 }, "f1");
+    if (!("proposal" in r)) throw new Error(r.error);
+    expect(r.proposal.action).toMatchObject({ amountUsd: 9.96 });
+    expect(r.proposal.adjustments?.join(" | ")).toMatch(/Fee up to \$0\.04 \(0\.40%/);
   });
 });

@@ -5,7 +5,7 @@ import * as geo from "./geo";
 import { searchServices, networkName, CATEGORIES } from "./marketplace";
 import { spotSymbols } from "./agents/ai-planning";
 import { PRODUCTS } from "./x402";
-import { marketBase, positions as heldPositions, tradingVenue, VENUE_NAME } from "./exchange";
+import { marketBase, positions as heldPositions, spotFeeBps, tradingVenue, VENUE_NAME } from "./exchange";
 import { FEEDS } from "./chainlink";
 
 /**
@@ -306,7 +306,11 @@ export async function validateProposal(agent: AgentId, input: unknown, id: strin
     // Tell the user whether this buys now or waits: the cheapest seller right now is the ask.
     const askNow = raw.side === "yes" ? c.ask : c.bid != null ? round2(1 - c.bid) : null;
     if (raw.orderType === "limit" && askNow != null)
-      adjustments.push(maxPrice >= askNow ? `Fills now: cheapest ${raw.side.toUpperCase()} seller is at ${Math.round(askNow * 100)}¢` : `Waits on the book: cheapest ${raw.side.toUpperCase()} seller is at ${Math.round(askNow * 100)}¢ now`);
+      adjustments.push(
+        maxPrice >= askNow
+          ? `Fills now: cheapest ${raw.side.toUpperCase()} seller is at ${Math.round(askNow * 100)}¢${venue === "paper" ? "" : "; Gemini's taker fee applies"}`
+          : `Waits on the book: cheapest ${raw.side.toUpperCase()} seller is at ${Math.round(askNow * 100)}¢ now${venue === "paper" ? "" : "; no maker fee through Dec 31 2026 if it fills that way"}`,
+      );
     else if (raw.orderType === "limit") adjustments.push("Waits on the book: no sellers right now");
     if (Number.isFinite(left)) adjustments.push(`Contract closes ${new Date(Date.parse(c.expiry!)).toUTCString().replace(/:\d\d GMT$/, " UTC")}`);
     eventContracts = ev.contracts.map((x) => x.symbol);
@@ -317,10 +321,13 @@ export async function validateProposal(agent: AgentId, input: unknown, id: strin
     const list = await spotSymbols().catch(() => [] as string[]);
     if (list.length && !list.includes(symbol)) return { error: `Unknown symbol ${raw.symbol}` };
     let amountUsd = raw.amountUsd;
-    if (budget != null && amountUsd > budget) {
-      amountUsd = budget;
-      adjustments.push(`Amount cut to $${budget}, your budget`);
+    // The fee comes on top of the amount, so the budget has to cover both.
+    const fee = (await spotFeeBps().catch(() => ({ maker: 0, taker: 0 }))).taker / 10_000;
+    if (budget != null && amountUsd * (1 + fee) > budget + 1e-9) {
+      amountUsd = Math.floor((budget / (1 + fee)) * 100) / 100;
+      adjustments.push(`Amount cut to $${amountUsd} so it plus the fee stays within your $${budget}`);
     }
+    if (fee > 0) adjustments.push(`Fee up to $${Math.max(0.01, amountUsd * fee).toFixed(2)} (${(fee * 100).toFixed(2)}% if it fills right away, less if it rests)`);
     if (amountUsd > MAX_NOTIONAL) return { error: `Order over the ${MAX_NOTIONAL} USD limit` };
     action = { ...raw, symbol, amountUsd };
   } else if (raw) action = raw;
