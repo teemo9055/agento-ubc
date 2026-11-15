@@ -256,10 +256,12 @@ async function rulesTurn(agent: AgentId, chat: ChatMsg[], onTool: (note: string)
   onTool(noteFor("search_markets", { query: terms[0] ?? "" }));
   const out = await runFreeTool("search_markets", { query: terms[0] ?? "", limit: 6 });
   tools.push(out.call);
-  type Ev = { ticker: string; title: string; contracts: { symbol: string; label: string; last: number | null; ask: number | null }[] };
+  type Ev = { ticker: string; title: string; contracts: { symbol: string; label: string; last: number | null; ask: number | null; expiry?: string }[] };
   const found = out.data as { markets?: Ev[]; tradable?: Ev[] | string } | undefined;
   const events = (Array.isArray(found?.tradable) ? found.tradable : found?.markets) ?? [];
-  const pick = events.flatMap((e) => e.contracts.filter((c) => c.symbol && (c.ask ?? c.last) != null).map((c) => ({ e, c }))).sort((a, b) => Math.abs((a.c.ask ?? a.c.last)! - 0.5) - Math.abs((b.c.ask ?? b.c.last)! - 0.5))[0];
+  // Skip contracts that close too soon for an order to rest (the validator would refuse them anyway).
+  const soon = (c: { expiry?: string }) => Boolean(c.expiry && Date.parse(c.expiry) - Date.now() < 30 * 60_000);
+  const pick = events.flatMap((e) => e.contracts.filter((c) => c.symbol && (c.ask ?? c.last) != null && !soon(c)).map((c) => ({ e, c }))).sort((a, b) => Math.abs((a.c.ask ?? a.c.last)! - 0.5) - Math.abs((b.c.ask ?? b.c.last)! - 0.5))[0];
   if (!pick) return { text: `No active markets match “${terms[0] ?? task}”. Try a ticker like BTC or a team name.`, tools, suggestions: ["BTC markets", "Fed rate markets"], usage: [] };
   const px = (pick.c.ask ?? pick.c.last)!;
   const max = Math.min(0.99, Math.round((px + 0.02) * 100) / 100);
