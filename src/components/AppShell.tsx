@@ -71,7 +71,7 @@ export function MainNav() {
   const path = usePathname();
   const items: { href: string; label: string; icon: IconName; active: boolean }[] = [
     { href: "/", label: "Jobs", icon: "jobs", active: path === "/" || path.startsWith("/runs") },
-    { href: "/agents", label: "Agents", icon: "agents", active: path === "/agents" },
+    { href: "/agents", label: "Agents", icon: "agents", active: path.startsWith("/agents") },
   ];
   return (
     <nav aria-label="Main" className="hidden gap-0.5 rounded-[9px] bg-[#f1f0ec] p-[3px] sm:flex">
@@ -97,7 +97,7 @@ function TabBar() {
   const tabs: { href: string; label: string; icon: IconName; active: boolean; primary?: boolean }[] = [
     { href: "/", label: "Jobs", icon: "jobs", active: path === "/" || path.startsWith("/runs") },
     { href: "/new", label: "New job", icon: "plus", active: path === "/new", primary: true },
-    { href: "/agents", label: "Agents", icon: "agents", active: path === "/agents" },
+    { href: "/agents", label: "Agents", icon: "agents", active: path.startsWith("/agents") },
   ];
   return (
     <nav aria-label="Main" className="fixed inset-x-0 bottom-0 z-40 border-t border-line bg-surface/95 pb-[env(safe-area-inset-bottom)] backdrop-blur-md sm:hidden">

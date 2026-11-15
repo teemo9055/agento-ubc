@@ -101,6 +101,9 @@ const OUTFITS: Record<Outfit, Record<number, string>> = {
   },
 };
 
+/** Square frames over the eyes, for the profile headshot. */
+const GLASSES = { 3: "____dddddddd____", 4: "____dwwddwwd____", 5: "____dweddwed____" };
+
 const HAPPY_EYES = { 4: "___kaaaaaaaak___", 5: "___kakkaakkak___" };
 const SAD_EYES = { 4: "___kaaaaaaaak___", 5: "___kakaaaakak___", 7: "___kaakaakaak___" };
 
@@ -109,12 +112,13 @@ function layer(rows: Record<number, string> | string[], into: string[][]) {
   for (const [y, row] of entries) for (let x = 0; x < 16; x++) if (row[x] && row[x] !== "_") into[y][x] = row[x];
 }
 
-function grid(agent: AgentId, outfit: Outfit, mood: Mood) {
+function grid(agent: AgentId, outfit: Outfit, mood: Mood, glasses = false) {
   const g = BODY.map((r) => r.split(""));
   layer(HEAD[agent], g);
   if (mood === "happy") layer(HAPPY_EYES, g);
   if (mood === "sad") layer(SAD_EYES, g);
   layer(OUTFITS[outfit], g);
+  if (glasses) layer(GLASSES, g);
   return g;
 }
 
@@ -124,6 +128,7 @@ export function Mascot({
   mood = "idle",
   size = 40,
   framed = true,
+  glasses = false,
   className = "",
 }: {
   agent: AgentId;
@@ -131,9 +136,10 @@ export function Mascot({
   mood?: Mood;
   size?: number;
   framed?: boolean;
+  glasses?: boolean;
   className?: string;
 }) {
-  const g = grid(agent, outfit, mood);
+  const g = grid(agent, outfit, mood, glasses);
   const label = `${agent} mascot${OUTFIT_LABEL[outfit] ? `, ${OUTFIT_LABEL[outfit].toLowerCase()}` : ""}`;
   return (
     <span

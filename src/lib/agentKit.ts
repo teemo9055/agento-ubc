@@ -15,6 +15,12 @@ export interface AgentKit {
   never: string;
   /** One line on the result you get. */
   result: string;
+  /** Directory profile: a straight-faced job title, a headline and an About paragraph. */
+  title: string;
+  headline: string;
+  about: string;
+  /** The one joke on the profile. */
+  quirk: string;
 }
 
 export const KITS: Record<AgentId, AgentKit> = {
@@ -27,6 +33,11 @@ export const KITS: Record<AgentId, AgentKit> = {
     acts: "Place a YES/NO order on a prediction market",
     never: "Bet more than the limit you approve, or trade anything else",
     result: "A chart of how the odds moved, and whether your order was placed",
+    title: "Senior Odds Analyst",
+    headline: "Prediction markets · Reads the odds, then asks before it places an order",
+    about:
+      "Inso searches live prediction markets while you chat, for free. When there's a move worth making, it prices the research it needs (odds history, the trade tape), checks the price again right before acting, and only then places a YES/NO order up to the limit you approved.",
+    quirk: "Has never once said “trust me”.",
   },
   trado: {
     free: ["Live spot price", "Search markets"],
@@ -37,6 +48,11 @@ export const KITS: Record<AgentId, AgentKit> = {
     acts: "Place a limit order on a coin, or a YES/NO order",
     never: "Spend more than the amount you approve, or trade another coin",
     result: "A price chart with the trend call, and whether your order was placed",
+    title: "Trend Analyst & Limit-Order Specialist",
+    headline: "Trading · Charts first, then a limit order only if you say yes",
+    about:
+      "Trado looks up live spot prices while you chat, for free. When a trade makes sense, it buys the candles it needs to read the trend, checks the price on fresh data, and places a limit order no bigger than the amount you approved.",
+    quirk: "Calls it a “position”. It's ten dollars.",
   },
   travo: {
     free: ["Look up places"],
@@ -44,5 +60,10 @@ export const KITS: Record<AgentId, AgentKit> = {
     acts: "Plan the route and split it into days",
     never: "Book, buy or reserve anything",
     result: "A route map and a day-by-day plan",
+    title: "Road-Trip Planner (Non-Booking)",
+    headline: "Travel · Routes and day plans, never reservations",
+    about:
+      "Travo finds your places while you chat, for free. Once you agree on the trip, it buys the driving route, splits it into days that fit your hours on the road, and hands you a map and a plan. It never books anything.",
+    quirk: "Has strong opinions about rest stops. Keeps them to itself.",
   },
 };
