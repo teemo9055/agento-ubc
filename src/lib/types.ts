@@ -155,6 +155,8 @@ export interface ChatMsg {
   proposal?: Proposal;
   /** Quick replies the user can tap. */
   suggestions?: string[];
+  /** A plan of several moves, possibly for different agents, run one after another. */
+  plan?: Plan;
 }
 
 /** Paid research the move depends on. Tools come from the catalog; code prices them. */
@@ -271,9 +273,37 @@ export interface Run {
   estFees: string; // 18-decimal native USDC
   /** Explore conversation, before and after the move is chosen. */
   chat?: ChatMsg[];
+  /** The plan started from this chat, with each step's live status. */
+  plan?: Plan;
+  /** This job is one step of a plan started in that job's chat. */
+  parentId?: string;
+  stepId?: string;
   /** True while the agent is answering in chat. */
   thinking?: string;
   /** The move this work order executes. */
   proposal?: Proposal;
   order?: OrderResult;
+}
+
+/** One step of a plan: a full move for the agent that does it. */
+export interface PlanStep {
+  id: string;
+  agent: AgentId;
+  proposal: Proposal;
+  /** done: start once the step before finishes. filled: only once its order has filled (e.g. to spend the proceeds). */
+  gate: "done" | "filled";
+  /** The job running this step, once started. */
+  runId?: string;
+  status: "waiting" | "running" | "blocked" | "done" | "failed" | "skipped";
+  note?: string;
+}
+
+export interface Plan {
+  id: string;
+  title: string;
+  why: string;
+  steps: PlanStep[];
+  /** Parts of the request no agent can do here, said plainly. */
+  unavailable: { what: string; why: string }[];
+  status: "proposed" | "running" | "done" | "stopped";
 }

@@ -259,6 +259,11 @@ export default function RunPage({ params }: { params: Promise<{ id: string }> })
               {run.ai ? "AI agent" : "Rule-based agent"}
             </span>
           </div>
+          {run.parentId && (
+            <Link href={`/runs/${run.parentId}`} className="mt-1 inline-block text-[12.5px] text-ink-2 underline decoration-line underline-offset-2" data-testid="back-to-plan">
+              Step {run.stepId?.replace(/^s/, "")} of a plan · back to the plan
+            </Link>
+          )}
           <h1 style={{ viewTransitionName: `task-${run.id}` }} className="mt-1 max-w-2xl text-[19px] font-semibold leading-tight tracking-tight sm:text-[26px]">
             {run.task}
           </h1>

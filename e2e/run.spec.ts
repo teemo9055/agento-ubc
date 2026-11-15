@@ -188,3 +188,20 @@ test("dashboard lists jobs by folder and status, and opens them", async ({ page 
   await page.getByText("BTC odds dashboard check").first().click();
   await expect(page).toHaveURL(url);
 });
+
+test("a plan across agents runs step by step and says what it can't do", async ({ page }) => {
+  await page.goto("/new");
+  await page.fill("#task", "What are BTC odds right now, then plan a drive from Vancouver to Seattle, and book a hotel in Seattle");
+  await page.getByRole("radio", { name: "Demo rail" }).click();
+  await page.getByRole("button", { name: /Ask/ }).click();
+  const card = page.getByTestId("plan-card");
+  await expect(card).toBeVisible({ timeout: 30_000 });
+  await expect(card.getByTestId("plan-step")).toHaveCount(2);
+  await expect(card.getByTestId("plan-unavailable")).toContainText("hotel");
+  await card.getByTestId("start-plan").click();
+  await expect(card.getByTestId("plan-status")).toHaveText("Finished", { timeout: 60_000 });
+  await expect(card.getByTestId("plan-step-status")).toHaveText(["Done", "Done"]);
+  await card.getByTestId("plan-step-link").nth(1).click();
+  await expect(page.getByTestId("back-to-plan")).toContainText("Step 2 of a plan");
+  await expect(page.getByTestId("receipt-total")).toBeVisible();
+});

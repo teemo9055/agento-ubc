@@ -1,5 +1,5 @@
 import { z } from "zod";
-import type { AgentId, MoveAction, MoveCondition, Proposal, ResearchStep, ToolCall } from "@/lib/types";
+import type { AgentId, MoveAction, MoveCondition, Plan, PlanStep, Proposal, ResearchStep, ToolCall } from "@/lib/types";
 import * as gemini from "./gemini";
 import * as geo from "./geo";
 import { searchServices, networkName, CATEGORIES } from "./marketplace";
@@ -183,7 +183,7 @@ export const isMarketplace = (tool: string) => RESEARCH[tool].product in MARKETP
 export const TOOLKIT: Record<AgentId, { free: string[]; research: string[] }> = {
   inso: { free: ["search_markets", "get_market", "my_positions", "spot_price", "search_services"], research: ["odds_history", "trade_tape", "oracle_price"] },
   trado: { free: ["spot_price", "search_markets", "get_market", "my_positions", "search_services"], research: ["spot_candles", "oracle_price", "odds_history"] },
-  travo: { free: ["find_place", "search_services"], research: ["drive_route"] },
+  travo: { free: ["find_place", "my_positions", "search_services"], research: ["drive_route"] },
 };
 
 export const researchMenu = (agent?: AgentId) =>
@@ -454,3 +454,44 @@ export async function stillTradable(p: Proposal): Promise<string | null> {
 }
 
 export { pctOf };
+
+// ---------- plans: several moves, possibly for different agents, in order ----------
+
+export const PlanInput = z.object({
+  title: z.string().max(70),
+  why: z.string().max(240).describe("One or two sentences: how the steps fit together"),
+  steps: z
+    .array(
+      z.object({
+        agent: z.enum(["inso", "trado", "travo"]).describe("inso: prediction-market orders and sells. trado: spot crypto orders. travo: driving itineraries."),
+        gate: z.enum(["done", "filled"]).describe("done: start once the step before finishes. filled: only once the step before's order has filled (e.g. spend what a sell brought in)."),
+        move: ProposalInput,
+      }),
+    )
+    .min(2)
+    .max(4),
+  unavailable: z
+    .array(z.object({ what: z.string().max(80), why: z.string().max(160) }))
+    .max(4)
+    .describe("Parts of the request no agent can do here, e.g. booking a hotel (travel booking services on Circle's marketplace take Arc mainnet only). Empty if everything is covered."),
+});
+export type PlanInput = z.infer<typeof PlanInput>;
+
+/** Every step checked as if proposed on its own, by the agent that will run it. */
+export async function validatePlan(input: unknown, id: string): Promise<{ plan: Plan } | { error: string }> {
+  const parsed = PlanInput.safeParse(input);
+  if (!parsed.success) return { error: `Invalid plan: ${parsed.error.issues.map((i) => `${i.path.join(".")} ${i.message}`).join("; ")}` };
+  const p = parsed.data;
+  const steps: PlanStep[] = [];
+  for (const [i, s] of p.steps.entries()) {
+    if (i === 0 && s.gate === "filled") return { error: "Step 1 has nothing before it; its gate must be done" };
+    if (s.gate === "filled") {
+      const prev = steps[i - 1].proposal.action;
+      if (!prev || prev.kind === "itinerary") return { error: `Step ${i + 1} waits for an order to fill, but step ${i} places no order. Use gate done.` };
+    }
+    const v = await validateProposal(s.agent, s.move, `${id}-s${i + 1}`);
+    if ("error" in v) return { error: `Step ${i + 1} (${s.agent}): ${v.error}` };
+    steps.push({ id: `s${i + 1}`, agent: s.agent, proposal: v.proposal, gate: s.gate, status: "waiting" });
+  }
+  return { plan: { id, title: p.title, why: p.why, steps, unavailable: p.unavailable, status: "proposed" } };
+}

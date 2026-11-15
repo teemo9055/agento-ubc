@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { z } from "zod";
 import type { SeqEvent } from "@/lib/events";
-import { adopt, approve, backToChat, cancel, cancelRunOrder, refreshRunOrder, sendChat, decideReapproval, editCard, fundingInfo, previewEdit, reapprovalPlan, resolveFailure, subscribe } from "@/server/orchestrator";
+import { adopt, approve, backToChat, cancel, startPlan, stopPlan, cancelRunOrder, refreshRunOrder, sendChat, decideReapproval, editCard, fundingInfo, previewEdit, reapprovalPlan, resolveFailure, subscribe } from "@/server/orchestrator";
 
 export const dynamic = "force-dynamic";
 
@@ -14,6 +14,7 @@ const Reapproval = z.object({ requestId: z.string(), outcome: z.enum(["approved"
 const Failure = z.object({ failureId: z.string(), action: z.enum(["retry", "skip", "edit", "cancel", "topup"]), txHash: Hash.optional() });
 const Chat = z.object({ text: z.string().min(1).max(600) });
 const Adopt = z.object({ proposalId: z.string() });
+const StartPlan = z.object({ planId: z.string() });
 const Approve = z.object({ txHash: Hash.optional() });
 
 export async function POST(req: NextRequest, ctx: Ctx) {
@@ -30,6 +31,12 @@ export async function POST(req: NextRequest, ctx: Ctx) {
         const b = Adopt.parse(await req.json());
         return NextResponse.json(await adopt(id, b.proposalId));
       }
+      case "plan-start": {
+        const b = StartPlan.parse(await req.json());
+        return NextResponse.json(await startPlan(id, b.planId));
+      }
+      case "plan-stop":
+        return NextResponse.json(await stopPlan(id));
       case "back":
         return NextResponse.json(backToChat(id));
       case "order-refresh":

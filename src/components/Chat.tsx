@@ -1,7 +1,8 @@
 "use client";
 import { useEffect, useRef, useState } from "react";
 import { AnimatePresence, motion } from "framer-motion";
-import type { Card, ChatMsg, MoveAction, MoveCondition, Proposal, Run, Venue } from "@/lib/types";
+import type { Card, ChatMsg, MoveAction, MoveCondition, Plan, PlanStep, Proposal, Run, Venue } from "@/lib/types";
+import Link from "next/link";
 import { THEMES } from "@/lib/themes";
 import { fmt } from "@/lib/money";
 import { AgentIcon } from "./AgentIcon";
@@ -123,6 +124,116 @@ export function MoveCard({ p, run, chosen, onChoose, busy }: { p: Proposal; run:
   );
 }
 
+const STEP_STATUS: Record<PlanStep["status"], { text: string; cls: string }> = {
+  waiting: { text: "Next", cls: "text-ink-3" },
+  running: { text: "Running", cls: "text-agent-ink" },
+  blocked: { text: "Waiting", cls: "text-warn-ink" },
+  done: { text: "Done", cls: "text-good" },
+  failed: { text: "Didn't go through", cls: "text-bad" },
+  skipped: { text: "Skipped", cls: "text-ink-3" },
+};
+
+const stepCost = (p: Proposal) => p.research.reduce((s, r) => s + (RESEARCH_PRICE[r.tool] ?? 0), 0) + maxCost(p.action);
+
+/** Several moves in a row, possibly by different agents. Started once; each step runs as its own job. */
+export function PlanCard({ plan, run }: { plan: Plan; run: Run }) {
+  const [busy, setBusy] = useState(false);
+  const live = run.plan?.id === plan.id ? run.plan : plan;
+  const total = live.steps.reduce((s, st) => s + stepCost(st.proposal), 0);
+  const startedElsewhere = run.plan && run.plan.id !== plan.id && run.plan.status === "running";
+  async function act(path: "plan-start" | "plan-stop") {
+    setBusy(true);
+    try {
+      await post(`/api/runs/${run.id}/${path}`, path === "plan-start" ? { planId: plan.id } : {});
+      toast(path === "plan-start" ? "Plan started · each step runs as its own job" : "Plan stopped", "good");
+    } catch (e) {
+      toast((e as Error).message, "bad");
+    } finally {
+      setBusy(false);
+    }
+  }
+  return (
+    <div className={`mt-2 rounded-xl border-[1.5px] bg-panel p-3.5 ${live.status === "proposed" ? "border-ink shadow-[3px_3px_0_0_var(--agent)]" : "border-line"}`} data-testid="plan-card">
+      <div className="flex items-start justify-between gap-2">
+        <div className="text-[15px] font-semibold leading-snug">{live.title}</div>
+        {live.status !== "proposed" && (
+          <span className={`shrink-0 text-[12px] font-semibold ${live.status === "done" ? "text-good" : live.status === "stopped" ? "text-ink-3" : "text-agent-ink"}`} data-testid="plan-status">
+            {live.status === "running" ? "Running" : live.status === "done" ? "Finished" : "Stopped"}
+          </span>
+        )}
+      </div>
+      <p className="mt-1 text-[13.5px] leading-snug text-ink-2">{live.why}</p>
+      <ol className="mt-2.5 space-y-2" aria-label="Plan steps">
+        {live.steps.map((st, i) => {
+          const s = STEP_STATUS[st.status];
+          const cost = stepCost(st.proposal);
+          return (
+            <li key={st.id} className="flex gap-2.5 rounded-lg border border-line p-2.5" data-testid="plan-step">
+              <span className="mt-0.5 shrink-0">
+                <AgentIcon agent={st.agent} size={26} mood={st.status === "running" ? "working" : "happy"} />
+              </span>
+              <div className="min-w-0 flex-1 text-[13px]">
+                <div className="flex flex-wrap items-baseline justify-between gap-x-2">
+                  <span className="font-medium">
+                    {i + 1}. {st.proposal.title}
+                  </span>
+                  {live.status !== "proposed" && (
+                    <span className={`text-[12px] font-semibold ${s.cls}`} data-testid="plan-step-status">
+                      {s.text}
+                    </span>
+                  )}
+                </div>
+                <div className="text-[12px] text-ink-3">
+                  {THEMES[st.agent].name}
+                  {st.proposal.action ? ` · ${actionText(st.proposal.action)}` : ""}
+                  {st.proposal.research.length ? ` · ${st.proposal.research.length} lookup${st.proposal.research.length > 1 ? "s" : ""}` : ""}
+                  {cost > 0 ? ` · ≤ $${cost < 0.01 ? usdc(cost) : cost.toFixed(2)}` : ""}
+                </div>
+                {i > 0 && st.gate === "filled" && st.status === "waiting" && <div className="text-[12px] text-ink-3">Starts only once step {i}&apos;s order fills</div>}
+                {(st.note || st.runId) && live.status !== "proposed" && (
+                  <div className="mt-0.5 text-[12px] text-ink-2">
+                    {st.note}
+                    {st.runId && (
+                      <>
+                        {st.note ? " · " : ""}
+                        <Link href={`/runs/${st.runId}`} className="underline decoration-line underline-offset-2" data-testid="plan-step-link">
+                          Open
+                        </Link>
+                      </>
+                    )}
+                  </div>
+                )}
+              </div>
+            </li>
+          );
+        })}
+      </ol>
+      {live.unavailable.length > 0 && (
+        <ul className="mt-2 space-y-0.5 text-[12px]" data-testid="plan-unavailable">
+          {live.unavailable.map((u) => (
+            <li key={u.what} className="text-ink-2">
+              <span className="font-medium text-bad">Can&apos;t do here:</span> {u.what}. <span className="text-ink-3">{u.why}</span>
+            </li>
+          ))}
+        </ul>
+      )}
+      <div className="mt-3 flex items-center justify-between gap-2 border-t border-[#f1f0ec] pt-2.5">
+        <span className="num text-[12.5px] text-ink-2">≤ ${total < 0.01 ? usdc(total) : total.toFixed(2)} across {live.steps.length} steps</span>
+        {live.status === "proposed" && !startedElsewhere && (
+          <Button onClick={() => act("plan-start")} disabled={busy || run.status !== "exploring"} variant="agent" className="h-9" data-testid="start-plan">
+            {busy ? <Spinner /> : null} Start plan
+          </Button>
+        )}
+        {live.status === "running" && (
+          <Button onClick={() => act("plan-stop")} disabled={busy} variant="danger" className="h-9" data-testid="stop-plan">
+            {busy ? <Spinner /> : null} Stop
+          </Button>
+        )}
+      </div>
+    </div>
+  );
+}
+
 /** The model sometimes uses **bold**; render it rather than show asterisks. */
 function Rich({ text }: { text: string }) {
   return <>{text.split(/(\*\*[^*]+\*\*)/g).map((part, i) => (/^\*\*[^*]+\*\*$/.test(part) ? <b key={i} className="font-semibold">{part.slice(2, -2)}</b> : part))}</>;
@@ -182,6 +293,7 @@ function Bubble({ m, run, onChoose, busy }: { m: ChatMsg; run: Run; onChoose: (i
             Couldn't check {m.unverified.join(", ")} against live data; treat as approximate.
           </p>
         )}
+        {m.plan && <PlanCard plan={m.plan} run={run} />}
         {m.proposal && <MoveCard p={m.proposal} run={run} chosen={run.proposal?.id === m.proposal.id} onChoose={() => onChoose(m.proposal!.id)} busy={busy} />}
       </div>
     </motion.li>

@@ -84,6 +84,10 @@ Measured network fee per `authorize` call, paid by the agent: about 0.0026 USDC.
 8. **Fail → choose.** A failed step offers retry, skip (optional steps only), top up, or cancel. Purchases are cached per request key, so a retry never pays twice.
 9. **Close.** The vault closes, unspent USDC returns to you, and you get the receipt.
 
+### Plans across agents
+
+Ask for several things at once ("buy 5 YES on BTC, then plan a drive from Dallas to Austin, and book a hotel") and the agent proposes one plan card: a full move per step, each for the agent that does it, plus a plain list of what it can't do here (hotel and flight booking services on Circle's marketplace take Arc mainnet only). Starting the plan runs each step as its own job, one after another, each approved within the limits shown on the card. A step can wait until the previous step's order has filled (e.g. spend what a sell brought in); if that order is cancelled, the rest of the plan doesn't run. Stop cancels the running step and returns its unspent funds. Plans pick up again after a restart.
+
 ## Safety limits
 
 | Limit | Enforced by |

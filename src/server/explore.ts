@@ -1,9 +1,9 @@
 import { z } from "zod";
-import type { AgentId, ChatMsg, Proposal, ToolCall } from "@/lib/types";
+import type { Plan, AgentId, ChatMsg, Proposal, ToolCall } from "@/lib/types";
 import { aiChat, aiEnabled, type AiUsage, type ChatTurn, type ToolSpec } from "./ai";
 import * as gemini from "./gemini";
 import { describeAction, tradingVenue, VENUE_NAME, VENUE_NOTE } from "./exchange";
-import { ACTIONS, FREE_TOOLS, ProposalInput, researchMenu, runFreeTool, TOOLKIT, validateProposal } from "./tools";
+import { ACTIONS, FREE_TOOLS, PlanInput, ProposalInput, researchMenu, runFreeTool, TOOLKIT, validatePlan, validateProposal } from "./tools";
 import { conditionText } from "./agents/toolbox";
 import { lessonLines, PRIMERS } from "./knowledge";
 import { providerDirectory } from "./providers";
@@ -64,6 +64,7 @@ function system(agent: AgentId) {
       ? "CHAINLINK: you CAN check crypto prices against Chainlink's oracle (BTC, ETH, SOL, LINK). It isn't a free lookup: add a research step {tool: oracle_price, args: {symbol: 'btcusd'}} to the move, and to make the order depend on it add condition {metric: 'oracle_price', symbol: 'btcusd', op, value}. It's bought for 0.0001 USDC right before the check. Never tell the user you can't access Chainlink."
       : "",
     `PAID RESEARCH you can attach to a move (bought after approval; Gemini data from the user's vault over x402 on Arc, Chainlink prices from Quicknode on Circle's Agent Marketplace via Gateway nanopayments):\n${researchMenu(agent)}\nAttach 1-2 lookups only when they could change the decision and say why in each; skip research the free tools already answered. Research symbols must be live markets with data.`,
+    "PLANS: when the user asks for several things in one go that need more than one move or more than one agent (e.g. 'sell my calmest position, then plan a drive to Austin'), call propose_plan instead of propose_move. Steps run in order; each is a complete move for the agent that does it (inso: prediction orders and sells; trado: spot orders; travo: driving itineraries with a drive_route lookup). Use gate 'filled' when a step should only start once the step before's order has filled (spending what a sell brought in), else 'done'. Put anything no agent can do here in `unavailable` with the honest reason, e.g. booking hotels or flights: the travel booking services on Circle's marketplace (BRIJ, Agentic Reservations) take Arc mainnet only. Never pretend a step books something. Look things up first (positions, markets) so every step uses real symbols.",
     `PROVIDERS YOU KNOW (say plainly what each sells and whether you can use it now):\n${providerDirectory()}`,
     "MARKETPLACE: use search_services when the user wants deeper data than the free tools. Be honest: most of Circle's Agent Marketplace charges on Arc mainnet or Base with real USDC; only services marked payableHere=true work with this app's Arc testnet vault today.",
     `KNOWLEDGE (shared notes; use them, don't recite them):\n- ${[...PRIMERS[agent], ...lessonLines(agent).map((l) => `Learned from past jobs: ${l}`)].join("\n- ")}`,
@@ -92,12 +93,20 @@ const PROPOSE: ToolSpec = {
   parameters: z.toJSONSchema(ProposalInput),
 };
 
+const PROPOSE_PLAN: ToolSpec = {
+  name: "propose_plan",
+  description:
+    "Show the user a plan of 2-4 moves run one after another, when they ask for several things that different agents do (e.g. sell a position, then plan a trip). Each step is a full move (same shape as propose_move) for the agent that runs it. It becomes one card the user starts with one click.",
+  parameters: z.toJSONSchema(PlanInput),
+};
+
 /** Each agent only sees its own tools. */
 const toolSpecs = (agent: AgentId): ToolSpec[] => [
   ...Object.entries(FREE_TOOLS)
     .filter(([name]) => TOOLKIT[agent].free.includes(name))
     .map(([name, t]) => ({ name, description: t.description, parameters: z.toJSONSchema(t.params) })),
   PROPOSE,
+  PROPOSE_PLAN,
 ];
 
 function historyTurns(chat: ChatMsg[]): ChatTurn[] {
@@ -149,6 +158,7 @@ export interface TurnResult {
   text: string;
   tools: ToolCall[];
   proposal?: Proposal;
+  plan?: Plan;
   suggestions: string[];
   usage: AiUsage[];
 }
@@ -194,6 +204,7 @@ export async function exploreTurn(agent: AgentId, chat: ChatMsg[], onTool: (note
   // Everything the tools returned this turn, plus earlier notes and the move on screen: the only numbers a reply may use.
   const seen: unknown[] = [...chat.map((m) => m.facts).filter(Boolean), ...chat.filter((m) => m.role === "user").map((m) => m.text), onScreen ? toProposalInput(onScreen) : null].filter(Boolean);
   let proposal: Proposal | undefined;
+  let plan: Plan | undefined;
   for (let round = 0; round < MAX_ROUNDS; round++) {
     const last = round === MAX_ROUNDS - 1;
     const r = await aiChat(messages, last ? [] : toolSpecs(agent));
@@ -205,11 +216,22 @@ export async function exploreTurn(agent: AgentId, chat: ChatMsg[], onTool: (note
       const g = await groundReply(raw, [...seen, proposal ? toProposalInput(proposal) : null].filter(Boolean), proposal ?? onScreen).catch(() => ({ text: raw, unverified: [] as string[], usage: undefined }));
       if (g.usage) usage.push(g.usage);
       const text = g.text;
+      // A plan replaces any single move drafted in the same turn: the card shown is the plan.
+      if (plan) return { unverified: g.unverified.length ? g.unverified : undefined, facts: facts.filter(Boolean).join(" || ").slice(0, 1500) || undefined, text: text || plan.why, tools, plan, suggestions: ["Yes, start the plan", ...suggestions.filter((x) => !/^yes/i.test(x))].slice(0, 3), usage };
       return { unverified: g.unverified.length ? g.unverified : undefined, facts: facts.filter(Boolean).join(" || ").slice(0, 1500) || undefined, text: text || (proposal ? proposal.why : "Here's what I found."), tools, proposal, suggestions: proposal ? withAccept(suggestions, proposal) : suggestions, usage };
     }
     for (const c of r.calls) {
       let content: unknown;
-      if (c.name === "propose_move") {
+      if (c.name === "propose_plan") {
+        onTool("Drafting a plan");
+        const v = await validatePlan(c.args, proposalId);
+        if ("error" in v) content = { ok: false, error: v.error, hint: "Fix that step with real data from the tools, drop it into `unavailable` with the reason, or explain to the user why no plan fits." };
+        else {
+          plan = v.plan;
+          for (const s of plan.steps) seen.push(toProposalInput(s.proposal));
+          content = { ok: true, shown: "The plan card is shown right below your reply, with a Start button. Reply in 1-2 short sentences: how the steps fit together, and name anything in `unavailable`. Don't repeat the numbers." };
+        }
+      } else if (c.name === "propose_move") {
         onTool("Drafting a move");
         const v = await validateProposal(agent, c.args, proposalId);
         if ("error" in v) content = { ok: false, error: v.error, hint: "Fix the move using real data from the tools, or explain to the user why no move fits." };
@@ -294,6 +316,60 @@ export function intentOf(text: string) {
   };
 }
 
+/** "Sell my calmest position, then plan a drive from Vancouver to Austin" -> the parts, in order. */
+export function partsOf(text: string): string[] {
+  return text
+    .split(/\s*(?:,?\s*(?:and\s+)?then\s+|;\s*|\.\s+(?:then\s+)?|,\s*and\s+(?=(?:plan|book|buy|sell|drive|get|find)\b))/i)
+    .map((s) => s.trim())
+    .filter((s) => s.length > 3);
+}
+
+/** Which agent does a part of a request. */
+export function agentFor(part: string): AgentId | null {
+  const t = part.toLowerCase();
+  if (/\b(hotel|flight|airbnb|room|accommodation|stay)\b/.test(t) && !/\b(drive|trip|route)\b/.test(t)) return null;
+  if (stopsIn(part).length >= 2 || /\b(drive|road ?trip|itinerary|route)\b/.test(t)) return "travo";
+  if (/\b(position|odds|bet|contract|prediction|market)s?\b/.test(t) || /\bsell\b/.test(t)) return "inso";
+  if (/\b(spot|coin|dca)\b/.test(t) || /\bbuy\b.*\b(btc|eth|sol|bitcoin|ethereum|solana|doge|xrp|link)\b/.test(t)) return "trado";
+  return null;
+}
+
+/** Without the model: a request with several parts for different agents becomes a plan. */
+async function rulesPlan(text: string, onTool: (note: string) => void, pid: string): Promise<TurnResult | null> {
+  const parts = partsOf(text);
+  if (parts.length < 2) return null;
+  const routed = parts.map((p) => ({ part: p, agent: agentFor(p) }));
+  if (routed.filter((r) => r.agent).length === 0 || routed.every((r) => r.agent === routed[0].agent)) return null;
+  const tools: ToolCall[] = [];
+  const steps: Plan["steps"] = [];
+  const unavailable: Plan["unavailable"] = [];
+  const notes: string[] = [];
+  for (const r of routed) {
+    if (!r.agent) {
+      unavailable.push({ what: r.part.slice(0, 80), why: /hotel|room|stay|accommodation|airbnb/i.test(r.part) ? "Hotel booking services on Circle's marketplace take Arc mainnet only; this app pays on Arc testnet" : /flight/i.test(r.part) ? "Flight booking services on Circle's marketplace take Arc mainnet only" : "No agent here does this" });
+      continue;
+    }
+    const sub = await rulesTurn(r.agent, [{ id: "p", role: "user", text: r.part, at: new Date().toISOString() }], onTool, `${pid}-s${steps.length + 1}`);
+    tools.push(...sub.tools);
+    if (!sub.proposal) {
+      notes.push(`${r.part}: ${sub.text}`);
+      continue;
+    }
+    const prev = steps[steps.length - 1]?.proposal.action;
+    const spendsProceeds = /\b(proceeds|money|cash|that|it)\b/i.test(r.part) && prev?.kind === "prediction_order" && prev.trade === "sell";
+    steps.push({ id: `s${steps.length + 1}`, agent: r.agent, proposal: sub.proposal, gate: spendsProceeds ? "filled" : "done", status: "waiting" });
+  }
+  const cant = unavailable.length ? ` I can't do ${unavailable.map((u) => u.what).join(" or ")} here: ${unavailable[0].why}.` : "";
+  // One doable part is just a move, with an honest note about the rest.
+  if (steps.length === 1) return { text: `${steps[0].proposal.why}${cant}${notes.length ? ` Left out: ${notes.join(" ")}` : ""}`, tools, proposal: steps[0].proposal, suggestions: ["Yes, set it up", "Not now"], usage: [] };
+  if (steps.length === 0) return { text: `I can't set that up.${cant}${notes.length ? ` ${notes.join(" ")}` : ""}`, tools, suggestions: [], usage: [] };
+  const plan: Plan = { id: pid, title: steps.map((s) => s.proposal.title).join(", then ").slice(0, 70), why: `${steps.length} step${steps.length > 1 ? "s" : ""}, one after another.`, steps, unavailable, status: "proposed" };
+  const said = [`Here's the plan: ${steps.map((s, i) => `${i + 1}. ${s.proposal.title}`).join(" ")}.`];
+  if (cant) said.push(cant.trim());
+  if (notes.length) said.push(`Left out: ${notes.join(" ")}`);
+  return { text: said.join(" "), tools, plan, suggestions: ["Yes, start the plan", "Not now"], usage: [] };
+}
+
 const failText = (v: { error: string } | { proposal: Proposal }) => ("error" in v ? ` I couldn't set up a move: ${v.error.split(". ")[0]}.` : "");
 
 async function rulesTurn(agent: AgentId, chat: ChatMsg[], onTool: (note: string) => void, pid: string): Promise<TurnResult> {
@@ -304,6 +380,10 @@ async function rulesTurn(agent: AgentId, chat: ChatMsg[], onTool: (note: string)
   const task = chat.filter((m) => m.role === "user").map((m) => m.text).join(" ");
   const tools: ToolCall[] = [];
   const want = intentOf(userText);
+  if (chat.filter((m) => m.role === "user").length === 1 || !prior) {
+    const planned = await rulesPlan(userText, onTool, pid);
+    if (planned) return planned;
+  }
 
   // "Sell my calmest position" / "what do I hold?"
   if ((agent === "inso" || agent === "trado") && (want.positions || (want.sell && agent === "inso"))) {
