@@ -39,7 +39,7 @@ async function priv<T = Record<string, unknown>>(path: string, body: Record<stri
   if (!KEY || !SECRET) throw new ExchangeError("No exchange connected", "auth");
   // Nonces must increase per key, even for calls in the same millisecond.
   lastNonce = Math.max(Date.now(), lastNonce + 1);
-  const payload = Buffer.from(JSON.stringify({ request: path, nonce: String(lastNonce), ...body })).toString("base64");
+  const payload = Buffer.from(JSON.stringify({ request: path, nonce: lastNonce, ...body })).toString("base64");
   const signature = createHmac("sha384", SECRET).update(payload).digest("hex");
   const res = await fetch(`${tradeBase()}${path}`, {
     method,
