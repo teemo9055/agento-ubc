@@ -230,6 +230,8 @@ export default function RunPage({ params }: { params: Promise<{ id: string }> })
   const actual = sum(vaultLines.map((l) => l.actual));
   // Charts and maps only where the job produced one; orders with no research have nothing to draw.
   const hasVisual = Boolean(run.feed && Object.keys(run.feed).length) || run.proposal?.action?.kind === "itinerary" || !run.proposal;
+  // A job that never had a conversation (a plan step, a repeat) doesn't need an empty chat beside it.
+  const hasChat = (run.chat?.length ?? 0) > 0 || exploring || run.status === "draft";
   const showPopup = head && dismissed !== head.id && !approving && !cancelling;
   const reapproval = head?.kind === "re" ? run.pendingReapprovals.find((r) => r.id === head.id) : undefined;
   const failure = head?.kind === "fail" ? run.pendingFailures.find((f) => f.id === head.id) : undefined;
@@ -440,9 +442,14 @@ export default function RunPage({ params }: { params: Promise<{ id: string }> })
         <Icon name="back" size={15} /> All jobs
       </Link>
       {/* Desktop: the header sits over the plan only, so the chat starts at the top and its message box is on screen. */}
-      {!wide && header}
+      {!wide && hasChat && header}
 
-      {wide ? (
+      {!hasChat ? (
+        <div className="mx-auto max-w-3xl">
+          {header}
+          <div className="mt-6">{plan}</div>
+        </div>
+      ) : wide ? (
         <div className="grid grid-cols-[minmax(0,1fr)_400px] items-start gap-6">
           <div className="min-w-0">
             {header}

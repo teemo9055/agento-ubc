@@ -1188,7 +1188,7 @@ async function advanceNow(parentId: string) {
     }
     // Start it: a job with this step's move, approved under the plan the user started.
     try {
-      const child = await createRun({ agent: s.agent, task: s.proposal.ask, mode: ctl.run.mode, proposal: s.proposal, plannedBy: `plan in job ${parentId}` } as CreateInput);
+      const child = await createRun({ agent: s.agent, task: s.proposal.title, mode: ctl.run.mode, proposal: s.proposal, plannedBy: `plan in job ${parentId}` } as CreateInput);
       const cc = ctlOf(child.id);
       // The agents before this one pass along what they did, so this step starts with the full picture.
       const handoff = steps

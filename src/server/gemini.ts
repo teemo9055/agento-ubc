@@ -103,6 +103,27 @@ export async function searchEvents(query: string, limit = 5, base = BASE): Promi
   return r.data.map(toEvent);
 }
 
+/**
+ * Search that copes with how people ask. Gemini matches the whole phrase, so "NYC temperature"
+ * finds nothing; when that happens each word is searched and events matching more words come first.
+ */
+export async function findEvents(query: string, limit = 6, base = BASE): Promise<MarketEvent[]> {
+  const whole = await searchEvents(query, limit, base);
+  const words = [...new Set(query.split(/\s+/).map((w) => w.replace(/[^\w$%.-]/g, "")).filter((w) => w.length > 1 && !STOP.has(w.toLowerCase())))];
+  if (whole.length || words.length < 2) return whole;
+  const lists = await Promise.all(words.slice(0, 3).map((w) => searchEvents(ALIASES[w.toLowerCase()] ?? w, 6, base).catch(() => [] as MarketEvent[])));
+  const score = new Map<string, { e: MarketEvent; n: number }>();
+  for (const list of lists)
+    for (const e of list) {
+      const hit = score.get(e.ticker) ?? { e, n: 0 };
+      hit.n++;
+      score.set(e.ticker, hit);
+    }
+  // A word can also match inside a title the other word's search returned ("NYC" in a temperature market).
+  for (const hit of score.values()) hit.n += words.filter((w) => new RegExp(`\\b${w.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}`, "i").test(hit.e.title)).length;
+  return [...score.values()].sort((a, b) => b.n - a.n || b.e.volume - a.e.volume).slice(0, limit).map((x) => x.e);
+}
+
 export async function getEvent(ticker: string, base = BASE): Promise<MarketEvent> {
   return toEvent(await get(`/v1/prediction-markets/events/${encodeURIComponent(ticker)}`, undefined, base));
 }

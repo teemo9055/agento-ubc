@@ -376,7 +376,7 @@ export function toolboxAgent(id: AgentId): AgentDef {
           mem.places ??= await geocodeAll(a.stops);
           mem.route ??= await geo.drive(mem.places);
           mem.days = splitDays(mem.route, mem.places, a.hoursPerDay);
-          ctx.progress(1, `${mem.days.length} days`);
+          ctx.progress(1, `${mem.days.length} day${mem.days.length === 1 ? "" : "s"}`);
           return;
         }
         if (!mem.check?.met) {

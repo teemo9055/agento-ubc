@@ -4,13 +4,15 @@ import type { FailureAction, FailureCode, Run } from "@/lib/types";
 vi.mock("@/server/gemini", async (orig) => {
   const real = await orig<typeof import("@/server/gemini")>();
   const series = Array.from({ length: 20 }, (_, i) => ({ t: i * 60_000, p: 0.4 + i * 0.01 }));
-  return {
-    ...real,
-    searchEvents: async (q: string) => [
+  const found = async (q: string) => [
       { ticker: `${q}-1`, title: `${q} event A`, category: "Crypto", volume: 10, contracts: [{ symbol: `GEMI-${q}-A`, label: "A", last: 0.5, bid: 0.49, ask: 0.51 }] },
       { ticker: `${q}-2`, title: `${q} event B`, category: "Crypto", volume: 9, contracts: [{ symbol: `GEMI-${q}-B`, label: "B", last: 0.3, bid: 0.29, ask: 0.31 }] },
       { ticker: `${q}-3`, title: `${q} event C`, category: "Crypto", volume: 8, contracts: [{ symbol: `GEMI-${q}-C`, label: "C", last: 0.7, bid: 0.69, ask: 0.71 }] },
-    ],
+  ];
+  return {
+    ...real,
+    searchEvents: found,
+    findEvents: found,
     getEvent: async (t: string) => {
       const q = t.split("-")[0];
       return { ticker: t, title: `${q} event A`, category: "Crypto", volume: 10, contracts: [{ symbol: `GEMI-${q}-A`, label: "A", last: 0.5, bid: 0.49, ask: 0.51 }] };

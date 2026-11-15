@@ -39,9 +39,9 @@ export const FREE_TOOLS: Record<string, FreeTool> = {
           contracts: e.contracts.filter((c) => c.open !== false).slice(0, 8).map((c) => ({ symbol: c.symbol, label: c.label, last: c.last, bid: c.bid, ask: c.ask, expiry: c.expiry })),
         }));
       const venue = tradingVenue();
-      const events = await gemini.searchEvents(String(a.query ?? ""), Number(a.limit ?? 6));
+      const events = await gemini.findEvents(String(a.query ?? ""), Number(a.limit ?? 6));
       if (venue !== "gemini-sandbox") return { data: { venue: VENUE_NAME[venue], markets: shape(events) }, summary: `${events.length} markets for “${a.query}”` };
-      const tradable = await gemini.searchEvents(String(a.query ?? ""), Number(a.limit ?? 6), marketBase(venue)).catch(() => []);
+      const tradable = await gemini.findEvents(String(a.query ?? ""), Number(a.limit ?? 6), marketBase(venue)).catch(() => []);
       return {
         data: { venue: VENUE_NAME[venue], markets: shape(events), tradable: tradable.length ? shape(tradable) : "None. The test exchange lists crypto and commodity markets only; try BTC, ETH, SOL, XRP or Brent." },
         summary: `${events.length} markets for “${a.query}” · ${tradable.length} tradable on ${VENUE_NAME[venue]}`,

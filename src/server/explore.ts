@@ -182,6 +182,18 @@ function withAccept(suggestions: string[], p: Proposal) {
   return ["Yes, set it up", ...(rest.length ? rest : fallback)].slice(0, 3);
 }
 
+/**
+ * A budget is only a budget if the user said it. Models sometimes fill one in from their own
+ * arithmetic, which would then quietly shrink the order; drop any amount the user never typed.
+ */
+export function onlyStatedBudget<T>(move: T, chat: ChatMsg[]): T {
+  const m = move as { budgetUsd?: number | null } | null;
+  if (!m || m.budgetUsd == null) return move;
+  const said = chat.filter((c) => c.role === "user").map((c) => c.text).join(" ").replace(/,/g, "");
+  const nums = (said.match(/\d+(?:\.\d+)?/g) ?? []).map(Number);
+  return nums.some((n) => Math.abs(n - m.budgetUsd!) < 0.005) ? move : ({ ...m, budgetUsd: null } as T);
+}
+
 /** Keeps replies short whatever the model wrote: drops pointers at the card and anything past a few sentences. */
 export function tighten(text: string, hasCard: boolean): string {
   const sentences = text.replace(/\s*\n+\s*/g, " ").split(/(?<=[.!?])\s+/);
@@ -234,7 +246,9 @@ export async function exploreTurn(agent: AgentId, chat: ChatMsg[], onTool: (note
       let content: unknown;
       if (c.name === "propose_plan") {
         onTool("Drafting a plan");
-        const v = await validatePlan(c.args, proposalId);
+        const steps = (c.args as { steps?: { move?: unknown }[] }).steps;
+        const args = Array.isArray(steps) ? { ...c.args, steps: steps.map((s) => ({ ...s, move: onlyStatedBudget(s.move, chat) })) } : c.args;
+        const v = await validatePlan(args, proposalId);
         if ("error" in v) content = { ok: false, error: v.error, hint: "Fix that step with real data from the tools, drop it into `unavailable` with the reason, or explain to the user why no plan fits." };
         else {
           plan = v.plan;
@@ -243,7 +257,7 @@ export async function exploreTurn(agent: AgentId, chat: ChatMsg[], onTool: (note
         }
       } else if (c.name === "propose_move") {
         onTool("Drafting a move");
-        const v = await validateProposal(agent, c.args, proposalId);
+        const v = await validateProposal(agent, onlyStatedBudget(c.args, chat), proposalId);
         if ("error" in v) content = { ok: false, error: v.error, hint: "Fix the move using real data from the tools, or explain to the user why no move fits." };
         else {
           proposal = v.proposal;

@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { intentOf, tighten } from "./explore";
+import { intentOf, onlyStatedBudget, tighten } from "./explore";
 
 describe("rule-based replies read plain words", () => {
   it("amounts, sizes and price limits", () => {
@@ -21,5 +21,14 @@ describe("replies stay short", () => {
   });
   it("keeps decimals and caps plain answers at four sentences", () => {
     expect(tighten("BTC is at $62,613.28. One. Two. Three. Four.", false)).toBe("BTC is at $62,613.28. One. Two. Three.");
+  });
+});
+
+describe("budgets come from the user, not the model", () => {
+  const said = (text: string) => [{ id: "1", role: "user" as const, text, at: "" }];
+  it("keeps an amount the user typed and drops one they didn't", () => {
+    expect(onlyStatedBudget({ budgetUsd: 5 }, said("put $5 on BTC"))).toEqual({ budgetUsd: 5 });
+    expect(onlyStatedBudget({ budgetUsd: 9.2 }, said("a cold snap would cost me 20 dollars"))).toEqual({ budgetUsd: null });
+    expect(onlyStatedBudget({ budgetUsd: 1500 }, said("spend 1,500 at most"))).toEqual({ budgetUsd: 1500 });
   });
 });
