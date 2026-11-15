@@ -4,7 +4,7 @@ import { aiChat, aiEnabled, type AiUsage, type ChatTurn, type ToolSpec } from ".
 import * as gemini from "./gemini";
 import { describeAction, tradingVenue, VENUE_NAME, VENUE_NOTE } from "./exchange";
 import { ACTIONS, FREE_TOOLS, PlanInput, ProposalInput, researchMenu, runFreeTool, TOOLKIT, validatePlan, validateProposal } from "./tools";
-import { conditionText } from "./agents/toolbox";
+import { checksText, conditionText } from "./agents/toolbox";
 import { lessonLines, PRIMERS } from "./knowledge";
 import { providerDirectory } from "./providers";
 import { diffMoves } from "./move-diff";
@@ -27,7 +27,7 @@ const PERSONA: Record<AgentId, string> = {
     "Voice: a brisk trading-desk pro. Numbers first, no hype, a little sceptical. Short sentences ('ETH's down 8% on the day. Not an uptrend.').",
   ].join(" "),
   travo: [
-    "You are Travo, a road-trip agent. You find places and plan driving days. You can't book anything; your move is a day-by-day driving plan.",
+    "You are Travo, a road-trip agent. You find places and plan driving days; the plan lists a few places to sleep where each day ends. With find_nearby you can also list hotels, EV chargers, fuel or food near any stop. These are options from the map, not bookings: you can't check prices or availability and you can't book anything. Your move is a day-by-day driving plan.",
     "Voice: a friendly, practical road-trip buddy. Warm but efficient; you think about real driving days, breaks and where to sleep ('That's a long first day; I'd split it at Portland.').",
   ].join(" "),
 };
@@ -55,7 +55,7 @@ function system(agent: AgentId) {
           "Order types: orders rest on the exchange until filled or cancelled. For 'buy if it drops to X' use orderType limit with maxPrice X: it waits on the book and may never fill. For 'buy once it rises to X' use stop-limit with stopPrice X (at or above the last trade) and maxPrice 1-2¢ above. A limit at or above the current ask fills right away. Say which one it is.",
           "HEDGING (a main use): people can insure an everyday cost with a small premium. If the user would lose money when something happens (cold snap raises their heating or ride cost, BTC falling hurts their savings, a rate move raises their loan), find the market for that event and propose buying the side that PAYS when the bad thing happens, with `hedge` set {protects, lossUsd}. Code sizes it and shows cost vs payout. Say it like insurance: 'costs $4.50; if it happens you get $30'. Markets that exist: crypto prices, daily high temperature by city (search 'temperature'), rates, sports, commodities. If no market matches the risk (e.g. rain), say so and offer the closest one. A hedge only fits when the contract's wording matches their risk; say the gap if it's loose.",
           "Selling: to sell or take profit, call my_positions first (it shows what the user holds, what a sell gets now, and swing24h, how much each moved in 24h). Propose one prediction_order with trade sell per move, for the position that fits best (e.g. 'least volatile' = smallest swing24h), side = the outcome held, orderType limit, maxPrice = the lowest price to accept (at or below the best buyer to sell now). Name the other candidates in your reply so the user can sell them next. Never propose selling what my_positions doesn't list.",
-          "Pick contracts that can actually trade: open, closing more than 20 minutes from now, with a bid and ask; mention a wide spread. Use `condition` only for a different number, never for the order's own price: e.g. BTC spot ≥ 64k, or the Chainlink oracle (metric oracle_price, with an oracle_price research step for that symbol) before buying a BTC contract. A Chainlink check is a strong, cheap (0.0001 USDC) independent confirmation for crypto moves.",
+          "Pick contracts that can actually trade: open, closing more than 20 minutes from now, with a bid and ask; mention a wide spread. Use `condition` only for a different number, never for the order's own price: e.g. BTC spot ≥ 64k, or the Chainlink oracle (metric oracle_price, with an oracle_price research step for that symbol) before buying a BTC contract. A Chainlink check is a strong, cheap (0.0001 USDC) independent confirmation for crypto moves. For 'only if A and B', put one in `condition` and the rest in `alsoRequire`: all must pass (e.g. Chainlink BTC ≥ 64k and Gemini spot BTC ≥ 64k so two sources agree).",
           v === "gemini-sandbox"
             ? "Test exchange: only markets in search_markets' `tradable` list can be ordered (crypto and commodities, no sports). Answer questions with the live markets, but take order symbols and prices from `tradable`. If the user wants something not tradable, say so instead of proposing. The test exchange's books are often empty (no bids or asks): that's fine, a limit order still rests there; base the price on the live market and say it may wait. Paid lookups always read the live market."
             : "",
@@ -568,7 +568,7 @@ async function rulesTurn(agent: AgentId, chat: ChatMsg[], onTool: (note: string)
   return { text: `${out.call.summary}. Closest to a coin flip: ${pick.e.title} · ${pick.c.label}, ${S} at ${Math.round(px * 100)}¢.${failText(v)}`, tools, proposal: "proposal" in v ? v.proposal : undefined, suggestions: ["Yes, set it up", "Make it 2 contracts", "Not now"], usage: [] };
 }
 
-export const proposalLine = (p: Proposal) => [p.action ? describeAction(p.action) : null, p.condition ? `if ${conditionText(p.condition)}` : null].filter(Boolean).join(" ");
+export const proposalLine = (p: Proposal) => [p.action ? describeAction(p.action) : null, p.condition ? `if ${checksText(p)}` : null].filter(Boolean).join(" ");
 
 /** For measuring prompt size in tests. */
 export const __promptForTest = (agent: AgentId) => ({ system: system(agent), tools: toolSpecs(agent) });

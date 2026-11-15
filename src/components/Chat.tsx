@@ -81,7 +81,7 @@ export function MoveCard({ p, run, chosen, onChoose, busy }: { p: Proposal; run:
   const facts = [
     `Up to $${total < 0.01 ? usdc(total) : total.toFixed(2)}`,
     p.research.length ? `${p.research.length} paid lookup${p.research.length > 1 ? "s" : ""} first` : "",
-    p.condition ? `only if ${conditionLabel(p.condition)}` : "",
+    p.condition ? `only if ${[p.condition, ...(p.also ?? [])].map(conditionLabel).join(" and ")}` : "",
     ...notes(p)
       .filter((x) => !/^Sized to|^Hedge|^Fee/.test(x))
       .slice(0, 2),

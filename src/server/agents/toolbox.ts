@@ -29,7 +29,7 @@ export { QUICKNODE_PAYEE } from "../vendor-tools";
 
 type Opts = { proposal?: Proposal };
 type Mem = { orderSince?: number; data: Record<string, unknown>; check?: CheckResult; order?: OrderResult; days?: Day[]; route?: geo.Route; places?: geo.Place[] };
-type Day = { day: number; from: string; to: string; hours: number; km: number };
+type Day = { day: number; from: string; to: string; hours: number; km: number; /** Places to sleep where the day ends: a shortlist from the map, not a booking. */ stay?: { name: string; where: string; website?: string }[] };
 interface CheckResult {
   met: boolean;
   observed?: number;
@@ -108,6 +108,9 @@ async function observe(c: MoveCondition, action: MoveAction | undefined, venue: 
 const dollars = (m: MoveCondition["metric"]) => m === "spot_price" || m === "oracle_price";
 const fmtVal = (metric: MoveCondition["metric"], v: number) => (dollars(metric) ? `$${v.toLocaleString(undefined, { maximumFractionDigits: 2 })}` : `${Math.round(v * 100)}¢`);
 const coin = (s: string) => s.replace(/usd$/, "").toUpperCase();
+/** Every check a move carries: the main one and any that must hold with it. */
+export const checksOf = (p: Pick<Proposal, "condition" | "also">): MoveCondition[] => (p.condition ? [p.condition, ...(p.also ?? [])] : []);
+export const checksText = (p: Pick<Proposal, "condition" | "also">) => checksOf(p).map(conditionText).join(" and ");
 export const conditionText = (c: MoveCondition) =>
   `${c.metric === "oracle_price" ? `Chainlink ${coin(c.symbol)}` : c.metric === "spot_price" ? `${coin(c.symbol)} price` : c.metric === "yes_price" ? "YES price" : "NO price"} ${c.op === "<=" ? "≤" : "≥"} ${fmtVal(c.metric, c.value)}`;
 
@@ -139,7 +142,7 @@ export function planFromProposal(p: Proposal): PlanDraft {
   const template = templateOf(p);
   // The boxes follow the kind of task: no fixed check or report step when it adds nothing.
   if (template === "answer") phases.push({ id: "check", label: "Write it up", sub: "what the data says", dependsOn: research, optional: false });
-  if (template === "check_trade") phases.push({ id: "check", label: "Check the condition", sub: conditionText(p.condition!), dependsOn: research, optional: false });
+  if (template === "check_trade") phases.push({ id: "check", label: checksOf(p).length > 1 ? "Check the conditions" : "Check the condition", sub: checksText(p), dependsOn: research, optional: false });
   const before = template === "check_trade" ? ["check"] : research;
   if (a && a.kind !== "itinerary") {
     const venue = p.venue;
@@ -156,7 +159,7 @@ export function planFromProposal(p: Proposal): PlanDraft {
       kind: "risk",
       title: a && a.kind !== "itinerary" ? "Limits" : "Read-only",
       points: [
-        ...(p.condition ? [`Skips the move unless ${conditionText(p.condition)}`] : []),
+        ...(p.condition ? [`Skips the move unless ${checksText(p)}`] : []),
         ...(a && a.kind !== "itinerary" ? [`Order capped at $${notionalOf(a).toFixed(2)}`, VENUE_NOTE[p.venue]] : ["Nothing is booked or bought"]),
         "Prices can move after the check",
       ].slice(0, 3),
@@ -221,6 +224,7 @@ function editStep(next: Proposal, step: string, t: string): EditResult {
     if (!c) return { ok: false, message: "There is no condition to change. To add one, ask in the chat." };
     if (DROP.test(t)) {
       next.condition = undefined;
+      next.also = undefined;
       return { ok: true, message: "Dropped the check: the move goes ahead once the data is read", options: { proposal: next } };
     }
     const op = /\b(above|over|at least|higher|more than)\b|>/.test(t) ? ">=" : /\b(below|under|at most|lower|less than)\b|</.test(t) ? "<=" : c.op;
@@ -250,6 +254,7 @@ function editStep(next: Proposal, step: string, t: string): EditResult {
     if (a && /\b(drop|remove|skip|no|don'?t)\b.*\b(order|trade|buy|sell)\b/.test(t)) {
       next.action = undefined;
       next.condition = undefined;
+      next.also = undefined;
       return { ok: true, message: "No order: the job only reads the data and reports", options: { proposal: next } };
     }
     return { ok: false, message: "Say the new size or price limit.", alternatives: a?.kind === "prediction_order" ? ["5 contracts", "Max 50¢", "Don't place the order"] : ["$5", "Don't place the trade"] };
@@ -379,7 +384,22 @@ export function toolboxAgent(id: AgentId): AgentDef {
           mem.places ??= await geocodeAll(a.stops);
           mem.route ??= await geo.drive(mem.places);
           mem.days = splitDays(mem.route, mem.places, a.hoursPerDay);
-          ctx.progress(1, `${mem.days.length} day${mem.days.length === 1 ? "" : "s"}`);
+          // Where each driving day ends, list a few places to sleep. One at a time: the map service asks for that.
+          let stays = 0;
+          for (const d of mem.days) {
+            const at = mem.places.find((x) => x.name === d.to);
+            if (!at) continue;
+            ctx.progress(0.6, `Looking for places to stay in ${d.to}`);
+            // A shortlist is a nice-to-have: if the map service is slow or down, the plan still stands.
+            const found = await Promise.resolve()
+              .then(() => geo.nearby(at, "hotel", 3))
+              .catch(() => []);
+            if (found.length) {
+              d.stay = found.map((x) => ({ name: x.name, where: x.where, website: x.website }));
+              stays++;
+            }
+          }
+          ctx.progress(1, `${mem.days.length} day${mem.days.length === 1 ? "" : "s"}${stays ? ` · places to stay listed for ${stays === mem.days.length ? "each night" : `${stays} of them`}` : ""}`);
           return;
         }
         if (!mem.check?.met) {
@@ -449,14 +469,19 @@ async function analyse(p: Proposal, mem: Mem, ctx: AgentCtx) {
   if (!p.condition) {
     mem.check = { met: true, text: p.action ? "No condition: going ahead" : "Data read", stats };
   } else {
-    const bought = p.research.find((r) => r.tool === "oracle_price" && r.args.symbol.toLowerCase() === p.condition!.symbol);
-    const seen =
-      p.condition.metric === "oracle_price"
-        ? { value: (mem.data[bought?.id ?? ""] as OraclePrice | undefined)?.price, source: "Chainlink" }
-        : await observe(p.condition, p.action, p.venue).catch(() => undefined);
-    const v = seen?.value;
-    const met = v != null && (p.condition.op === "<=" ? v <= p.condition.value : v >= p.condition.value);
-    mem.check = { met, observed: v, stats, text: v == null ? "Couldn't read a fresh price, so the move is skipped" : `${conditionText(p.condition)} → now ${fmtVal(p.condition.metric, v)} (${seen?.source}) · ${met ? "met" : "not met"}` };
+    // All checks are read at the same moment; the move goes ahead only if every one passes.
+    const read = await Promise.all(
+      checksOf(p).map(async (c) => {
+        const bought = p.research.find((r) => r.tool === "oracle_price" && r.args.symbol.toLowerCase() === c.symbol);
+        const seen = c.metric === "oracle_price" ? { value: (mem.data[bought?.id ?? ""] as OraclePrice | undefined)?.price, source: "Chainlink" } : await observe(c, p.action, p.venue).catch(() => undefined);
+        const v = seen?.value;
+        const met = v != null && (c.op === "<=" ? v <= c.value : v >= c.value);
+        return { met, v, text: v == null ? `${conditionText(c)} → couldn't read a fresh price` : `${conditionText(c)} → now ${fmtVal(c.metric, v)} (${seen?.source}) · ${met ? "met" : "not met"}` };
+      }),
+    );
+    const met = read.every((r) => r.met);
+    const unread = read.length === 1 && read[0].v == null;
+    mem.check = { met, observed: read[0].v, stats, text: unread ? "Couldn't read a fresh price, so the move is skipped" : read.map((r) => r.text).join("; ") };
   }
 }
 

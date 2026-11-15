@@ -58,7 +58,7 @@ export function OrderStatus({ run }: { run: Run }) {
         {p.condition && (
           <div className="rounded-lg border border-line p-2.5">
             <div className="text-[12px] text-ink-3">Check before placing</div>
-            <div className="font-medium">{conditionLabel(p.condition)}</div>
+            <div className="font-medium">{[p.condition, ...(p.also ?? [])].map(conditionLabel).join(" and ")}</div>
             <div className="mt-0.5 text-[12px] text-ink-2">
               {check?.status === "done" ? (
                 check.note

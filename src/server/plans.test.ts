@@ -40,6 +40,7 @@ const pause = () => {
 };
 vi.mock("@/server/geo", () => ({
   geocode: async (q: string) => ({ name: q, lat: 49 - q.length / 10, lon: -123 + q.length / 10 }),
+  nearby: async () => [],
   drive: async (stops: { name: string }[]) => (await hold.wait, {
     distanceKm: 230 * (stops.length - 1),
     hours: 2.5 * (stops.length - 1),

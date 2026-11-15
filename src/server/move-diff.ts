@@ -1,5 +1,5 @@
 import type { MoveAction, Proposal } from "@/lib/types";
-import { conditionText } from "./agents/toolbox";
+import { checksText, conditionText } from "./agents/toolbox";
 import { describeAction } from "./exchange";
 
 /**
@@ -17,8 +17,8 @@ export function diffMoves(prev: Proposal, next: Proposal): string[] {
   for (const [k, r] of after) if (!before.has(k)) out.push(`+ ${r.label}`);
   for (const [k, r] of before) if (!after.has(k)) out.push(`− ${r.label}`);
 
-  const pc = prev.condition ? conditionText(prev.condition) : null;
-  const nc = next.condition ? conditionText(next.condition) : null;
+  const pc = checksText(prev) || null;
+  const nc = checksText(next) || null;
   if (pc !== nc) out.push(!nc ? `− check (${pc})` : !pc ? `+ check: ${nc}` : `check: ${pc} → ${nc}`);
 
   const a = prev.action;
@@ -78,8 +78,9 @@ export function guardEdit(prev: Proposal, next: Proposal, step?: string): { move
     } else move.research = prev.research;
   };
   const keepCondition = () => {
-    if (JSON.stringify(prev.condition ?? null) !== JSON.stringify(move.condition ?? null)) undone.push("the check");
+    if (JSON.stringify([prev.condition ?? null, prev.also ?? []]) !== JSON.stringify([move.condition ?? null, move.also ?? []])) undone.push("the check");
     move.condition = prev.condition;
+    move.also = prev.also;
   };
   const keepMarket = () => {
     const a = prev.action;

@@ -158,6 +158,9 @@ test("trado and travo run end to end", async ({ page }) => {
   await start(page, [], "Drive from Vancouver to Seattle", "Travo");
   await receipt(page);
   await expect(page.getByRole("img", { name: "Route map" })).toBeVisible();
+  // Where the driving day ends there's a shortlist of places to sleep, and a plain note that nothing is booked.
+  await expect(page.getByTestId("stay").first()).toContainText("Places to stay in");
+  await expect(page.getByText("Nothing is booked", { exact: false })).toBeVisible();
 });
 
 test("dashboard lists jobs by folder and status, and opens them", async ({ page }) => {

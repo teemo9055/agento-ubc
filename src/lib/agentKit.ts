@@ -70,14 +70,14 @@ export const KITS: Record<AgentId, AgentKit> = {
     quirk: "Calls it a “position”. It's ten dollars.",
   },
   travo: {
-    free: ["Look up places", "Search Circle's marketplace"],
+    free: ["Look up places", "Places to stay, charge, fuel or eat near a stop", "Search Circle's marketplace"],
     paid: [
       { label: "Driving route", price: "0.03" },
       { label: "Exchange rate: euro, pound, yen (Circle marketplace)", price: "0.0001" },
     ],
-    can: ["Plan a drive between places", "Split it into days that fit your hours on the road", "Show the route on a map with distance and time per leg", "Check the euro, pound or yen rate for a trip budget"],
+    can: ["Plan a drive between places", "Split it into days that fit your hours on the road", "Show the route on a map with distance and time per leg", "List places to stay where each day ends (and chargers, fuel or food near any stop)", "Check the euro, pound or yen rate for a trip budget"],
     cant: ["Book hotels or flights (booking services on Circle's marketplace take Arc mainnet only)", "Transit, walking or flying routes"],
-    acts: "Plan the route and split it into days",
+    acts: "Plan the route, split it into days and list places to stay",
     never: "Book, buy or reserve anything",
     result: "A route map and a day-by-day plan",
     title: "Road-Trip Planner (Non-Booking)",

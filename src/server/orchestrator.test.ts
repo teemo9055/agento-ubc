@@ -264,9 +264,15 @@ describe("explore, then act", () => {
     const geo = await import("@/server/geo");
     vi.spyOn(geo, "geocode").mockImplementation(async (q) => ({ name: q, lat: 49 + q.length / 10, lon: -123 }));
     vi.spyOn(geo, "drive").mockImplementation(async (stops) => ({ distanceKm: 300, hours: 9, path: stops.map((s) => [s.lon, s.lat]), legs: stops.slice(1).map(() => ({ distanceKm: 150, hours: 4.5 })) }));
+    vi.spyOn(geo, "nearby").mockImplementation(async (at) => (at.name === "Seattle" ? [{ name: "Harbor Inn", where: "1 Pier St, Seattle", website: "https://harbor.example", lat: at.lat, lon: at.lon }] : []));
     const { run } = await drive("Drive from Vancouver to Portland via Seattle", [], {}, "travo");
     expect(run.status).toBe("done");
-    expect((run.deliverable?.data as { days: unknown[] }).days.length).toBeGreaterThan(0);
+    const days = (run.deliverable?.data as { days: { to: string; stay?: { name: string }[] }[] }).days;
+    expect(days.length).toBeGreaterThan(0);
+    // Where a driving day ends there's a shortlist of places to sleep; where the map has none, the plan still stands.
+    expect(days.find((d) => d.to === "Seattle")?.stay).toEqual([{ name: "Harbor Inn", where: "1 Pier St, Seattle", website: "https://harbor.example" }]);
+    expect(days.find((d) => d.to === "Portland")?.stay).toBeUndefined();
+    expect(run.phases.find((p) => p.id === "act")?.note).toMatch(/places to stay listed for 1 of them/);
   });
 });
 
@@ -366,6 +372,57 @@ describe("method, preview and edited re-approval", () => {
     const run = orch.getRun(r.id)!;
     expect(run.status).toBe("done");
     expect(run.decisions.some((d) => d.kind === "reapproval" && d.outcome === "edited")).toBe(true);
+  });
+});
+
+describe("several conditions on one move", () => {
+  // In these tests Chainlink says BTC is $61,000 and Gemini spot says $60,000.
+  const both = (spotFloor: number) =>
+    orch.createRun({
+      agent: "inso",
+      task: "BTC only if two sources agree",
+      proposal: {
+        id: `two-${spotFloor}`,
+        title: "Buy YES if Chainlink and Gemini agree",
+        why: "test",
+        ask: "Buy 2 YES at 52¢ if both prices hold?",
+        research: [{ id: "r1", tool: "oracle_price", args: { symbol: "btcusd" }, label: "Chainlink BTC/USD", why: "independent price" }],
+        action: { kind: "prediction_order", eventTicker: "BTC-1", symbol: "GEMI-BTC-A", label: "A", side: "yes", orderType: "limit", maxPrice: 0.52, quantity: 2 },
+        condition: { metric: "oracle_price", symbol: "btcusd", op: ">=", value: 60500 },
+        also: [{ metric: "spot_price", symbol: "btcusd", op: ">=", value: spotFloor }],
+        venue: "paper",
+      },
+    });
+  const finish = async (id: string) => {
+    await orch.approve(id);
+    for (let i = 0; i < 300 && orch.getRun(id)!.status !== "done"; i++) await tick();
+    return orch.getRun(id)!;
+  };
+
+  it("goes ahead only when every check passes, and says what each one read", async () => {
+    const ok = await finish((await both(59000)).id);
+    expect(ok.order?.status).toBe("simulated");
+    const check = ok.phases.find((p) => p.id === "check")!;
+    expect(check.label).toBe("Check the conditions");
+    expect(check.note).toMatch(/Chainlink BTC ≥ \$60,500 → now \$61,000 \(Chainlink\) · met; BTC price ≥ \$59,000 → now \$60,000 \(Gemini spot\) · met/);
+
+    const no = await finish((await both(60500)).id);
+    expect(no.order?.status).toBe("skipped");
+    expect(no.phases.find((p) => p.id === "check")!.note).toMatch(/Chainlink BTC ≥ \$60,500 .+ · met; BTC price ≥ \$60,500 → now \$60,000 .+ · not met/);
+  });
+
+  it("each extra check is validated like the first, and one on the order's own price is folded away", async () => {
+    const { validateProposal } = await import("@/server/tools");
+    const base = { title: "Buy", why: "w", ask: "a?", research: [], action: { kind: "prediction_order", eventTicker: "BTC-1", symbol: "GEMI-BTC-A", label: "A", side: "yes", orderType: "limit", maxPrice: 0.52, stopPrice: null, quantity: 2 }, budgetUsd: null };
+    const spot = { metric: "spot_price", symbol: "btcusd", op: ">=", value: 59000 };
+    // The oracle check has no oracle lookup to read from.
+    const missing = await validateProposal("inso", { ...base, condition: spot, alsoRequire: [{ metric: "oracle_price", symbol: "btcusd", op: ">=", value: 60000 }] }, "c1");
+    expect("error" in missing && missing.error).toMatch(/needs an oracle_price research step/);
+    // A check on the order's own contract price is the limit itself; the spot check remains as the one condition.
+    const folded = await validateProposal("inso", { ...base, condition: { metric: "yes_price", symbol: "GEMI-BTC-A", op: "<=", value: 0.5 }, alsoRequire: [spot] }, "c2");
+    if (!("proposal" in folded)) throw new Error(folded.error);
+    expect(folded.proposal.condition).toMatchObject({ metric: "spot_price", symbol: "btcusd" });
+    expect(folded.proposal.also).toBeUndefined();
   });
 });
 

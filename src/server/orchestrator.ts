@@ -212,7 +212,7 @@ type CreateInput = {
  * Creates a job. With `wait: false` it returns at once with `planning: true` and the
  * plan arrives as a later event, so the screen never blocks on the model.
  */
-export async function createRun(input: CreateInput, opts: { wait?: boolean } = {}) {
+export async function createRun(input: CreateInput, opts: { wait?: boolean; quiet?: boolean } = {}) {
   const agent = AGENTS[input.agent];
   if (!agent) throw new Error("unknown agent");
   const mode = input.mode === "live" && liveReady() ? "live" : "demo";
@@ -263,6 +263,11 @@ export async function createRun(input: CreateInput, opts: { wait?: boolean } = {
     return ctl.run;
   }
   emit(ctl, { type: "workorder.updated", run: { ...run, chat: [] } });
+  // Quiet: the request is recorded but no agent answers it (someone else brings the plan).
+  if (opts.quiet) {
+    emit(ctl, { type: "chat.message", message: { id: id(), role: "user", text: run.task, at: now() } });
+    return ctl.run;
+  }
   const first = sendChat(run.id, input.task);
   if (opts.wait !== false) await first;
   return ctl.run;
@@ -1203,12 +1208,18 @@ async function advanceNow(parentId: string) {
         Object.assign(s, { status: "blocked", note: `Waiting for step ${num(waiting.d.id)}'s order to fill` });
         continue;
       }
-      const dead = state.find((x) => x.st !== "filled" && x.st !== "simulated");
+      // An order closed after selling only part still brought something in: carry on with that part.
+      const partly = (x: { d: PlanStep }) => {
+        const o = x.d.runId ? runs.get(x.d.runId)?.run.order : undefined;
+        return o?.status === "cancelled" && (o.filledQuantity ?? 0) > 0;
+      };
+      const dead = state.find((x) => x.st !== "filled" && x.st !== "simulated" && !partly(x));
       if (dead) {
         Object.assign(s, { status: "skipped", note: `Step ${num(dead.d.id)}'s order ${dead.st ? `was ${dead.st}` : "wasn't placed"}, so this doesn't run` });
         continue;
       }
-      if (s.useProceeds) budget = Math.floor(orders.reduce((sum, x) => sum + (x.run ? proceedsOf(x.run) : 0), 0) * 100) / 100;
+      // Whole cents, rounded down; the small nudge keeps 4 × 0.58 from landing on 2.3199….
+      if (s.useProceeds) budget = Math.floor(orders.reduce((sum, x) => sum + (x.run ? proceedsOf(x.run) : 0), 0) * 100 + 1e-6) / 100;
     }
     try {
       let proposal = s.proposal;

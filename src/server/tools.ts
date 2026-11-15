@@ -102,6 +102,16 @@ export const FREE_TOOLS: Record<string, FreeTool> = {
       return { data: p, summary: p ? `Found ${p.name}` : `No match for “${a.query}”` };
     },
   },
+  find_nearby: {
+    description: "Named places of one kind around a town or address, from OpenStreetMap: hotels to stay at, EV charging, fuel, or food. Use it for 'where can I stay/charge/eat in X'. It lists options (with websites when known); it doesn't check availability or prices and can't book.",
+    params: z.object({ place: z.string().describe("Town or address"), what: z.enum(["hotel", "charging", "fuel", "food"]) }),
+    async run(a) {
+      const at = await geo.geocode(String(a.place));
+      if (!at) return { data: { found: [] }, summary: `No match for “${a.place}”` };
+      const found = await geo.nearby(at, a.what as geo.NearbyKind, 5);
+      return { data: { near: at.name, found: found.map((x) => ({ name: x.name, where: x.where, website: x.website })) }, summary: found.length ? `${found.length} ${geo.NEARBY[a.what as geo.NearbyKind]} options near ${at.name}` : `Nothing listed near ${at.name}` };
+    },
+  },
   search_services: {
     description: `Search Circle's Agent Marketplace for paid data and AI services other agents sell over x402. Categories: ${CATEGORIES.join(", ")}. Each result has payableHere (true = you can buy it right now with a \`service\` research step, using its url, method and input), its price, and what input it takes. Set payable=true to list only what can be bought now.`,
     params: z.object({ query: z.string(), category: z.enum(CATEGORIES).optional(), payable: z.boolean().optional() }),
@@ -217,7 +227,7 @@ const MAX_SERVICE = BigInt(process.env.MARKETPLACE_MAX_PER_REQUEST ?? 10_000);
 export const TOOLKIT: Record<AgentId, { free: string[]; research: string[] }> = {
   inso: { free: ["search_markets", "get_market", "my_positions", "spot_price", "search_services"], research: ["odds_history", "trade_tape", "oracle_price", "service"] },
   trado: { free: ["spot_price", "search_markets", "get_market", "my_positions", "search_services"], research: ["spot_candles", "oracle_price", "odds_history", "gas_price", "btc_network", "wallet_balance", "service"] },
-  travo: { free: ["find_place", "my_positions", "search_services"], research: ["drive_route", "oracle_price", "service"] },
+  travo: { free: ["find_place", "find_nearby", "my_positions", "search_services"], research: ["drive_route", "oracle_price", "service"] },
 };
 
 export const researchMenu = (agent?: AgentId) =>
@@ -272,6 +282,12 @@ export const ProposalInput = z.object({
     .object({ metric: z.enum(["yes_price", "no_price", "spot_price", "oracle_price"]), symbol: z.string(), op: z.enum(["<=", ">="]), value: z.number() })
     .nullable()
     .describe("A check on a DIFFERENT number than the order's own price, read right before placing (e.g. only buy the BTC-above-66k contract if BTC spot ≥ 64k). The order's own price target goes in orderType/maxPrice/stopPrice, not here. null for none."),
+  alsoRequire: z
+    .array(z.object({ metric: z.enum(["yes_price", "no_price", "spot_price", "oracle_price"]), symbol: z.string(), op: z.enum(["<=", ">="]), value: z.number() }))
+    .max(2)
+    .nullable()
+    .optional()
+    .describe("More checks that must ALL hold together with `condition`, for 'only if A and B' (e.g. Chainlink BTC ≥ 64k AND Gemini spot BTC ≥ 64k, so two independent sources agree). Same rules as `condition`."),
   budgetUsd: z.number().positive().nullable().describe("The most the user said they'd spend on this order in USD, if they said; enforced."),
   hedge: z
     .object({ protects: z.string().max(80).describe("What the user stands to lose, in their words: 'a pricier Uber if it's freezing Saturday'"), lossUsd: z.number().positive().max(1000).describe("Roughly what that would cost them in USD") })
@@ -417,28 +433,35 @@ export async function validateProposal(agent: AgentId, input: unknown, id: strin
     }
   }
 
-  // A condition on the order's own price adds nothing: the exchange enforces the limit, and it keeps resting.
-  let condition = (p.condition ?? undefined) as MoveCondition | undefined;
-  // Only accept checks the app can actually read right before placing.
-  if (condition?.metric === "oracle_price") {
-    const sym = condition.symbol.toLowerCase();
-    if (!p.research.some((r) => r.tool === "oracle_price" && r.args.symbol?.toLowerCase() === sym))
-      return { error: `An oracle_price condition needs an oracle_price research step for ${sym}, so the price is bought right before the check` };
-    condition = { ...condition, symbol: sym };
-  } else if (condition?.metric === "spot_price") {
-    const list = await spotSymbols().catch(() => [] as string[]);
-    if (list.length && !list.includes(condition.symbol.toLowerCase())) return { error: `Condition uses unknown spot symbol ${condition.symbol}` };
-    condition = { ...condition, symbol: condition.symbol.toLowerCase() };
-  } else if (condition && !eventContracts.includes(condition.symbol))
-    return { error: "A price condition must be on a contract in the same event as the order, or on a spot price (spot_price)" };
-  if (condition && action?.kind === "prediction_order" && condition.symbol === action.symbol && condition.metric !== "spot_price") {
-    condition = undefined;
-    adjustments.push("Price check folded into the order: it rests on the exchange until the price is right");
+  // Every check must be something the app can read right before placing. One on the order's own
+  // price adds nothing (the exchange enforces the limit and the order keeps resting), so it's folded in.
+  const checks: MoveCondition[] = [];
+  for (const raw of [p.condition, ...(p.alsoRequire ?? [])]) {
+    if (!raw) continue;
+    let c = raw as MoveCondition;
+    if (c.metric === "oracle_price") {
+      const sym = c.symbol.toLowerCase();
+      if (!p.research.some((r) => r.tool === "oracle_price" && r.args.symbol?.toLowerCase() === sym))
+        return { error: `An oracle_price condition needs an oracle_price research step for ${sym}, so the price is bought right before the check` };
+      c = { ...c, symbol: sym };
+    } else if (c.metric === "spot_price") {
+      const list = await spotSymbols().catch(() => [] as string[]);
+      if (list.length && !list.includes(c.symbol.toLowerCase())) return { error: `Condition uses unknown spot symbol ${c.symbol}` };
+      c = { ...c, symbol: c.symbol.toLowerCase() };
+    } else if (!eventContracts.includes(c.symbol)) return { error: "A price condition must be on a contract in the same event as the order, or on a spot price (spot_price)" };
+    if (action?.kind === "prediction_order" && c.symbol === action.symbol && c.metric !== "spot_price") {
+      adjustments.push("Price check folded into the order: it rests on the exchange until the price is right");
+      continue;
+    }
+    if (action?.kind === "spot_order" && c.metric === "spot_price" && c.symbol === action.symbol) {
+      adjustments.push("Price check folded into the limit order");
+      continue;
+    }
+    // Saying the same thing twice isn't a second check.
+    if (!checks.some((x) => x.metric === c.metric && x.symbol === c.symbol && x.op === c.op)) checks.push(c);
   }
-  if (condition && action?.kind === "spot_order" && condition.metric === "spot_price" && condition.symbol === action.symbol) {
-    condition = undefined;
-    adjustments.push("Price check folded into the limit order");
-  }
+  const condition: MoveCondition | undefined = checks[0];
+  const also = checks.slice(1);
   // The same lookup twice is the same data paid for twice: keep one.
   const seen = new Set<string>();
   const unique = p.research.filter((r) => {
@@ -463,6 +486,7 @@ export async function validateProposal(agent: AgentId, input: unknown, id: strin
       research,
       action,
       condition,
+      also: also.length ? also : undefined,
       venue: action && action.kind !== "itinerary" ? venue : "paper",
       budgetUsd: budget,
       hedge: hedgeOf(p.hedge, action),
@@ -513,6 +537,7 @@ export function toProposalInput(p: Proposal): ProposalInput {
     research: p.research.map((r) => ({ tool: r.tool, args: r.args, label: r.label, why: r.why })),
     action: !a ? null : a.kind === "prediction_order" ? { ...a, trade: a.trade ?? null, stopPrice: a.stopPrice ?? null } : a,
     condition: p.condition ?? null,
+    alsoRequire: p.also?.length ? p.also : null,
     budgetUsd: p.budgetUsd ?? null,
     hedge: p.hedge ? { protects: p.hedge.protects, lossUsd: p.hedge.lossUsd } : null,
   } as ProposalInput;

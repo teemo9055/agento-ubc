@@ -22,10 +22,12 @@ const price = (tool: string) => {
 export function tweaksFor(agent: AgentId, p: Proposal): string[] {
   const a = p.action;
   const out: string[] = [];
+  // A second, independent source is worth offering even when the move already has a check.
+  const oracleChecked = [p.condition, ...(p.also ?? [])].some((c) => c?.metric === "oracle_price");
   const can = (tool: string) => TOOLKIT[agent].research.includes(tool) && !p.research.some((r) => r.tool === tool);
   if (a?.kind === "prediction_order" && a.trade !== "sell") {
     const coin = Object.keys(FEEDS).find((s) => a.symbol.toLowerCase().includes(s.replace(/usd$/, "")));
-    if (coin && can("oracle_price") && !p.condition) out.push(`Only if Chainlink agrees ($${price("oracle_price")})`);
+    if (coin && can("oracle_price") && !oracleChecked) out.push(`Only if Chainlink agrees ($${price("oracle_price")})`);
     if (can("odds_history")) out.push(`Check the odds history first ($${price("odds_history")})`);
     if (a.quantity > 2) out.push(`Make it ${Math.max(1, Math.round(a.quantity / 2))} contracts`);
     if (!p.hedge && a.maxPrice > 0.05) out.push(`Only if it drops to ${Math.round((a.maxPrice - 0.03) * 100)}¢`);
@@ -33,7 +35,7 @@ export function tweaksFor(agent: AgentId, p: Proposal): string[] {
     out.push(`Ask ${Math.min(99, Math.round(a.maxPrice * 100) + 2)}¢ instead`);
     if (a.quantity > 1) out.push(`Sell only ${Math.max(1, Math.round(a.quantity / 2))}`);
   } else if (a?.kind === "spot_order") {
-    if (can("oracle_price") && FEEDS[a.symbol] && !p.condition) out.push(`Only if Chainlink agrees ($${price("oracle_price")})`);
+    if (can("oracle_price") && FEEDS[a.symbol] && !oracleChecked) out.push(`Only if Chainlink agrees ($${price("oracle_price")})`);
     if (can("spot_candles")) out.push(`Check the trend first ($${price("spot_candles")})`);
     if (a.amountUsd > 2) out.push(`Make it $${Math.max(1, Math.round(a.amountUsd / 2))}`);
   } else if (a?.kind === "itinerary") {
