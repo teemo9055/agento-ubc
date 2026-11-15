@@ -230,11 +230,31 @@ export async function exploreTurn(agent: AgentId, chat: ChatMsg[], onTool: (note
         seen.push(out.data);
         content = out.data;
       }
-      messages.push({ role: "tool", tool_call_id: c.id, name: c.name, content: JSON.stringify(content).slice(0, 7000) });
+      messages.push({ role: "tool", tool_call_id: c.id, name: c.name, content: JSON.stringify(compact(content)).slice(0, 7000) });
     }
   }
-  if (usage.length === 0) return rulesTurn(agent, chat, onTool, proposalId);
+  if (usage.length === 0) {
+    const r = await rulesTurn(agent, chat, onTool, proposalId);
+    return { ...r, text: `The AI model didn't answer, so this is a quick rule-based reply. ${r.text}` };
+  }
   return { text: proposal ? proposal.why : "I looked into it but couldn't finish the answer. Try asking more specifically.", tools, proposal, suggestions: [], usage };
+}
+
+/** Tool results without empty fields, long decimals or millisecond timestamps: same facts, fewer tokens. */
+export function compact(v: unknown, depth = 0): unknown {
+  if (v == null || depth > 10) return undefined;
+  if (typeof v === "number") return Number.isInteger(v) ? v : Number(v.toPrecision(6));
+  if (typeof v === "string") return /^\d{4}-\d\d-\d\dT\d\d:\d\d:\d\d(\.\d+)?Z$/.test(v) ? v.replace(/:\d\d(\.\d+)?Z$/, "Z") : v;
+  if (Array.isArray(v)) return v.map((x) => compact(x, depth + 1) ?? null);
+  if (typeof v === "object") {
+    const out: Record<string, unknown> = {};
+    for (const [k, x] of Object.entries(v as Record<string, unknown>)) {
+      const c = compact(x, depth + 1);
+      if (c !== undefined && !(Array.isArray(c) && c.length === 0)) out[k] = c;
+    }
+    return out;
+  }
+  return v;
 }
 
 function noteFor(tool: string, args: Record<string, unknown>) {
@@ -257,6 +277,25 @@ export function stopsIn(text: string): string[] {
   return parts.length >= 2 ? parts.slice(0, 6) : [];
 }
 
+/** What the user asked for, read from plain words: amounts, sizes, price limits, direction. */
+export function intentOf(text: string) {
+  const t = text.toLowerCase();
+  const dollars = t.match(/\$\s?(\d+(?:\.\d+)?)|(\d+(?:\.\d+)?)\s?(?:usd|dollars?|bucks)\b/);
+  const contracts = t.match(/(\d+)\s*(?:contracts?|shares?)\b/);
+  const cents = t.match(/(?:under|below|at most|max|≤|<=|up to|for)\s*(\d{1,2})\s?(?:¢|c\b|cents?)/) ?? t.match(/(\d{1,2})\s?(?:¢|cents?)/);
+  return {
+    budgetUsd: dollars ? Number(dollars[1] ?? dollars[2]) : undefined,
+    quantity: contracts ? Number(contracts[1]) : undefined,
+    maxPrice: cents ? Number(cents[1]) / 100 : undefined,
+    sell: /\b(sell|close|exit|take profit|cash out|dump)\b/.test(t),
+    positions: /\b(my )?(positions?|holdings?|what (do )?i (hold|own))\b/.test(t),
+    // Only explicit asks flip to NO; "below" or "fall" depend on how the contract is worded.
+    no: /\b(won'?t|will not|bet against|buy no|on no|no side)\b/.test(t),
+  };
+}
+
+const failText = (v: { error: string } | { proposal: Proposal }) => ("error" in v ? ` I couldn't set up a move: ${v.error.split(". ")[0]}.` : "");
+
 async function rulesTurn(agent: AgentId, chat: ChatMsg[], onTool: (note: string) => void, pid: string): Promise<TurnResult> {
   const userText = [...chat].reverse().find((m) => m.role === "user")?.text ?? "";
   const accept = /^(yes|yep|ok|sure|do it|set it up)/i.test(userText.trim());
@@ -264,6 +303,30 @@ async function rulesTurn(agent: AgentId, chat: ChatMsg[], onTool: (note: string)
   if (accept && prior) return { text: "Great: review the work order below and approve it when you're ready.", tools: [], proposal: prior, suggestions: [], usage: [] };
   const task = chat.filter((m) => m.role === "user").map((m) => m.text).join(" ");
   const tools: ToolCall[] = [];
+  const want = intentOf(userText);
+
+  // "Sell my calmest position" / "what do I hold?"
+  if ((agent === "inso" || agent === "trado") && (want.positions || (want.sell && agent === "inso"))) {
+    onTool("Checking your positions");
+    const out = await runFreeTool("my_positions", { sort: "calmest" });
+    tools.push(out.call);
+    const held = (out.data as { positions?: (import("./exchange").Position & { swing24h: number | null })[]; note?: string })?.positions ?? [];
+    if (!out.call.ok) return { text: "I couldn't read your positions right now.", tools, suggestions: [], usage: [] };
+    if (!held.length) return { text: (out.data as { note?: string }).note ?? "You don't hold any prediction contracts right now.", tools, suggestions: ["BTC markets"], usage: [] };
+    const list = held.slice(0, 4).map((p) => `${p.label} ${p.outcome.toUpperCase()} ×${p.quantity}${p.swing24h != null ? ` (moved ${p.swing24h}¢ today)` : ""}`).join("; ");
+    const pick = held.find((p) => p.available > 0 && p.sellPrice != null);
+    if (!want.sell || !pick) return { text: `You hold: ${list}.`, tools, suggestions: pick ? [`Sell ${pick.label}`, "Not now"] : [], usage: [] };
+    const v = await validateProposal(agent, {
+      title: `Sell ${pick.label}`.slice(0, 60),
+      why: `Calmest of your positions${pick.swing24h != null ? `: it moved ${pick.swing24h}¢ in 24h` : ""}.`,
+      ask: `Sell ${pick.available} ${pick.outcome.toUpperCase()} at ${Math.round(pick.sellPrice! * 100)}¢ or more?`,
+      research: [],
+      action: { kind: "prediction_order", eventTicker: pick.eventTicker, symbol: pick.symbol, label: pick.label.slice(0, 60), side: pick.outcome, trade: "sell", orderType: "limit", maxPrice: want.maxPrice ?? pick.sellPrice!, stopPrice: null, quantity: want.quantity ?? pick.available },
+      condition: null,
+      budgetUsd: null,
+    }, pid);
+    return { text: `You hold: ${list}. The calmest is ${pick.label}.${failText(v)}`, tools, proposal: "proposal" in v ? v.proposal : undefined, suggestions: ["proposal" in v ? "Yes, set it up" : "BTC markets", "Not now"], usage: [] };
+  }
 
   if (agent === "travo") {
     const stops = stopsIn(userText).length ? stopsIn(userText) : stopsIn(task);
@@ -278,7 +341,7 @@ async function rulesTurn(agent: AgentId, chat: ChatMsg[], onTool: (note: string)
       condition: null,
       budgetUsd: null,
     }, pid);
-    return { text: "Here's a plan for that drive.", tools, proposal: "proposal" in v ? v.proposal : undefined, suggestions: ["Yes, set it up", "Max 5 hours a day", "Not now"], usage: [] };
+    return { text: "proposal" in v ? "Here's a plan for that drive." : `I couldn't plan that drive.${failText(v)}`, tools, proposal: "proposal" in v ? v.proposal : undefined, suggestions: ["Yes, set it up", "Max 5 hours a day", "Not now"], usage: [] };
   }
 
   if (agent === "trado") {
@@ -288,17 +351,20 @@ async function rulesTurn(agent: AgentId, chat: ChatMsg[], onTool: (note: string)
     tools.push(out.call);
     const q = out.data as gemini.SpotQuote;
     if (!out.call.ok) return { text: `I couldn't read ${sym} right now.`, tools, suggestions: [], usage: [] };
-    const limit = Number((q.last * 0.99).toPrecision(5));
+    const side = want.sell ? "sell" : "buy";
+    const coin = sym.replace(/usd$/, "").toUpperCase();
+    const limit = Number((q.last * (side === "buy" ? 0.99 : 1.01)).toPrecision(5));
+    const amount = Math.min(100, Math.max(1, want.budgetUsd ?? 10));
     const v = await validateProposal(agent, {
-      title: `Buy ${sym.replace(/usd$/, "").toUpperCase()} on a 1% dip`,
-      why: `${out.call.summary}. A limit 1% below market only fills on a dip.`,
-      ask: `Buy $10 of ${sym.replace(/usd$/, "").toUpperCase()} at $${limit} or less, after checking the hourly trend?`,
-      research: [{ tool: "spot_candles", args: { symbol: sym, tf: "1hr" }, label: "Hourly candles", why: "trend before buying" }],
-      action: { kind: "spot_order", symbol: sym, side: "buy", limitPrice: limit, amountUsd: 10 },
+      title: side === "buy" ? `Buy ${coin} on a 1% dip` : `Sell ${coin} on a 1% rise`,
+      why: `${out.call.summary}. A limit 1% ${side === "buy" ? "below" : "above"} market only fills on a ${side === "buy" ? "dip" : "bounce"}.`,
+      ask: `${side === "buy" ? "Buy" : "Sell"} $${amount} of ${coin} at ${side === "buy" ? "≤" : "≥"} $${limit}, after checking the hourly trend?`,
+      research: [{ tool: "spot_candles", args: { symbol: sym, tf: "1hr" }, label: "Hourly candles", why: `trend before ${side === "buy" ? "buying" : "selling"}` }],
+      action: { kind: "spot_order", symbol: sym, side, limitPrice: limit, amountUsd: amount },
       condition: null,
-      budgetUsd: null,
+      budgetUsd: want.budgetUsd ?? null,
     }, pid);
-    return { text: `${out.call.summary}.`, tools, proposal: "proposal" in v ? v.proposal : undefined, suggestions: ["Yes, set it up", "Make it $5", "Not now"], usage: [] };
+    return { text: `${out.call.summary}.${failText(v)}`, tools, proposal: "proposal" in v ? v.proposal : undefined, suggestions: ["Yes, set it up", "Make it $5", "Not now"], usage: [] };
   }
 
   const terms = gemini.searchTerms(task);
@@ -312,21 +378,28 @@ async function rulesTurn(agent: AgentId, chat: ChatMsg[], onTool: (note: string)
   const soon = (c: { expiry?: string }) => Boolean(c.expiry && Date.parse(c.expiry) - Date.now() < 30 * 60_000);
   const pick = events.flatMap((e) => e.contracts.filter((c) => c.symbol && (c.ask ?? c.last) != null && !soon(c)).map((c) => ({ e, c }))).sort((a, b) => Math.abs((a.c.ask ?? a.c.last)! - 0.5) - Math.abs((b.c.ask ?? b.c.last)! - 0.5))[0];
   if (!pick) return { text: `No active markets match “${terms[0] ?? task}”. Try a ticker like BTC or a team name.`, tools, suggestions: ["BTC markets", "Fed rate markets"], usage: [] };
-  const px = (pick.c.ask ?? pick.c.last)!;
-  const max = Math.min(0.99, Math.round((px + 0.02) * 100) / 100);
+  const side = want.no ? "no" : "yes";
+  const yes = (pick.c.ask ?? pick.c.last)!;
+  const px = side === "yes" ? yes : Math.round((1 - yes) * 100) / 100;
+  const max = want.maxPrice ?? Math.min(0.99, Math.max(0.01, Math.round((px + 0.02) * 100) / 100));
+  const qty = want.quantity ?? (want.budgetUsd ? Math.max(1, Math.floor(want.budgetUsd / max)) : 5);
+  const S = side.toUpperCase();
   const v = await validateProposal(agent, {
-    title: `Buy YES: ${pick.c.label}`.slice(0, 60),
-    why: `${pick.e.title}: “${pick.c.label}” trades near ${Math.round(px * 100)}¢. I'd check the recent odds and flow first.`,
-    ask: `Buy 5 YES at ${Math.round(max * 100)}¢ or less if the price is still there after checking history and flow?`,
+    title: `Buy ${S}: ${pick.c.label}`.slice(0, 60),
+    why: `${pick.e.title}: ${S} on “${pick.c.label}” trades near ${Math.round(px * 100)}¢. I'd check the recent odds and flow first.`,
+    ask: `Buy ${qty} ${S} at ${Math.round(max * 100)}¢ or less if the price is still there after checking history and flow?`,
     research: [
       { tool: "odds_history", args: { symbol: pick.c.symbol, tf: "15m" }, label: "Odds history", why: "is it trending?" },
       { tool: "trade_tape", args: { symbol: pick.c.symbol }, label: "Trade tape", why: "who's buying" },
     ],
-    action: { kind: "prediction_order", eventTicker: pick.e.ticker, symbol: pick.c.symbol, label: pick.c.label.slice(0, 60), side: "yes", orderType: "limit", maxPrice: max, stopPrice: null, quantity: 5 },
+    action: { kind: "prediction_order", eventTicker: pick.e.ticker, symbol: pick.c.symbol, label: pick.c.label.slice(0, 60), side, orderType: "limit", maxPrice: max, stopPrice: null, quantity: qty },
     condition: null,
-    budgetUsd: null,
+    budgetUsd: want.budgetUsd ?? null,
   }, pid);
-  return { text: `${out.call.summary}. Closest to a coin flip: ${pick.e.title} · ${pick.c.label} at ${Math.round(px * 100)}¢.`, tools, proposal: "proposal" in v ? v.proposal : undefined, suggestions: ["Yes, set it up", "Make it 2 contracts", "Not now"], usage: [] };
+  return { text: `${out.call.summary}. Closest to a coin flip: ${pick.e.title} · ${pick.c.label}, ${S} at ${Math.round(px * 100)}¢.${failText(v)}`, tools, proposal: "proposal" in v ? v.proposal : undefined, suggestions: ["Yes, set it up", "Make it 2 contracts", "Not now"], usage: [] };
 }
 
 export const proposalLine = (p: Proposal) => [p.action ? describeAction(p.action) : null, p.condition ? `if ${conditionText(p.condition)}` : null].filter(Boolean).join(" ");
+
+/** For measuring prompt size in tests. */
+export const __promptForTest = (agent: AgentId) => ({ system: system(agent), tools: toolSpecs(agent) });
