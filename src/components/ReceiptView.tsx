@@ -48,7 +48,7 @@ function Hash({ h }: { h?: string }) {
   );
 }
 
-function Check() {
+export function Check() {
   return (
     <svg width="22" height="22" viewBox="0 0 24 24" aria-hidden className="text-good">
       <circle cx="12" cy="12" r="11" fill="currentColor" opacity="0.12" />
@@ -62,63 +62,99 @@ export function ReceiptView({ run }: { run: Run }) {
   const cancelled = r.status === "cancelled";
   return (
     <section id="receipt" className="paper relative rounded-2xl border border-line bg-panel p-5 sm:p-8" aria-label="Receipt">
-      <div className="perf no-print absolute inset-x-6 -top-[7px] rotate-180" aria-hidden />
-      <div className="flex flex-wrap items-start justify-between gap-4">
+      <div className="flex flex-wrap items-start justify-between gap-4 border-b border-line pb-5">
         <div>
-          <div className={`flex items-center gap-2 text-[13px] font-medium ${cancelled ? "text-ink-2" : "text-good"}`}>
+          <div className="flex items-center gap-2">
             <AgentIcon agent={run.agent} size={30} outfit={runOutfit(run)} mood={cancelled ? "sad" : "happy"} />
-            {!cancelled && <Check />}
-            {cancelled ? "Job cancelled" : "Transaction confirmed"}
+            <span className="text-[20px] font-semibold tracking-tight">Receipt</span>
+            <span className={`inline-flex h-[22px] items-center gap-1 rounded-md px-2 text-[12px] font-semibold ${cancelled ? "bg-[#f1f0ec] text-ink-2" : r.mode === "demo" ? "bg-warn/20 text-warn-ink" : "bg-good/10 text-good"}`}>
+              {cancelled ? "Job cancelled" : r.mode === "demo" ? "Practice · not a real payment" : "Paid"}
+            </span>
           </div>
-          <div className="mt-1 text-[12px] text-ink-3">Total paid</div>
-          <motion.div initial={{ opacity: 0, y: 6 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: 0.15 }} className="num text-5xl font-semibold tracking-tight" data-testid="receipt-total">
+          <div className="mt-3 text-[12px] text-ink-3">Total paid</div>
+          <div className="num text-[40px] font-semibold leading-none tracking-tight" data-testid="receipt-total">
             {fmt(r.total)}
             <span className="ml-2 text-lg font-normal text-ink-3">USDC</span>
-          </motion.div>
-          {r.mode === "demo" && <div className="mt-1 text-[12px] text-warn-ink">Demo rail: settlement simulated, no onchain transactions.</div>}
+          </div>
         </div>
-        <div className="text-right text-[12px] text-ink-3">
-          <div className="font-mono">{r.receiptId}</div>
-          <div>{dateTime(r.issuedAt)}</div>
+        <div className="text-right text-[12.5px]">
+          <dl className="grid grid-cols-[auto_auto] justify-end gap-x-3 gap-y-0.5">
+            <dt className="text-ink-3">Receipt no.</dt>
+            <dd className="font-mono">{r.receiptId}</dd>
+            <dt className="text-ink-3">Issued</dt>
+            <dd>{dateTime(r.issuedAt)}</dd>
+            <dt className="text-ink-3">Job</dt>
+            <dd className="font-mono">{r.workOrderId}</dd>
+          </dl>
           <div className="no-print mt-3 flex flex-wrap justify-end gap-2">
-            <Button variant="ghost" onClick={() => window.print()}>
+            <Button variant="ghost" className="h-9" onClick={() => window.print()}>
               Print / PDF
             </Button>
-            <Button variant="ghost" onClick={() => download(`${r.receiptId}.json`, JSON.stringify(r, null, 2), "application/json")}>
-              JSON
-            </Button>
-            <Button variant="ghost" onClick={() => download(`${r.receiptId}.csv`, receiptCsv(r), "text/csv")}>
+            <Button variant="ghost" className="h-9" onClick={() => download(`${r.receiptId}.csv`, receiptCsv(r), "text/csv")}>
               CSV
             </Button>
+            <Button variant="ghost" className="h-9" onClick={() => download(`${r.receiptId}.json`, JSON.stringify(r, null, 2), "application/json")}>
+              JSON
+            </Button>
           </div>
         </div>
       </div>
 
-      <div className="mt-6 flex flex-wrap items-center justify-between gap-3 rounded-xl bg-agent-soft/70 p-3 text-[13px]">
+      <div className="mt-5 grid gap-4 text-[12.5px] sm:grid-cols-3">
         <div>
-          <div className="text-ink-3">{r.agent.name} delivered</div>
-          <div className="font-medium">{r.deliverable.summary}</div>
-          {run.deliverable?.notes && run.deliverable.notes.length > 0 && (
-            <ul className="mt-1.5 space-y-0.5 text-[12.5px] text-ink-2">
-              {run.deliverable.notes.map((n) => (
-                <li key={n} className="flex gap-1.5">
-                  <span aria-hidden className="text-agent-ink">•</span>
-                  {n}
-                </li>
-              ))}
-            </ul>
-          )}
-          <div className="text-[12px] text-ink-3">
-            {r.deliverable.method} · task: “{r.task}”
-          </div>
+          <div className="text-[11.5px] font-semibold uppercase tracking-wide text-ink-3">Billed to</div>
+          <div className="mt-1">Your wallet</div>
+          <div className="break-all font-mono text-[10.5px] text-ink-3">{r.client.wallet}</div>
+        </div>
+        <div>
+          <div className="text-[11.5px] font-semibold uppercase tracking-wide text-ink-3">Work done by</div>
+          <div className="mt-1">{r.agent.name}, an agento agent</div>
+          <div className="break-all font-mono text-[10.5px] text-ink-3">{r.agent.wallet}</div>
+        </div>
+        <div>
+          <div className="text-[11.5px] font-semibold uppercase tracking-wide text-ink-3">Paid with</div>
+          <div className="mt-1">USDC on {r.chain.name}</div>
+          <div className="text-ink-3">{r.mode === "demo" ? "Practice mode: nothing settled onchain" : "Pay-per-request (x402) from a spend-limited vault"}</div>
         </div>
       </div>
 
-      <h3 className="mt-7 text-[12px] font-semibold uppercase tracking-wide text-ink-3">Where your money went</h3>
+      <div className="mt-5 rounded-xl bg-agent-soft/70 p-3 text-[13px]">
+        <div className="text-[12px] text-ink-3">For</div>
+        <div className="font-medium">“{r.task}”</div>
+        <div className="mt-1.5 text-ink-2">{r.deliverable.summary}</div>
+        {run.deliverable?.notes && run.deliverable.notes.length > 0 && (
+          <ul className="mt-1 list-disc space-y-0.5 pl-4 text-[12.5px] text-ink-2">
+            {run.deliverable.notes.map((n) => (
+              <li key={n}>{n}</li>
+            ))}
+          </ul>
+        )}
+      </div>
+
+      {r.order && (
+        <>
+          <h3 className="mt-7 text-[12px] font-semibold uppercase tracking-wide text-ink-3">Exchange order</h3>
+          <div className="row mt-2 rounded-lg border border-line p-3 text-[12.5px]">
+            <div className="font-medium">{r.order.record.detail}</div>
+            <div className="num mt-0.5 text-ink-2">
+              {r.order.record.venue === "gemini" ? "Gemini" : "Gemini test exchange"} · order #{r.order.record.orderId} · {r.order.status}
+              {r.order.filled != null && r.order.record.quantity != null ? ` · ${r.order.filled} of ${r.order.record.quantity} filled` : ""}
+            </div>
+            <div className="mt-1 text-[11.5px] text-ink-3">Paid on the exchange, not from the vault, so it isn&apos;t in the total above.</div>
+            {r.order.anchorTx && (
+              <div className="mt-1 text-[11.5px] text-ink-3">
+                Order fingerprint on Arc: <Hash h={r.order.anchorTx} />
+              </div>
+            )}
+          </div>
+        </>
+      )}
+
+      <h3 className="mt-7 text-[12px] font-semibold uppercase tracking-wide text-ink-3">Items</h3>
       <table className="mt-2 w-full text-[12.5px]">
         <thead className="text-left text-[12px] text-ink-3">
           <tr className="border-b border-line">
-            <th className="py-2 font-medium">Step · purpose</th>
+            <th className="py-2 font-medium">Description</th>
             <th className="py-2 font-medium">Payee</th>
             <th className="hidden py-2 font-medium sm:table-cell">Rail</th>
             <th className="py-2 text-right font-medium">Approved</th>
@@ -149,7 +185,7 @@ export function ReceiptView({ run }: { run: Run }) {
           {r.lines.length === 0 && (
             <tr>
               <td colSpan={5} className="py-3 text-ink-3">
-                Nothing was paid.
+                No paid data or services were used.
               </td>
             </tr>
           )}
@@ -190,7 +226,7 @@ export function ReceiptView({ run }: { run: Run }) {
         )}
       </div>
 
-      <h3 className="mt-7 text-[12px] font-semibold uppercase tracking-wide text-ink-3">Approvals and decisions</h3>
+      <h3 className="mt-7 text-[12px] font-semibold uppercase tracking-wide text-ink-3">Approval trail</h3>
       <ol className="mt-2 space-y-1.5 text-[12.5px]">
         {r.decisions.map((d) => (
           <li key={d.id} className="row flex flex-wrap gap-x-2">
@@ -238,6 +274,9 @@ export function ReceiptView({ run }: { run: Run }) {
           <dd className="num">{r.job.durationSec}s</dd>
         </div>
       </dl>
+      <p className="mt-5 text-[11.5px] leading-relaxed text-ink-3">
+        Amounts are in USDC. Built from this job&apos;s event log{r.mode === "live" ? "; every payment can be checked on the Arc explorer with the transaction hashes above" : ""}. Keep the CSV or JSON for your books.
+      </p>
     </section>
   );
 }

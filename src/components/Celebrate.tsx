@@ -122,7 +122,7 @@ export function FinishCard({ run, kind, onClose }: { run: Run; kind: "done" | "c
             <button
               type="button"
               onClick={() => {
-                document.getElementById("receipt")?.scrollIntoView({ behavior: "smooth", block: "start" });
+                window.location.href = `/runs/${run.id}/receipt`;
                 onClose();
               }}
               className="pix-press mt-3 inline-flex h-10 w-full items-center justify-center gap-2 rounded-lg border-[1.5px] border-ink bg-agent text-sm font-semibold text-agent-on"

@@ -44,8 +44,18 @@ const STOP = new Set(["the", "and", "for", "how", "what", "will", "odds", "marke
 export const SANDBOX_BASE = "https://api.sandbox.gemini.com";
 export const PROD_BASE = BASE;
 
+/** A lookup failed in a way the user can't fix by rephrasing: the exchange is slow or down. */
+export class MarketDataDown extends Error {}
+
 async function get<T>(path: string, empty?: T, base = BASE): Promise<T> {
-  const res = await fetch(`${base}${path}`, { headers: { accept: "application/json" }, cache: "no-store" });
+  // Gemini's public API answers 5xx or 429 now and then; two quick retries cover almost all of them.
+  let res: Response | undefined;
+  for (let attempt = 0; attempt < 3; attempt++) {
+    res = await fetch(`${base}${path}`, { headers: { accept: "application/json" }, cache: "no-store", signal: AbortSignal.timeout(12_000) }).catch(() => undefined);
+    if (res && res.status < 500 && res.status !== 429) break;
+    if (attempt < 2) await new Promise((r) => setTimeout(r, 400 * (attempt + 1)));
+  }
+  if (!res || res.status >= 500 || res.status === 429) throw new MarketDataDown("Gemini's market data isn't answering right now");
   if (!res.ok) {
     if (empty !== undefined && res.status === 400) {
       const body = (await res.json().catch(() => ({}))) as { reason?: string };
@@ -85,7 +95,8 @@ const toEvent = (e: any): MarketEvent => ({
 });
 
 export async function searchEvents(query: string, limit = 5, base = BASE): Promise<MarketEvent[]> {
-  const q = new URLSearchParams({ status: "active", limit: String(limit) });
+  // Gemini refuses larger pages on search.
+  const q = new URLSearchParams({ status: "active", limit: String(Math.min(Math.max(1, limit), 6)) });
   if (query) q.set("search", query);
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const r = await get<{ data: any[] }>(`/v1/prediction-markets/events?${q}`, undefined, base);

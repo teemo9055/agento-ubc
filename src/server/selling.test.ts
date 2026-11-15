@@ -89,3 +89,30 @@ describe("fees stay inside the budget", () => {
     expect(r.proposal.adjustments?.join(" | ")).toMatch(/Fee up to \$0\.04 \(0\.40%/);
   });
 });
+
+describe("hedging an everyday cost", () => {
+  const hedge = (over: Record<string, unknown> = {}) => ({
+    title: "Cover a BTC drop",
+    why: "Pays if BTC ends up",
+    ask: "placeholder",
+    research: [],
+    action: { kind: "prediction_order", eventTicker: "BTC-1", symbol: "GEMI-BTC-2", label: "Higher", side: "yes", orderType: "limit", maxPrice: 0.2, stopPrice: null, quantity: 1 },
+    condition: null,
+    budgetUsd: null,
+    hedge: { protects: "a pricier ride", lossUsd: 30 },
+    ...over,
+  });
+  it("sizes the order so the payout covers the loss, and states cost vs payout", async () => {
+    const r = await validateProposal("inso", hedge(), "h1");
+    if (!("proposal" in r)) throw new Error(r.error);
+    // 30 / (1 - 0.20) = 37.5 -> 38 contracts: costs $7.60, pays $38, nets $30.40.
+    expect(r.proposal.action).toMatchObject({ quantity: 38 });
+    expect(r.proposal.hedge).toEqual({ protects: "a pricier ride", lossUsd: 30, cost: 7.6, payout: 38 });
+    expect(r.proposal.ask).toBe("Pay up to $7.60 now; get $38 back if “Higher” happens?");
+  });
+  it("a budget wins over full cover", async () => {
+    const r = await validateProposal("inso", hedge({ budgetUsd: 5, action: { kind: "prediction_order", eventTicker: "BTC-1", symbol: "GEMI-BTC-2", label: "Higher", side: "yes", orderType: "limit", maxPrice: 0.2, stopPrice: null, quantity: 100 } }), "h2");
+    if (!("proposal" in r)) throw new Error(r.error);
+    expect(r.proposal.hedge).toMatchObject({ cost: 5, payout: 25 });
+  });
+});

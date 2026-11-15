@@ -1,3 +1,4 @@
+import { outcomeOf } from "./outcome";
 import { sum } from "./money";
 import { paidInUsdc, type AgentId, type Run, type RunStatus } from "./types";
 import { outfitFor, type Outfit } from "./outfit";
@@ -29,6 +30,13 @@ export interface RunSummary {
   move?: string;
   /** The move's exchange order, for lists: open, filled, cancelled… */
   order?: { status: string; filled?: number; quantity?: number; venue: string };
+  /** Where the job stands, in one plain line. */
+  outcome: { tone: "good" | "warn" | "bad" | "info"; headline: string };
+  saved: boolean;
+  /** Set when this job is a step of a plan (the plan's job id). */
+  parentId?: string;
+  /** Set when a plan was started from this job's chat. */
+  plan?: { title: string; status: string; done: number; total: number };
 }
 
 export function summarize(r: Run): RunSummary {
@@ -56,6 +64,10 @@ export function summarize(r: Run): RunSummary {
     lastMessage: r.chat?.[r.chat.length - 1]?.text.slice(0, 140),
     move: r.proposal?.title,
     order: r.order && { status: r.order.status, filled: r.order.filledQuantity, quantity: r.order.quantity, venue: r.order.venue },
+    outcome: (({ tone, headline }) => ({ tone, headline }))(outcomeOf(r)),
+    saved: Boolean(r.saved),
+    parentId: r.parentId,
+    plan: r.plan && r.plan.status !== "proposed" ? { title: r.plan.title, status: r.plan.status, done: r.plan.steps.filter((s) => s.status === "done").length, total: r.plan.steps.length } : undefined,
   };
 }
 

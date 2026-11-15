@@ -18,6 +18,8 @@ export function reduce(run: Run | null, e: SeqEvent): Run | null {
       return { ...run, thinking: e.note };
     case "order.updated":
       return { ...run, order: e.order };
+    case "run.saved":
+      return { ...run, saved: e.saved };
     case "plan.updated":
       return { ...run, plan: e.plan };
     case "run.resumed":

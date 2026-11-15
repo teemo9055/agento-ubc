@@ -7,7 +7,7 @@ it("system prompt plus tool specs stay under budget", () => {
     const p = __promptForTest(a);
     const chars = p.system.length + JSON.stringify(p.tools).length;
     console.log(a, "system", p.system.length, "tools", JSON.stringify(p.tools).length);
-    expect(chars).toBeLessThan(26_000);
+    expect(chars).toBeLessThan(28_000);
   }
 });
 

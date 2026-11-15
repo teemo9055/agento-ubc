@@ -1,18 +1,15 @@
 import { devices, expect, test } from "@playwright/test";
+import { openDetails, prefs } from "./helpers";
 
 test.use({ ...devices["iPhone 14"], browserName: "chromium" });
 
 async function newDemoJob(page: import("@playwright/test").Page, task: string, faults: string[] = []) {
+  await prefs(page, faults);
   await page.goto("/new");
   await page.fill("#task", task);
-  await page.getByRole("radio", { name: "Demo rail" }).click();
-  if (faults.length) {
-    await page.getByText("Test mode").click();
-    for (const f of faults) await page.locator("label", { hasText: f }).click();
-  }
   await page.getByRole("button", { name: /Ask/ }).click();
   await page.getByTestId("adopt-move").click({ timeout: 30_000 });
-  await expect(page.getByTestId("card-price")).toBeVisible({ timeout: 30_000 });
+  await expect(page.getByTestId("review-card")).toBeVisible({ timeout: 30_000 });
 }
 
 test("bottom tab bar navigates", async ({ page }) => {
@@ -27,6 +24,7 @@ test("bottom tab bar navigates", async ({ page }) => {
 
 test("Edit on a card opens the chat focused on that card", async ({ page }) => {
   await newDemoJob(page, "BTC odds focus test");
+  await openDetails(page);
   await page.getByTestId("card-price").click();
   await expect(page.getByRole("tab", { name: /Chat/ })).toHaveAttribute("aria-selected", "true");
   await expect(page.getByTestId("chat-focus")).toContainText("Price");
@@ -66,7 +64,7 @@ test("no page is wider than the phone", async ({ page }) => {
   await page.getByTestId("open-approve").click();
   await page.getByTestId("approve").click();
   await expect(page.getByTestId("receipt-total")).toBeVisible({ timeout: 85_000 });
-  for (const path of ["/", "/new", "/agents", job]) {
+  for (const path of ["/", "/new", "/agents", "/settings", job, `${job}/receipt`]) {
     await page.goto(path);
     await page.waitForTimeout(800);
     const over = await page.evaluate(() => document.documentElement.scrollWidth - document.documentElement.clientWidth);

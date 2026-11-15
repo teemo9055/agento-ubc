@@ -136,6 +136,8 @@ export type RunStatus = "exploring" | "draft" | "funding" | "running" | "done" |
 
 /** A free lookup the agent made while exploring. */
 export interface ToolCall {
+  /** The source was down (not a bad question): worth trying again. */
+  down?: boolean;
   tool: string;
   args: Record<string, unknown>;
   summary: string;
@@ -212,6 +214,8 @@ export interface Proposal {
   market?: { ask: number | null; bid: number | null; closesAt?: string };
   /** What this version changed compared with the move before it, e.g. "+ Odds history", "$5 → $10". */
   changes?: string[];
+  /** The order is insurance against something: what it protects, and the numbers, computed by code. */
+  hedge?: { protects: string; lossUsd: number; cost: number; payout: number };
   /** Changes code made to the model's move (rounding, budget), shown to the user. */
   adjustments?: string[];
 }
@@ -275,6 +279,12 @@ export interface Run {
   chat?: ChatMsg[];
   /** The plan started from this chat, with each step's live status. */
   plan?: Plan;
+  /** What the steps before this one in the plan reported, passed along by their agents. */
+  handoff?: string;
+  /** Kept by the user to find and run again. */
+  saved?: boolean;
+  /** This job repeats that earlier job. */
+  repeatOf?: string;
   /** This job is one step of a plan started in that job's chat. */
   parentId?: string;
   stepId?: string;

@@ -23,9 +23,10 @@ import { aiSummary } from "./agents/ai-planning";
 import { aiEnabled, type AiUsage } from "./ai";
 import { exploreTurn } from "./explore";
 import { cancelOrder, refreshOrder } from "./exchange";
-import { stillTradable } from "./tools";
+import { stillTradable, toProposalInput, validateProposal } from "./tools";
 import { ensureGatewayFunds, GatewayFundsError } from "./nanopay";
 import { anchorOrder, canAnchor } from "./anchor";
+import { suggestionsFor } from "./suggest";
 import { recordOrder } from "./knowledge";
 import { aiEditMove } from "./edit-move";
 import { offVault, paidInUsdc, type ChatMsg, type Plan, type PlanStep, type Proposal } from "@/lib/types";
@@ -36,7 +37,7 @@ import { adapterFor, PaymentError } from "./payments";
 import { SELLERS } from "./sellers";
 import { PRODUCTS } from "./x402";
 
-const DEFAULT_THRESHOLD = 250_000n; // 0.25 USDC
+import { limits } from "./settings";
 const BUFFER_PCT = 20n;
 const REAPPROVAL_TIMEOUT_MS = Number(process.env.REAPPROVAL_TIMEOUT_MS ?? 120_000);
 const FAULT_TIMEOUT_MS = Number(process.env.FAULT_TIMEOUT_MS ?? 8_000);
@@ -226,7 +227,7 @@ export async function createRun(input: CreateInput, opts: { wait?: boolean } = {
     lines: [],
     phases: [],
     decisions: [],
-    threshold: DEFAULT_THRESHOLD.toString(),
+    threshold: BigInt(Math.round(limits().bigSpendUsdc * 1e6)).toString(),
     cap: "0",
     client: (input.payerAddress && mode === "live" ? input.payerAddress : addresses.client) ?? "0x0000000000000000000000000000000000000000",
     agentWallet: addresses.agent ?? "0x0000000000000000000000000000000000000000",
@@ -317,10 +318,10 @@ async function agentReply(ctl: Ctl) {
     const r = await exploreTurn(ctl.run.agent, ctl.run.chat ?? [], (note) => emit(ctl, { type: "chat.thinking", note }), id());
     for (const u of r.usage) trackAi(ctl, "chat", u);
     if (r.usage.length) ctl.run = { ...ctl.run, planner: "ai" };
-    emit(ctl, { type: "chat.message", message: { id: id(), role: "agent", text: r.text, at: now(), tools: r.tools, facts: r.facts, unverified: r.unverified, proposal: r.proposal, plan: r.plan, suggestions: r.suggestions } });
+    emit(ctl, { type: "chat.message", message: { id: id(), role: "agent", text: r.text, at: now(), tools: r.tools, facts: r.facts, unverified: r.unverified, proposal: r.proposal, plan: r.plan, suggestions: suggestionsFor(ctl.run.agent, r.suggestions, { proposal: r.proposal, plan: Boolean(r.plan) }) } });
   } catch (e) {
     console.warn("chat failed", e);
-    emit(ctl, { type: "chat.message", message: { id: id(), role: "agent", text: "Something went wrong looking that up. Try again?", at: now() } });
+    emit(ctl, { type: "chat.message", message: { id: id(), role: "agent", text: "Something went wrong on my side before I could answer. Nothing was spent.", at: now(), suggestions: ["Try again"] } });
   } finally {
     chatBusy.delete(runId);
   }
@@ -463,6 +464,8 @@ export async function approve(runId: string, signed?: { txHash?: Hex }) {
     if (stale) throw new Error(stale);
   }
   const noVault = BigInt(ctl.run.cap) === 0n;
+  const jobMax = BigInt(Math.round(limits().maxJobUsdc * 1e6));
+  if (BigInt(ctl.run.cap) > jobMax) throw new Error(`This job would hold ${fmt(ctl.run.cap)} USDC, over your ${limits().maxJobUsdc} USDC per-job limit. Trim the paid lookups or raise the limit in Settings.`);
   if (ctl.run.payer === "passkey" && !signed?.txHash && !noVault) throw new Error("sign the funding with your passkey wallet first");
   emit(ctl, { type: "run.funding" });
   const hash = planHash(ctl.run);
@@ -1187,7 +1190,13 @@ async function advanceNow(parentId: string) {
     try {
       const child = await createRun({ agent: s.agent, task: s.proposal.ask, mode: ctl.run.mode, proposal: s.proposal, plannedBy: `plan in job ${parentId}` } as CreateInput);
       const cc = ctlOf(child.id);
-      emit(cc, { type: "workorder.updated", run: { ...cc.run, parentId, stepId: s.id } });
+      // The agents before this one pass along what they did, so this step starts with the full picture.
+      const handoff = steps
+        .slice(0, i)
+        .filter((x) => x.status === "done" && x.note)
+        .map((x) => `${AGENTS[x.agent].name}: ${x.proposal.title} → ${x.note}`)
+        .join(" · ");
+      emit(cc, { type: "workorder.updated", run: { ...cc.run, parentId, stepId: s.id, handoff: handoff || undefined } });
       Object.assign(s, { status: "running", runId: child.id, note: "Starting" });
       save();
       await approve(child.id);
@@ -1210,4 +1219,34 @@ async function advanceNow(parentId: string) {
     return;
   }
   if (!same(steps)) save();
+}
+
+// ---------- saved jobs and repeats ----------
+
+/** Star a job so it's easy to find and run again. */
+export function saveRun(runId: string, saved: boolean) {
+  const ctl = ctlOf(runId);
+  emit(ctl, { type: "run.saved", saved });
+  return ctl.run;
+}
+
+/**
+ * Runs a job again: the same move, checked against today's market and limits, as a fresh draft to approve.
+ * If the move no longer works (the contract closed, the price moved past a limit), it starts a chat on the same request.
+ */
+export async function rerun(runId: string) {
+  const src = ctlOf(runId).run;
+  const base = { agent: src.agent, task: src.task, mode: src.mode };
+  if (src.proposal && src.payer !== "passkey") {
+    const v = await validateProposal(src.agent, toProposalInput(src.proposal), id());
+    if ("proposal" in v) {
+      const run = await createRun({ ...base, proposal: v.proposal, plannedBy: "a saved job" } as CreateInput);
+      const cc = ctlOf(run.id);
+      emit(cc, { type: "workorder.updated", run: { ...cc.run, repeatOf: src.id } });
+      return { run: cc.run, fresh: true as const };
+    }
+    const run = await createRun(base as CreateInput, { wait: false });
+    return { run, fresh: false as const, why: v.error.split(". ")[0] };
+  }
+  return { run: await createRun(base as CreateInput, { wait: false }), fresh: false as const };
 }

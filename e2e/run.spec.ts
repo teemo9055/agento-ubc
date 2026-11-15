@@ -1,46 +1,28 @@
-import { expect, test, type Page } from "@playwright/test";
+import { expect, test } from "@playwright/test";
+import { draft, finished, openDetails, openReceipt, prefs, start } from "./helpers";
 
-/** Ask, then say yes to the agent's move: lands on the priced work order. */
-async function draft(page: Page, faults: string[] = [], task = "How have BTC odds moved today?", agent = "Inso") {
-  await page.goto("/new");
-  await page.getByRole("tab", { name: new RegExp(agent) }).click();
-  await page.fill("#task", task);
-  await page.getByRole("radio", { name: "Demo rail" }).click();
-  if (faults.length) {
-    await page.getByText("Test mode").click();
-    for (const f of faults) await page.locator("label", { hasText: f }).click();
-  }
-  await page.getByRole("button", { name: /Ask/ }).click();
-  await expect(page.getByTestId("move-card")).toBeVisible({ timeout: 30_000 });
-  await page.getByTestId("adopt-move").click();
-  await expect(page.getByTestId("card-price")).toBeVisible();
-}
-
-async function start(page: Page, faults: string[] = [], task = "How have BTC odds moved today?", agent = "Inso") {
-  await draft(page, faults, task, agent);
-  const approved = (await page.getByTestId("big-number").innerText()).replace(/USDC|\s/g, "");
-  await page.getByTestId("open-approve").click();
-  await page.getByTestId("approve").click();
-  return approved;
-}
-
-const receipt = (page: Page) => expect(page.getByTestId("receipt-total")).toBeVisible({ timeout: 60_000 });
+const receipt = finished;
 
 test("explore is free, then the approved move runs with no popup", async ({ page }) => {
+  await prefs(page);
   await page.goto("/new");
+  await expect(page.getByTestId("ask-status")).toContainText("Practice mode");
   await page.fill("#task", "What are BTC odds right now?");
-  await page.getByRole("radio", { name: "Demo rail" }).click();
   await page.getByRole("button", { name: /Ask/ }).click();
   await expect(page.getByTestId("msg-agent")).toBeVisible({ timeout: 30_000 });
   await expect(page.getByText("Exploring is free", { exact: true })).toBeVisible();
   await page.getByTestId("adopt-move").click();
-  await expect(page.getByText("Order limit · paid on the exchange")).toBeVisible();
+  await expect(page.getByTestId("review-cost")).toContainText("order");
+  // The graph and cost lines are there, but only when asked for.
+  await expect(page.getByTestId("card-price")).toHaveCount(0);
   await page.getByTestId("open-approve").click();
   await page.getByTestId("approve").click();
   await receipt(page);
   await expect(page.getByRole("dialog")).toHaveCount(0);
-  await expect(page.getByTestId("order-result")).toContainText(/Simulated/);
-  await expect(page.getByTestId("venue-badge").first()).toContainText("Simulation");
+  // One line says what happened to the order.
+  await expect(page.getByTestId("status-headline")).toContainText("Practice run: no order was sent");
+  await openReceipt(page);
+  await expect(page.getByText("Practice · not a real payment")).toBeVisible();
 });
 
 test("back to chat from the work order keeps the conversation", async ({ page }) => {
@@ -54,6 +36,7 @@ test("back to chat from the work order keeps the conversation", async ({ page })
 
 test("card edit happens in the chat: explains why it can't, offers alternatives, applies one", async ({ page }) => {
   await draft(page, [], "BTC odds");
+  await openDetails(page);
   await page.getByTestId("card-deliverable").click();
   await expect(page.getByTestId("chat-focus")).toContainText("Deliverable");
   await expect(page.getByTestId("card-deliverable")).toHaveAttribute("aria-pressed", "true");
@@ -70,6 +53,7 @@ test("card edit happens in the chat: explains why it can't, offers alternatives,
 
 test("graph steps are editable in the chat: focus a step, preview, apply", async ({ page }) => {
   await draft(page, [], "BTC odds step edit");
+  await openDetails(page);
   const step = page.getByTestId("phase-r1");
   // Centre it so the sticky approve bar isn't on top.
   await step.evaluate((e) => e.scrollIntoView({ block: "center" }));
@@ -90,7 +74,7 @@ test("re-approval can be edited to a smaller amount", async ({ page }) => {
   await page.getByTestId("reapprove-edit").click();
   await page.fill("#reamount", "0.04");
   await page.getByTestId("reapprove-edited").click();
-  await receipt(page);
+  await openReceipt(page);
   await expect(page.getByText("edited by user").first()).toBeVisible();
 });
 
@@ -100,7 +84,7 @@ test("price_increase opens re-approval; approve continues", async ({ page }) => 
   await expect(dlg).toBeVisible({ timeout: 30_000 });
   await expect(dlg.getByText("Seller asks more than approved")).toBeVisible();
   await page.getByTestId("reapprove").click();
-  await receipt(page);
+  await openReceipt(page);
   await expect(page.getByText("approved by user").first()).toBeVisible();
 });
 
@@ -108,7 +92,7 @@ test("approval_timeout counts as deny, then retry", async ({ page }) => {
   await start(page, ["Re-approval times out"]);
   await expect(page.getByRole("dialog", { name: "Approval timed out" })).toBeVisible({ timeout: 30_000 });
   await page.getByTestId("failure-retry").click();
-  await receipt(page);
+  await openReceipt(page);
   await expect(page.getByText("timed out by system")).toBeVisible();
 });
 
@@ -143,7 +127,9 @@ test("off-plan spend is routed to the user; deny then cancel returns funds", asy
   await dlg.getByRole("button", { name: "Deny" }).click();
   await expect(page.getByRole("dialog", { name: "Change denied" })).toBeVisible();
   await page.getByTestId("failure-cancel").click();
-  await expect(page.getByText("Job cancelled", { exact: true }).first()).toBeVisible({ timeout: 30_000 });
+  await expect(page.getByTestId("status-headline")).toHaveText("Stopped", { timeout: 30_000 });
+  await openReceipt(page);
+  await expect(page.getByText("Job cancelled", { exact: true }).first()).toBeVisible();
   await expect(page.getByText("Returned to you")).toBeVisible();
 });
 
@@ -159,6 +145,8 @@ test("dismissed re-approval stays pending, never auto-approved", async ({ page }
   await expect(page.getByRole("dialog", { name: "Needs your OK" })).toBeVisible({ timeout: 30_000 });
   await page.keyboard.press("Escape");
   await expect(page.getByRole("button", { name: "1 needs you" })).toBeVisible();
+  await expect(page.getByTestId("status-headline")).toContainText("Paused: it needs your decision");
+  await openDetails(page);
   await expect(page.getByTestId("phase-r1")).toHaveAttribute("data-status", "awaiting_reapproval");
   await page.getByRole("button", { name: "1 needs you" }).click();
   await page.getByTestId("reapprove").click();
@@ -190,11 +178,12 @@ test("dashboard lists jobs by folder and status, and opens them", async ({ page 
 });
 
 test("a plan across agents runs step by step and says what it can't do", async ({ page }) => {
+  await prefs(page);
   await page.goto("/new");
   await page.fill("#task", "What are BTC odds right now, then plan a drive from Vancouver to Seattle, and book a hotel in Seattle");
-  await page.getByRole("radio", { name: "Demo rail" }).click();
   await page.getByRole("button", { name: /Ask/ }).click();
-  const card = page.getByTestId("plan-card");
+  // The plan is shown as a map in the main area.
+  const card = page.getByTestId("plan-map").getByTestId("plan-card");
   await expect(card).toBeVisible({ timeout: 30_000 });
   await expect(card.getByTestId("plan-step")).toHaveCount(2);
   await expect(card.getByTestId("plan-unavailable")).toContainText("hotel");
@@ -203,5 +192,35 @@ test("a plan across agents runs step by step and says what it can't do", async (
   await expect(card.getByTestId("plan-step-status")).toHaveText(["Done", "Done"]);
   await card.getByTestId("plan-step-link").nth(1).click();
   await expect(page.getByTestId("back-to-plan")).toContainText("Step 2 of a plan");
+  await expect(page.getByTestId("handoff")).toContainText("Inso");
   await expect(page.getByTestId("receipt-total")).toBeVisible();
+});
+
+test("limits live in Settings and bind every job", async ({ page }) => {
+  await prefs(page);
+  await page.goto("/settings");
+  await page.getByTestId("limit-maxJobUsdc").fill("0.05");
+  await page.getByTestId("save-limits").click();
+  await expect(page.getByText("Limits saved")).toBeVisible();
+  await draft(page, [], "BTC odds limit check");
+  await page.getByTestId("open-approve").click();
+  await page.getByTestId("approve").click();
+  await expect(page.getByText(/over your 0.05 USDC per-job limit/).first()).toBeVisible();
+  await page.goto("/settings");
+  await page.getByTestId("limit-maxJobUsdc").fill("5");
+  await page.getByTestId("save-limits").click();
+  await expect(page.getByText("Limits saved")).toBeVisible();
+});
+
+test("a finished job can be saved and run again at today's prices", async ({ page }) => {
+  await start(page, [], "BTC odds rerun check");
+  await finished(page);
+  const first = page.url();
+  await page.getByTestId("save-job").click();
+  await expect(page.getByTestId("save-job")).toHaveText("Saved ✓");
+  await page.getByTestId("run-again").click();
+  await expect(page.getByTestId("review-card")).toBeVisible({ timeout: 30_000 });
+  expect(page.url()).not.toBe(first);
+  await page.goto("/?status=saved");
+  await expect(page.getByText("BTC odds rerun check").first()).toBeVisible();
 });

@@ -8,9 +8,9 @@ import { Mascot } from "@/components/Mascot";
 import { CancelModal, FailureModal, ReapprovalModal } from "@/components/RunPopups";
 import { transitionReady } from "@/components/transitions";
 import { ApproveModal, Cards, CostTable } from "@/components/WorkOrder";
-import { Chat, MoveCard, actionText, stepTarget, targetKey, type EditTarget } from "@/components/Chat";
+import { Chat, PlanCard, stepTarget, targetKey, type EditTarget } from "@/components/Chat";
 import { OrderStatus } from "@/components/OrderStatus";
-import { Expect } from "@/components/Expect";
+import { Details, ReviewCard, StatusCard } from "@/components/JobBrief";
 import { FinishCard } from "@/components/Celebrate";
 import { AgentScene } from "@/components/AgentScene";
 import { KITS } from "@/lib/agentKit";
@@ -35,7 +35,6 @@ const AgentWidget = dynamic(() => import("@/components/widgets/AgentWidget").the
   ssr: false,
   loading: () => <div className="h-56 animate-pulse bg-line/40 motion-reduce:animate-none" />,
 });
-const ReceiptView = dynamic(() => import("@/components/ReceiptView").then((m) => m.ReceiptView), { ssr: false });
 
 /** True at the desktop breakpoint (lg), where the chat is docked beside the plan. */
 function useWide() {
@@ -78,10 +77,12 @@ function Section({ title, sub, aside, children, label }: { title: string; sub?: 
   );
 }
 
-/** Before a move is chosen: where the graph will appear, and the button that builds it. */
-function NoGraphYet({ run, onBuilt }: { run: Run; onBuilt: () => void }) {
+/** While chatting: the plan as a map once there is one; otherwise the move on offer, or what to ask. */
+function WhileChatting({ run, onBuilt }: { run: Run; onBuilt: () => void }) {
   const [busy, setBusy] = useState(false);
-  const move = [...(run.chat ?? [])].reverse().find((m) => m.proposal)?.proposal;
+  const last = [...(run.chat ?? [])].reverse().find((m) => m.proposal || m.plan);
+  const move = last?.proposal;
+  const plan = run.plan ?? last?.plan;
   const name = THEMES[run.agent].name;
   const kit = KITS[run.agent];
   async function build() {
@@ -89,7 +90,7 @@ function NoGraphYet({ run, onBuilt }: { run: Run; onBuilt: () => void }) {
     setBusy(true);
     try {
       await post(`/api/runs/${run.id}/adopt`, { proposalId: move.id });
-      toast("Graph built · review the plan and approve", "good");
+      toast("Ready to review · nothing is spent until you approve", "good");
       onBuilt();
     } catch (e) {
       toast((e as Error).message, "bad");
@@ -97,51 +98,53 @@ function NoGraphYet({ run, onBuilt }: { run: Run; onBuilt: () => void }) {
       setBusy(false);
     }
   }
+  if (plan)
+    return (
+      <section aria-label="Plan" data-testid="plan-map">
+        <div className="font-pixel text-[12px] text-agent-ink">The plan</div>
+        <PlanCard plan={plan} run={run} />
+      </section>
+    );
   return (
     <section className="grid-paper relative overflow-hidden rounded-2xl border border-line bg-panel" aria-label="Plan">
-      <div className="flex justify-center px-6 pt-10">
-        <AgentScene agent={run.agent} />
-      </div>
-      <div className="flex flex-col items-center gap-3 px-6 pb-8 pt-6 text-center">
+      <div className="flex flex-col items-center gap-3 px-6 py-9 text-center">
         <AnimatePresence mode="wait" initial={false}>
           {move ? (
             <motion.div key={move.id} initial={{ opacity: 0, y: 8, scale: 0.98 }} animate={{ opacity: 1, y: 0, scale: 1 }} transition={{ type: "spring", stiffness: 380, damping: 28 }} className="flex flex-col items-center gap-3">
-              <div className="font-pixel text-[13px] text-agent-ink">Move ready</div>
+              <div className="font-pixel text-[13px] text-agent-ink">{name} suggests</div>
               <div className="max-w-md text-[18px] font-semibold leading-snug">{move.title}</div>
-              {move.action && <p className="max-w-md text-[13.5px] text-ink-2">{actionText(move.action)}</p>}
+              <p className="max-w-md text-[13.5px] text-ink-2">{move.ask}</p>
               <Button variant="agent" className="mt-1 h-11 px-5 text-[15px]" onClick={build} disabled={busy || run.status !== "exploring"} data-testid="build-graph">
-                {busy ? <Spinner /> : <Icon name="graph" size={17} />} Build graph
+                {busy ? <Spinner /> : null} Set it up
               </Button>
-              <p className="text-[12px] text-ink-3">Shows every step and its price. Nothing is spent until you approve.</p>
+              <p className="text-[12px] text-ink-3">You&apos;ll see each step and the price next. Nothing is spent until you approve.</p>
             </motion.div>
           ) : (
             <motion.div key="empty" initial={{ opacity: 0 }} animate={{ opacity: 1 }} className="flex flex-col items-center gap-2">
-              <div className="font-pixel text-[13px] text-ink-3">No plan yet</div>
-              <p className="max-w-sm text-[14px] text-ink-2">Ask {name} anything in the chat. When it suggests a move you like, build the plan here.</p>
+              <AgentScene agent={run.agent} />
+              <p className="mt-3 max-w-sm text-[14px] text-ink-2">Ask {name} in the chat. When it suggests something you like, it shows up here to review.</p>
             </motion.div>
           )}
         </AnimatePresence>
       </div>
-      <dl className="grid border-t border-line bg-panel text-left text-[13px] sm:grid-cols-3">
+      <div className="grid border-t border-line bg-panel text-left text-[13px] sm:grid-cols-2">
         <div className="border-line px-4 py-3 sm:border-r">
-          <dt className="flex items-center gap-1.5 font-semibold">
-            <Icon name="search" size={14} className="text-agent-ink" /> Free while you chat
-          </dt>
-          <dd className="mt-0.5 text-ink-2">{kit.free.join(", ")}</dd>
-        </div>
-        <div className="border-t border-line px-4 py-3 sm:border-r sm:border-t-0">
-          <dt className="flex items-center gap-1.5 font-semibold">
-            <Icon name="vault" size={14} className="text-agent-ink" /> Paid, after you approve
-          </dt>
-          <dd className="num mt-0.5 text-ink-2">{kit.paid.map((x) => `${x.label} ${x.price}`).join(", ")} USDC</dd>
+          <div className="font-semibold">{name} can</div>
+          <ul className="mt-1 space-y-0.5 text-ink-2">
+            {kit.can.map((x) => (
+              <li key={x}>· {x}</li>
+            ))}
+          </ul>
         </div>
         <div className="border-t border-line px-4 py-3 sm:border-t-0">
-          <dt className="flex items-center gap-1.5 font-semibold">
-            <Icon name="bolt" size={14} className="text-agent-ink" /> Can do
-          </dt>
-          <dd className="mt-0.5 text-ink-2">{kit.acts}</dd>
+          <div className="font-semibold">Can&apos;t do here</div>
+          <ul className="mt-1 space-y-0.5 text-ink-2">
+            {kit.cant.map((x) => (
+              <li key={x}>· {x}</li>
+            ))}
+          </ul>
         </div>
-      </dl>
+      </div>
     </section>
   );
 }
@@ -155,6 +158,7 @@ export default function RunPage({ params }: { params: Promise<{ id: string }> })
   const [cancelling, setCancelling] = useState(false);
   const [dismissed, setDismissed] = useState<string | null>(null);
   const [finish, setFinish] = useState<"done" | "cancelled" | null>(null);
+  const [details, setDetails] = useState(false);
   useAgentTheme(run?.agent);
   const wide = useWide();
 
@@ -224,6 +228,8 @@ export default function RunPage({ params }: { params: Promise<{ id: string }> })
   const vaultLines = run.lines.filter((l) => paidInUsdc(l.rail));
   const total = sum(vaultLines.map((l) => l.approved));
   const actual = sum(vaultLines.map((l) => l.actual));
+  // Charts and maps only where the job produced one; orders with no research have nothing to draw.
+  const hasVisual = Boolean(run.feed && Object.keys(run.feed).length) || run.proposal?.action?.kind === "itinerary" || !run.proposal;
   const showPopup = head && dismissed !== head.id && !approving && !cancelling;
   const reapproval = head?.kind === "re" ? run.pendingReapprovals.find((r) => r.id === head.id) : undefined;
   const failure = head?.kind === "fail" ? run.pendingFailures.find((f) => f.id === head.id) : undefined;
@@ -249,7 +255,7 @@ export default function RunPage({ params }: { params: Promise<{ id: string }> })
           <div className="flex flex-wrap items-center gap-2 text-[12px] font-medium text-ink-3">
             <span className="font-pixel text-[13px] text-agent-ink">{theme.name}</span>
             <span>· {theme.domain}</span>
-            <span className={`inline-flex h-[22px] items-center rounded-md px-2 text-[12px] font-semibold ${run.mode === "live" ? "bg-ink text-white" : "bg-[#f1f0ec] text-ink-2"}`}>{run.mode === "live" ? "Arc testnet" : "Demo rail"}</span>
+            <span className={`inline-flex h-[22px] items-center rounded-md px-2 text-[12px] font-semibold ${run.mode === "live" ? "bg-ink text-white" : "bg-[#f1f0ec] text-ink-2"}`}>{run.mode === "live" ? "Arc testnet" : "Practice"}</span>
             {connection === "reconnecting" && (
               <span className="inline-flex h-[22px] items-center gap-1 rounded-md border border-warn bg-warn/15 px-2 text-[12px] text-warn-ink" role="status">
                 <Spinner /> Reconnecting
@@ -269,13 +275,13 @@ export default function RunPage({ params }: { params: Promise<{ id: string }> })
           </h1>
           <AnimatePresence mode="wait">
             <motion.p key={run.status} initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }} className="mt-1 hidden text-sm text-ink-2 sm:block">
-              {run.planning ? "Working out the plan and the price." : theme.copy[run.status]}
+              {run.planning ? "Working out the plan and the price." : exploring || draft ? theme.copy[run.status] : ""}
             </motion.p>
           </AnimatePresence>
         </div>
       </div>
       <div className="flex w-full items-baseline justify-between gap-3 border-t border-line pt-3 sm:block sm:w-auto sm:border-0 sm:pt-0 sm:text-right">
-        <div className="text-[12px] text-ink-3">{exploring ? "Spent" : planning ? "Pricing…" : draft ? "Plan total" : finished ? "Paid" : "Spent so far"}</div>
+        <div className="text-[12px] text-ink-3">{exploring ? "Spent" : planning ? "Pricing…" : draft ? "Data and services" : finished ? "Paid for data" : "Spent so far"}</div>
         <div className="text-[22px] font-semibold leading-none tracking-tight sm:text-[36px]" data-testid="big-number">
           {planning ? <span className="inline-block h-9 w-32 animate-pulse rounded-md bg-line align-middle motion-reduce:animate-none" /> : <Amount key={exploring ? "explore" : draft ? "plan" : "run"} value={exploring ? 0n : draft ? total : actual} />}
         </div>
@@ -286,7 +292,7 @@ export default function RunPage({ params }: { params: Promise<{ id: string }> })
 
   const plan = (
     <div className="space-y-5">
-      {exploring && <NoGraphYet run={run} onBuilt={() => setTab("plan")} />}
+      {exploring && <WhileChatting run={run} onBuilt={() => setTab("plan")} />}
 
       {planning && (
         <section className="space-y-5" aria-busy="true" aria-label="Planning">
@@ -303,21 +309,15 @@ export default function RunPage({ params }: { params: Promise<{ id: string }> })
 
       {draft && (
         <>
-          <Expect run={run} />
-          <Section
-            title="Steps"
-            label="Plan graph"
-            sub={`${run.proposal ? `${TEMPLATE_LABEL[templateOf(run.proposal)]} · ` : ""}${run.phases.length} steps · nothing runs until you approve · click a step to change it`}
-            aside={
-              <>
-                {run.status === "draft" && (
-                  <Button variant="quiet" className="h-8 px-2.5 text-[12.5px]" onClick={() => post(`/api/runs/${run.id}/back`).catch((e) => toast((e as Error).message, "bad"))} data-testid="back-to-chat">
-                    <Icon name="back" size={14} /> Change the move
-                  </Button>
-                )}
-              </>
-            }
-          >
+          <ReviewCard run={run} />
+          <AnimatePresence>
+            {run.editNote && (
+              <motion.p initial={{ opacity: 0, y: 4 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0 }} className={`text-right text-[12.5px] ${run.editNote.ok ? "text-ink-2" : "text-bad"}`}>
+                {run.editNote.message}
+              </motion.p>
+            )}
+          </AnimatePresence>
+          <Details label="Change a step, or see every cost line" open={details || Boolean(focus)} onToggle={() => setDetails((v) => !v)}>
             <PhaseGraph
               phases={run.phases}
               lines={run.lines}
@@ -326,41 +326,21 @@ export default function RunPage({ params }: { params: Promise<{ id: string }> })
               focusedId={focus?.kind === "step" ? focus.step : null}
               onEditStep={editStep}
             />
-            {run.proposal && (
-              <details className="group mt-3 border-t border-[#f1f0ec] pt-3">
-                <summary className="flex cursor-pointer list-none items-center gap-1.5 text-[13px] font-medium text-ink-2 hover:text-ink">
-                  <Icon name="chevron" size={14} className="transition-transform group-open:rotate-90" /> The move you agreed in chat
-                </summary>
-                <MoveCard p={run.proposal} run={run} chosen />
-              </details>
-            )}
-          </Section>
-
-          <Cards run={run} onEdit={run.status === "draft" ? editCard : undefined} focused={focus?.kind === "card" ? focus.card : null} />
-          <CostTable run={run} />
-          <AnimatePresence>
-            {run.editNote && (
-              <motion.p initial={{ opacity: 0, y: 4 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0 }} className={`text-right text-[12.5px] ${run.editNote.ok ? "text-ink-2" : "text-bad"}`}>
-                {run.editNote.message}
-              </motion.p>
-            )}
-          </AnimatePresence>
+            <p className="-mt-2 text-[12.5px] text-ink-3">Click a step or a card to change it in the chat.</p>
+            <Cards run={run} onEdit={run.status === "draft" ? editCard : undefined} focused={focus?.kind === "card" ? focus.card : null} />
+            <CostTable run={run} />
+          </Details>
 
           {/* Desktop: sticks to the bottom of the plan. Phones: a bar above the tab bar. */}
           <div className="fixed inset-x-0 bottom-[var(--tabbar-h)] z-20 border-t border-line bg-surface/95 px-4 py-3 backdrop-blur-md sm:sticky sm:bottom-4 sm:rounded-2xl sm:border-[1.5px] sm:border-ink sm:bg-panel sm:px-4 sm:shadow-[4px_4px_0_0_var(--color-ink)]">
             <div className="flex flex-wrap items-center justify-between gap-3">
-              <div className="hidden min-w-0 items-center gap-4 text-[13px] text-ink-2 sm:flex">
-                <span className="inline-flex items-center gap-1.5">
-                  <Icon name="vault" size={16} className="text-agent-ink" /> Vault <b className="num text-ink">{fmt(run.cap)}</b>
-                </span>
-                <span className="hidden items-center gap-1.5 xl:inline-flex">
-                  <Icon name="shield" size={16} className="text-agent-ink" /> Only these lines and payees
-                </span>
-                <span className="inline-flex items-center gap-1.5">
-                  <Icon name="refund" size={16} className="text-agent-ink" /> Unspent comes back
-                </span>
-              </div>
+              <p className="hidden min-w-0 text-[13px] text-ink-2 sm:block">Nothing runs or is spent until you approve.</p>
               <div className="flex flex-1 items-center justify-end gap-2 sm:flex-none">
+                {run.status === "draft" && (
+                  <Button variant="quiet" onClick={() => post(`/api/runs/${run.id}/back`).catch((e) => toast((e as Error).message, "bad"))} data-testid="back-to-chat">
+                    <Icon name="back" size={14} /> Change it
+                  </Button>
+                )}
                 <Button variant="quiet" onClick={() => setCancelling(true)}>
                   Discard
                 </Button>
@@ -372,7 +352,7 @@ export default function RunPage({ params }: { params: Promise<{ id: string }> })
                     </>
                   ) : (
                     <>
-                      Review & approve <kbd className="ml-1 hidden rounded border border-current/40 px-1 text-[10px] opacity-70 sm:inline">A</kbd>
+                      Approve <kbd className="ml-1 hidden rounded border border-current/40 px-1 text-[10px] opacity-70 sm:inline">A</kbd>
                     </>
                   )}
                 </Button>
@@ -384,72 +364,50 @@ export default function RunPage({ params }: { params: Promise<{ id: string }> })
 
       {!draft && !planning && !exploring && (
         <>
-          {run.proposal && <OrderStatus run={run} />}
-          <Section
-            title={finished ? (run.status === "done" ? "All steps done" : "Stopped") : `Step ${Math.min(done + 1, run.phases.length)} of ${run.phases.length}`}
-            label="Progress"
-            aside={
-              <div className="flex items-center gap-3 text-[13px]">
-                <AnimatePresence>
-                  {pending.length > 0 && dismissed === head?.id && (
-                    <motion.button
-                      initial={{ opacity: 0, scale: 0.9 }}
-                      animate={{ opacity: 1, scale: 1 }}
-                      exit={{ opacity: 0, scale: 0.9 }}
-                      onClick={() => setDismissed(null)}
-                      className="inline-flex h-7 items-center rounded-md border border-warn bg-warn/15 px-2.5 text-[12px] font-semibold text-warn-ink"
-                    >
-                      {pending.length} needs you
-                    </motion.button>
-                  )}
-                </AnimatePresence>
-                <span className="num text-ink-3">{Math.round((done / run.phases.length) * 100)}%</span>
-              </div>
-            }
-          >
-            <div className="sr-only" aria-live="polite">
-              {run.phases.filter((p) => p.status === "active").map((p) => `${p.label} running`).join(", ")}
-              {pending.length ? ` · ${pending.length} needs your decision` : ""}
-            </div>
-            <div className="mb-4 h-1.5 overflow-hidden rounded-[2px] bg-[#f1f0ec]">
-              <motion.div className="h-full rounded-[2px] bg-good" animate={{ width: `${(done / run.phases.length) * 100}%` }} transition={{ duration: 0.5 }} />
-            </div>
-            <PhaseGraph phases={run.phases} lines={run.lines} simulated={run.mode === "demo"} />
-            <div className="mt-3 flex flex-wrap items-center justify-between gap-2 border-t border-[#f1f0ec] pt-3 text-[12px] text-ink-3">
-              <span>
-                {run.vault ? (
-                  <>
-                    Vault <span className="font-mono">{short(run.vault)}</span>
-                    {run.fundingTx && (
-                      <a className="ml-2 inline-flex items-center gap-0.5 underline decoration-line underline-offset-2 hover:text-ink" href={txUrl(run.fundingTx)} target="_blank" rel="noreferrer">
-                        funding tx <Icon name="external" size={11} />
-                      </a>
-                    )}
-                  </>
-                ) : (
-                  "Vault simulated on demo rail"
-                )}
+          <StatusCard run={run} onNeedsYou={pending.length > 0 && dismissed === head?.id ? () => setDismissed(null) : undefined} onCancel={() => setCancelling(true)} />
+          <div className="sr-only" aria-live="polite">
+            {pending.length ? `${pending.length} needs your decision` : ""}
+          </div>
+
+          {hasVisual && (
+            <section className="min-w-0 rounded-2xl border border-line bg-panel p-4" aria-label="Result">
+              <AgentWidget run={run} />
+            </section>
+          )}
+
+          {finished && (
+            <Link href={`/runs/${run.id}/receipt`} className="flex flex-wrap items-center justify-between gap-3 rounded-2xl border border-line bg-panel px-4 py-3.5 hover:border-ink/40" data-testid="receipt-summary">
+              <span className="inline-flex items-center gap-2 text-[14px] font-medium">
+                <Icon name="receipt" size={17} className="text-agent-ink" /> Receipt
               </span>
-              {!finished && (
-                <Button variant="quiet" className="h-8 text-[12.5px]" onClick={() => setCancelling(true)}>
-                  Cancel job
-                </Button>
+              <span className="num text-[13.5px] text-ink-2">
+                Paid <b className="font-semibold text-ink" data-testid="receipt-total">{fmt(actual)}</b> USDC
+                {BigInt(run.refunded ?? 0) > 0n ? ` · ${fmt(run.refunded!)} returned` : ""} · open ↗
+              </span>
+            </Link>
+          )}
+
+          <Details label="How it ran: every step, payment and limit" open={details} onToggle={() => setDetails((v) => !v)}>
+            {run.proposal && <OrderStatus run={run} />}
+            <PhaseGraph phases={run.phases} lines={run.lines} simulated={run.mode === "demo"} />
+            <p className="-mt-2 text-[12px] text-ink-3">
+              {run.vault ? (
+                <>
+                  Vault <span className="font-mono">{short(run.vault)}</span>
+                  {run.fundingTx && (
+                    <a className="ml-2 inline-flex items-center gap-0.5 underline decoration-line underline-offset-2 hover:text-ink" href={txUrl(run.fundingTx)} target="_blank" rel="noreferrer">
+                      funding tx <Icon name="external" size={11} />
+                    </a>
+                  )}
+                </>
+              ) : run.mode === "demo" ? (
+                "Practice mode: the vault is simulated"
+              ) : (
+                "No vault was needed: this job bought no data"
               )}
-            </div>
-          </Section>
-
-          <section className="min-w-0 rounded-2xl border border-line bg-panel p-4" aria-label="Result">
-            <AgentWidget run={run} />
-          </section>
-          <CostTable run={run} compact />
-
-          <AnimatePresence>
-            {finished && (
-              <motion.div initial={{ opacity: 0, y: 16 }} animate={{ opacity: 1, y: 0 }} transition={{ duration: 0.45, ease: [0.2, 0.8, 0.2, 1] }}>
-                <ReceiptView run={run} />
-              </motion.div>
-            )}
-          </AnimatePresence>
+            </p>
+            <CostTable run={run} compact />
+          </Details>
         </>
       )}
     </div>
@@ -463,19 +421,6 @@ export default function RunPage({ params }: { params: Promise<{ id: string }> })
           <div className="text-[14px] font-semibold">Chat with {theme.name}</div>
           <div className="truncate text-[12px] text-ink-3">{theme.domain}</div>
         </div>
-      </div>
-      {/* The agent's own toolkit: what it looks up for free and what it can do. */}
-      <div className="flex shrink-0 gap-1.5 overflow-x-auto border-b border-line bg-panel px-4 py-2.5" aria-label={`${theme.name}'s tools`}>
-        {KITS[run.agent].free.map((t) => (
-          <span key={t} className="inline-flex h-6 shrink-0 items-center gap-1 rounded-md bg-[#f1f0ec] px-2 text-[12px] text-ink-2">
-            <Icon name="search" size={11} /> {t}
-          </span>
-        ))}
-        {KITS[run.agent].paid.map((t) => (
-          <span key={t.label} className="num inline-flex h-6 shrink-0 items-center gap-1 rounded-md border border-line px-2 text-[12px] text-ink-2">
-            {t.label} <span className="text-ink-3">{t.price}</span>
-          </span>
-        ))}
       </div>
       <Chat run={run} focus={focus} onFocusClear={() => setFocus(null)} onAdopted={() => setTab("plan")} />
     </div>

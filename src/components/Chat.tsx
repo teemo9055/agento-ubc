@@ -36,7 +36,7 @@ const maxCost = (a?: MoveAction) => (!a ? 0 : a.kind === "prediction_order" ? (a
 const VENUE_BADGE: Record<Venue, { label: string; title: string; cls: string }> = {
   gemini: { label: "Live · real money", title: "Orders go to your Gemini account with real money", cls: "border-bad/50 bg-bad/10 text-bad" },
   "gemini-sandbox": { label: "Gemini sandbox · test money", title: "Real orders on Gemini's test exchange, with test funds", cls: "border-agent/40 bg-agent-soft text-agent-ink" },
-  paper: { label: "Simulation · not sent", title: "No exchange is connected, so the order is only simulated", cls: "border-warn bg-warn/15 text-warn-ink" },
+  paper: { label: "Practice · no real order", title: "No exchange is connected, so the order is only simulated", cls: "border-warn bg-warn/15 text-warn-ink" },
 };
 
 export function VenueBadge({ venue }: { venue: Venue }) {
@@ -104,6 +104,11 @@ export function MoveCard({ p, run, chosen, onChoose, busy }: { p: Proposal; run:
           </li>
         ))}
       </ol>
+      {p.hedge && (
+        <p className="mt-2 rounded-lg bg-agent-soft px-2.5 py-1.5 text-[12.5px] text-ink" data-testid="move-hedge">
+          Insurance: pay up to <b className="font-semibold">${p.hedge.cost.toFixed(2)}</b>, get <b className="font-semibold">${p.hedge.payout}</b> back if it happens.
+        </p>
+      )}
       {p.changes && p.changes.length > 0 && (
         <p className="mt-2 text-[12px] font-medium text-agent-ink" data-testid="move-changes">
           Changed: {p.changes.join(" · ")}
@@ -116,7 +121,7 @@ export function MoveCard({ p, run, chosen, onChoose, busy }: { p: Proposal; run:
             ≤ ${total < 0.01 ? usdc(total) : total.toFixed(2)} total{p.venue === "paper" && maxCost(p.action) > 0 ? " · simulated" : ""}
           </span>
           <Button onClick={onChoose} disabled={busy || run.status !== "exploring"} variant="agent" className="h-9" data-testid="adopt-move">
-            {busy ? <Spinner /> : null} Build graph
+            {busy ? <Spinner /> : null} Set it up
           </Button>
         </div>
       )}
@@ -293,7 +298,14 @@ function Bubble({ m, run, onChoose, busy }: { m: ChatMsg; run: Run; onChoose: (i
             Couldn't check {m.unverified.join(", ")} against live data; treat as approximate.
           </p>
         )}
-        {m.plan && <PlanCard plan={m.plan} run={run} />}
+        {m.plan &&
+          (run.plan?.id === m.plan.id && run.plan.status !== "proposed" ? (
+            <p className="mt-2 rounded-lg border border-line bg-panel px-3 py-2 text-[13px] text-ink-2" data-testid="plan-started">
+              Plan {run.plan.status === "running" ? "running" : run.plan.status === "done" ? "finished" : "stopped"}: {run.plan.steps.filter((s) => s.status === "done").length} of {run.plan.steps.length} steps done.
+            </p>
+          ) : (
+            <PlanCard plan={m.plan} run={run} />
+          ))}
         {m.proposal && <MoveCard p={m.proposal} run={run} chosen={run.proposal?.id === m.proposal.id} onChoose={() => onChoose(m.proposal!.id)} busy={busy} />}
       </div>
     </motion.li>
@@ -503,7 +515,7 @@ export function Chat({ run, focus, onFocusClear, onAdopted }: { run: Run; focus?
     try {
       await post(`/api/runs/${run.id}/adopt`, { proposalId });
       setEdits([]);
-      toast("Graph built · review the plan and approve", "good");
+      toast("Ready to review · nothing is spent until you approve", "good");
       onAdopted?.();
     } catch (e) {
       toast((e as Error).message, "bad");
@@ -514,7 +526,7 @@ export function Chat({ run, focus, onFocusClear, onAdopted }: { run: Run; focus?
 
   const accept = (s: string) => /^(yes|set it up|build|do it|ok)/i.test(s);
   const latestMove = [...chat].reverse().find((m) => m.proposal)?.proposal;
-  const placeholder = editing && focus ? (focus.kind === "card" ? CARD_HINT[focus.card] : focus.hint) : run.status === "draft" ? "Ask for a different move (rebuilds the graph)" : `Ask ${THEMES[run.agent].name} anything`;
+  const placeholder = editing && focus ? (focus.kind === "card" ? CARD_HINT[focus.card] : focus.hint) : run.status === "draft" ? "Ask for something different" : `Ask ${THEMES[run.agent].name} anything`;
 
   return (
     <section className="flex h-full min-h-0 flex-col" aria-label="Chat with the agent">
@@ -615,10 +627,15 @@ export function Chat({ run, focus, onFocusClear, onAdopted }: { run: Run; focus?
               {busy ? <Spinner /> : <Icon name="send" size={17} stroke={2.2} />}
             </button>
           </form>
-          <p className="mt-2 px-1 text-[12px] text-ink-3">{editing ? "You'll see the new price before anything changes." : run.status === "exploring" ? "Exploring is free. Nothing is paid or placed until you approve." : "Use a card's Edit button to change just that part."}</p>
+          <p className="mt-2 px-1 text-[12px] text-ink-3">{editing ? "You'll see the new price before anything changes." : run.status === "exploring" ? "Exploring is free. Nothing is paid or placed until you approve." : "Ask for a change here, or open the details to edit one step."}</p>
         </div>
       ) : (
-        <div className="border-t border-line px-4 py-3 text-[12.5px] text-ink-3">The plan is approved, so the chat is read-only for this job.</div>
+        <div className="flex flex-wrap items-center justify-between gap-2 border-t border-line px-4 py-3 text-[12.5px] text-ink-3">
+          <span>This job is approved, so its chat is closed.</span>
+          <Link href={`/new?agent=${run.agent}`} className="font-medium text-ink underline decoration-line underline-offset-2" data-testid="ask-more">
+            Ask {THEMES[run.agent].name} something else
+          </Link>
+        </div>
       )}
     </section>
   );

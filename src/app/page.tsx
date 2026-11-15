@@ -17,14 +17,15 @@ import type { AgentId } from "@/lib/types";
 import { moodFor } from "@/lib/outfit";
 
 type Folder = "all" | AgentId;
-type Section = "needs" | "chats" | "running" | "drafts" | "finished";
+type Section = "needs" | "saved" | "chats" | "running" | "drafts" | "finished";
 
 const SECTIONS: { key: Section; title: string; match: (r: RunSummary) => boolean }[] = [
   { key: "needs", title: "Needs you", match: (r) => r.needsYou > 0 },
-  { key: "chats", title: "Exploring", match: (r) => r.status === "exploring" },
+  { key: "saved", title: "Saved", match: (r) => r.saved },
+  { key: "chats", title: "Chats", match: (r) => r.status === "exploring" && !r.saved },
   { key: "running", title: "Running", match: (r) => (r.status === "running" || r.status === "funding") && r.needsYou === 0 },
   { key: "drafts", title: "Drafts awaiting approval", match: (r) => r.status === "draft" },
-  { key: "finished", title: "Finished", match: (r) => r.status === "done" || r.status === "cancelled" },
+  { key: "finished", title: "Finished", match: (r) => (r.status === "done" || r.status === "cancelled") && !r.saved },
 ];
 
 function ago(iso?: string) {
@@ -119,8 +120,15 @@ function JobCard({ r }: { r: RunSummary }) {
               <motion.div className="h-full rounded-[2px] bg-agent" animate={{ width: `${pct}%` }} transition={{ duration: 0.5 }} />
             </div>
           </div>
-        ) : r.headline ? (
-          <p className="mt-2 line-clamp-2 text-[13px] leading-relaxed text-ink-2">{r.headline}</p>
+        ) : r.plan ? (
+          <p className="mt-2 line-clamp-2 text-[13px] leading-relaxed text-ink-2">
+            Plan {r.plan.status}: {r.plan.done} of {r.plan.total} steps done · {r.plan.title}
+          </p>
+        ) : r.status === "done" || r.status === "cancelled" ? (
+          <p className={`mt-2 line-clamp-2 text-[13px] leading-relaxed ${r.outcome.tone === "warn" ? "text-warn-ink" : r.outcome.tone === "bad" ? "text-bad" : "text-ink-2"}`}>
+            {r.outcome.headline}
+            {r.parentId ? " · step of a plan" : ""}
+          </p>
         ) : r.status === "exploring" && r.lastMessage ? (
           <p className="mt-2 line-clamp-2 text-[13px] leading-relaxed text-ink-2">{r.lastMessage}</p>
         ) : r.move ? (

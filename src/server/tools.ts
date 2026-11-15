@@ -28,7 +28,7 @@ export const FREE_TOOLS: Record<string, FreeTool> = {
   search_markets: {
     description:
       "Search active prediction markets on Gemini by keyword (e.g. 'BTC', 'Fed', 'Lakers'). Returns live markets with YES prices (0-1). When a test exchange is connected, `tradable` lists the markets you can actually place orders on there, with that exchange's own prices; orders must use those.",
-    params: z.object({ query: z.string().describe("Keyword, asset ticker or team"), limit: z.number().int().min(1).max(10).optional() }),
+    params: z.object({ query: z.string().describe("Keyword, asset ticker or team"), limit: z.number().int().min(1).max(6).optional() }),
     async run(a) {
       const shape = (events: gemini.MarketEvent[]) =>
         events.map((e) => ({
@@ -115,13 +115,15 @@ export async function runFreeTool(name: string, args: Record<string, unknown>): 
   const tool = FREE_TOOLS[name];
   if (!tool) return { call: { tool: name, args, summary: "Unknown tool", ok: false }, data: { error: "unknown tool" } };
   const parsed = tool.params.safeParse(args);
-  if (!parsed.success) return { call: { tool: name, args, summary: "Bad arguments", ok: false }, data: { error: parsed.error.issues[0]?.message } };
+  if (!parsed.success) return { call: { tool: name, args, summary: "Lookup failed", ok: false }, data: { error: parsed.error.issues[0]?.message } };
   try {
     const r = await tool.run(parsed.data as Record<string, unknown>);
     return { call: { tool: name, args, summary: r.summary, ok: true }, data: r.data };
   } catch (e) {
+    const down = e instanceof gemini.MarketDataDown;
     const msg = (e as Error).message.slice(0, 120);
-    return { call: { tool: name, args, summary: `Failed: ${msg}`, ok: false }, data: { error: msg } };
+    // The chip is for the user: plain words. The detail goes to the model so it can adapt.
+    return { call: { tool: name, args, summary: down ? "Gemini didn't answer" : /unknown symbol|404|not found/i.test(msg) ? "Nothing by that name" : "Lookup failed", ok: false, down }, data: { error: msg, retryable: down } };
   }
 }
 
@@ -239,10 +241,15 @@ export const ProposalInput = z.object({
     .nullable()
     .describe("A check on a DIFFERENT number than the order's own price, read right before placing (e.g. only buy the BTC-above-66k contract if BTC spot ≥ 64k). The order's own price target goes in orderType/maxPrice/stopPrice, not here. null for none."),
   budgetUsd: z.number().positive().nullable().describe("The most the user said they'd spend on this order in USD, if they said; enforced."),
+  hedge: z
+    .object({ protects: z.string().max(80).describe("What the user stands to lose, in their words: 'a pricier Uber if it's freezing Saturday'"), lossUsd: z.number().positive().max(1000).describe("Roughly what that would cost them in USD") })
+    .nullable()
+    .optional()
+    .describe("Set when the order is insurance: the user loses money if some event happens, so they buy the side that pays out if it does. Code then sizes the order to cover lossUsd (or to fit budgetUsd) and shows cost vs payout. prediction_order buys only."),
 });
 export type ProposalInput = z.infer<typeof ProposalInput>;
 
-const MAX_NOTIONAL = Number(process.env.MAX_ORDER_USD ?? 50);
+import { limits } from "./settings";
 const round2 = (x: number) => Math.round(x * 100) / 100;
 /** An order needs time to rest; refuse contracts closing sooner than this. */
 const MIN_EXPIRY_MS = Number(process.env.MIN_ORDER_EXPIRY_MIN ?? 20) * 60_000;
@@ -280,6 +287,14 @@ export async function validateProposal(agent: AgentId, input: unknown, id: strin
     if (left < MIN_EXPIRY_MS) return { error: `${c.label} closes ${left <= 0 ? "now" : `in ${Math.max(1, Math.round(left / 60_000))} min`}; too soon for an order to rest. Pick a later contract.` };
     const maxPrice = round2(raw.maxPrice);
     let quantity = raw.quantity;
+    // A hedge is sized by code: enough contracts that the payout, after their cost, covers the loss.
+    if (p.hedge && raw.trade !== "sell" && budget == null) {
+      const need = Math.min(500, Math.max(1, Math.ceil(p.hedge.lossUsd / (1 - maxPrice) - 1e-9)));
+      const fits = Math.max(1, Math.floor(limits().maxOrderUsd / maxPrice));
+      const sized = Math.min(need, fits);
+      if (sized !== quantity) adjustments.push(sized < need ? `Sized to ${sized} contracts, the most your $${limits().maxOrderUsd} order limit allows` : `Sized to ${sized} contracts so the payout covers your $${p.hedge.lossUsd}`);
+      quantity = sized;
+    }
     if (raw.trade === "sell") {
       const sold = await checkSell(raw, c, maxPrice, venue);
       if ("error" in sold) return sold;
@@ -300,7 +315,7 @@ export async function validateProposal(agent: AgentId, input: unknown, id: strin
       if (quantity < 1) return { error: `Budget $${budget} can't buy one contract at ${Math.round(maxPrice * 100)}¢` };
       adjustments.push(`Quantity cut to ${quantity} to stay within your $${budget}`);
     }
-    if (maxPrice * quantity > MAX_NOTIONAL) return { error: `Order over the ${MAX_NOTIONAL} USD limit` };
+    if (maxPrice * quantity > limits().maxOrderUsd) return { error: `Order over the user's $${limits().maxOrderUsd} per-order limit (set in Settings). Make it smaller.` };
     if (maxPrice !== raw.maxPrice) adjustments.push(`Price rounded to ${Math.round(maxPrice * 100)}¢`);
     action = { kind: "prediction_order", eventTicker: raw.eventTicker, symbol: raw.symbol, label: raw.label, side: raw.side, orderType: raw.orderType, maxPrice, stopPrice, quantity };
     // Tell the user whether this buys now or waits: the cheapest seller right now is the ask.
@@ -328,7 +343,7 @@ export async function validateProposal(agent: AgentId, input: unknown, id: strin
       adjustments.push(`Amount cut to $${amountUsd} so it plus the fee stays within your $${budget}`);
     }
     if (fee > 0) adjustments.push(`Fee up to $${Math.max(0.01, amountUsd * fee).toFixed(2)} (${(fee * 100).toFixed(2)}% if it fills right away, less if it rests)`);
-    if (amountUsd > MAX_NOTIONAL) return { error: `Order over the ${MAX_NOTIONAL} USD limit` };
+    if (amountUsd > limits().maxOrderUsd) return { error: `Order over the user's $${limits().maxOrderUsd} per-order limit (set in Settings). Make it smaller.` };
     action = { ...raw, symbol, amountUsd };
   } else if (raw) action = raw;
 
@@ -390,12 +405,14 @@ export async function validateProposal(agent: AgentId, input: unknown, id: strin
       id,
       title: p.title,
       why: p.why,
-      ask: p.ask,
+      // A hedge's question is written from the sized order, so its numbers are always the real ones.
+      ask: hedgeOf(p.hedge, action) && action?.kind === "prediction_order" ? `Pay up to $${round2(action.maxPrice * action.quantity).toFixed(2)} now; get $${action.quantity} back if “${action.label}” ${action.side === "yes" ? "happens" : "doesn't happen"}?` : p.ask,
       research,
       action,
       condition,
       venue: action && action.kind !== "itinerary" ? venue : "paper",
       budgetUsd: budget,
+      hedge: hedgeOf(p.hedge, action),
       market,
       adjustments: adjustments.length ? adjustments : undefined,
     },
@@ -403,6 +420,12 @@ export async function validateProposal(agent: AgentId, input: unknown, id: strin
 }
 
 /** A stored move in the shape the model writes and the validator reads. */
+/** Cost and payout of a hedge, from the order as it will actually be placed. */
+function hedgeOf(h: ProposalInput["hedge"], a: MoveAction | undefined): Proposal["hedge"] {
+  if (!h || a?.kind !== "prediction_order" || a.trade === "sell") return undefined;
+  return { protects: h.protects, lossUsd: h.lossUsd, cost: round2(a.maxPrice * a.quantity), payout: a.quantity };
+}
+
 type RawPrediction = Extract<NonNullable<ProposalInput["action"]>, { kind: "prediction_order" }>;
 
 /** A sell must close contracts the user actually holds and has free, as a resting limit. */
@@ -437,6 +460,7 @@ export function toProposalInput(p: Proposal): ProposalInput {
     action: !a ? null : a.kind === "prediction_order" ? { ...a, trade: a.trade ?? null, stopPrice: a.stopPrice ?? null } : a,
     condition: p.condition ?? null,
     budgetUsd: p.budgetUsd ?? null,
+    hedge: p.hedge ? { protects: p.hedge.protects, lossUsd: p.hedge.lossUsd } : null,
   } as ProposalInput;
 }
 

@@ -11,6 +11,10 @@ export interface AgentKit {
   paid: { label: string; price: string }[];
   /** The one kind of thing it can do at the end. */
   acts: string;
+  /** What you can ask it for, in the user's words. */
+  can: string[];
+  /** What it can't do here, with the honest reason. */
+  cant: string[];
   /** What it never does. */
   never: string;
   /** One line on the result you get. */
@@ -31,6 +35,8 @@ export const KITS: Record<AgentId, AgentKit> = {
       { label: "Trade tape", price: "0.10" },
       { label: "Chainlink price (Circle marketplace)", price: "0.0001" },
     ],
+    can: ["Read the odds on any Gemini market", "Bet YES or NO with a price limit", "Hedge a cost: pay a little now, get paid if the bad thing happens", "Sell positions you hold", "Double-check a crypto price with Chainlink first"],
+    cant: ["Markets Gemini doesn't list (e.g. rain; it has daily temperature, crypto, rates, sports)", "Marketplace services that only take Arc mainnet payments"],
     acts: "Place a YES/NO order on a prediction market",
     never: "Bet more than the limit you approve, or trade anything else",
     result: "A chart of how the odds moved, and whether your order was placed",
@@ -47,6 +53,8 @@ export const KITS: Record<AgentId, AgentKit> = {
       { label: "Chainlink price (Circle marketplace)", price: "0.0001" },
       { label: "Odds history", price: "0.02" },
     ],
+    can: ["Check a coin's price and trend", "Buy or sell a coin with a limit price", "Trade only if a condition holds (e.g. only if it dips 2%)", "Double-check a price with Chainlink first"],
+    cant: ["Market orders at any price (limit orders only)", "Coins Gemini doesn't list"],
     acts: "Place a limit order on a coin, or a YES/NO order",
     never: "Spend more than the amount you approve, or trade another coin",
     result: "A price chart with the trend call, and whether your order was placed",
@@ -59,6 +67,8 @@ export const KITS: Record<AgentId, AgentKit> = {
   travo: {
     free: ["Look up places", "Search Circle's marketplace"],
     paid: [{ label: "Driving route", price: "0.03" }],
+    can: ["Plan a drive between places", "Split it into days that fit your hours on the road", "Show the route on a map with distance and time per leg"],
+    cant: ["Book hotels or flights (booking services on Circle's marketplace take Arc mainnet only)", "Transit, walking or flying routes"],
     acts: "Plan the route and split it into days",
     never: "Book, buy or reserve anything",
     result: "A route map and a day-by-day plan",

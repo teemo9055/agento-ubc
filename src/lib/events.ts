@@ -8,6 +8,7 @@ export type RunEvent =
   | { type: "chat.thinking"; note?: string }
   | { type: "order.updated"; order: OrderResult }
   | { type: "plan.updated"; plan: Plan }
+  | { type: "run.saved"; saved: boolean }
   | { type: "run.approved"; planHash: Hex; vault?: Hex; fundingTx?: Hex; at: string }
   | { type: "phase.started"; phaseId: string }
   | { type: "phase.progress"; phaseId: string; progress: number; note?: string }

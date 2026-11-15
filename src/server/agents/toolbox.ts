@@ -290,10 +290,11 @@ const TAGLINES: Record<AgentId, { name: string; tagline: string; examples: strin
     name: "Inso",
     tagline: "Reads prediction-market odds and asks before it places an order.",
     examples: [
-      "Put $5 on BTC above $65k tonight, but only if Chainlink agrees",
-      "Bet $4 on ETH above $2,000 this month, but only if it gets cheaper",
-      "What does the market think the Fed does in December?",
-      "Who's the underdog in tonight's Lakers game?",
+      "I hold BTC. Cover me for $30 if it drops below $60k this month",
+      "Put $5 on BTC above $65k, but only if Chainlink agrees",
+      "A cold snap would cost me $20 in rides tomorrow in NYC. Can I hedge that?",
+      "What does the market think the Fed does next?",
+      "Sell my calmest position",
     ],
   },
   trado: {

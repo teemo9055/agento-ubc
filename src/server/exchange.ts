@@ -16,11 +16,11 @@ const KEY = process.env.GEMINI_TRADING_KEY;
 const SECRET = process.env.GEMINI_TRADING_SECRET;
 
 export const tradingVenue = (): Venue => (KEY && SECRET ? (PROD ? "gemini" : "gemini-sandbox") : "paper");
-export const VENUE_NAME: Record<Venue, string> = { "gemini-sandbox": "Gemini sandbox", gemini: "Gemini", paper: "Simulation" };
+export const VENUE_NAME: Record<Venue, string> = { "gemini-sandbox": "Gemini sandbox", gemini: "Gemini", paper: "Practice" };
 export const VENUE_NOTE: Record<Venue, string> = {
   "gemini-sandbox": "Gemini's test exchange: real orders, test money",
   gemini: "Real money on Gemini",
-  paper: "Simulation: no exchange is connected, nothing is sent",
+  paper: "Practice: no exchange is connected, so no real order is sent",
 };
 /** Where tradable markets and their order books live for a venue. */
 export const marketBase = (v: Venue = tradingVenue()) => (v === "gemini-sandbox" ? SANDBOX_BASE : PROD_BASE);
@@ -204,7 +204,7 @@ export async function placeOrder(action: MoveAction, since = Date.now()): Promis
   const notional = notionalOf(action);
   const detail = describeAction(action);
   if (action.kind === "itinerary") return { venue: "paper", status: "simulated", detail, notional: 0 };
-  if (venue === "paper") return { venue, status: "simulated", detail: `Simulation only: ${detail}`, orderId: `sim-${randomUUID().slice(0, 8)}`, notional, updatedAt: now() };
+  if (venue === "paper") return { venue, status: "simulated", detail: `Practice only: ${detail}`, orderId: `sim-${randomUUID().slice(0, 8)}`, notional, updatedAt: now() };
 
   if (action.kind === "prediction_order") {
     const terms = await priv<{ hasAcceptedLatest: boolean }>("/v1/prediction-markets/terms/status", {}, "GET");
