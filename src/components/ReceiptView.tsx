@@ -119,7 +119,7 @@ export function ReceiptView({ run }: { run: Run }) {
 
       <h3 className="mt-7 text-[12px] font-semibold uppercase tracking-wide text-ink-3">Where your money went</h3>
       <table className="mt-2 w-full text-[12.5px]">
-        <thead className="text-left text-[10.5px] uppercase tracking-wide text-ink-3">
+        <thead className="text-left text-[12px] text-ink-3">
           <tr className="border-b border-line">
             <th className="py-2 font-medium">Step · purpose</th>
             <th className="py-2 font-medium">Payee</th>
@@ -175,7 +175,7 @@ export function ReceiptView({ run }: { run: Run }) {
           ["Returned to you", r.budget.returned],
         ].map(([k, v]) => (
           <div key={k} className="rounded-lg border border-line p-3">
-            <div className="text-[11px] uppercase tracking-wide text-ink-3">{k}</div>
+            <div className="text-[12px] text-ink-3">{k}</div>
             <div className="num text-lg font-semibold">{fmt(v)}</div>
           </div>
         ))}

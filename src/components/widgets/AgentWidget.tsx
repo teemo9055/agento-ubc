@@ -99,7 +99,7 @@ function Findings({ run }: { run: Run }) {
       <div className="font-medium">{c.text}</div>
       {c.stats.map((s, i) => (
         <div key={i} className="mt-2">
-          <div className="text-[11px] uppercase tracking-wide text-ink-3">{String(s.step)}</div>
+          <div className="text-[12px] text-ink-3">{String(s.step)}</div>
           <dl className="mt-1 grid grid-cols-2 gap-x-4 gap-y-0.5 sm:grid-cols-3">
             {Object.entries(s)
               .filter(([k, v]) => k !== "step" && v != null && STAT_LABEL[k])

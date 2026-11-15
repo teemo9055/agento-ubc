@@ -297,7 +297,7 @@ export default function RunPage({ params }: { params: Promise<{ id: string }> })
             label="Plan graph"
             aside={
               <div className="flex items-center gap-3">
-                <span className="num hidden text-[12px] text-ink-3 sm:inline">{run.phases.length} steps · none run until you approve</span>
+                <span className="num hidden text-[12px] text-ink-3 sm:inline">{run.phases.length} steps · none run until you approve · click a step to edit it</span>
                 {run.status === "draft" && (
                   <Button variant="quiet" className="h-8 px-2.5 text-[12.5px]" onClick={() => post(`/api/runs/${run.id}/back`).catch((e) => toast((e as Error).message, "bad"))} data-testid="back-to-chat">
                     <Icon name="back" size={14} /> Change the move

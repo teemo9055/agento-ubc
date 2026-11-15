@@ -1,6 +1,7 @@
 import { Mascot } from "@/components/Mascot";
 import { OUTFIT_LABEL, type Mood, type Outfit } from "@/lib/outfit";
 import { THEMES } from "@/lib/themes";
+import { KITS } from "@/lib/agentKit";
 import type { AgentId } from "@/lib/types";
 
 const OUTFITS: Outfit[] = ["none", "sports", "health", "crypto", "commodities", "weather", "politics", "travel", "finance"];
@@ -20,7 +21,7 @@ export default function Agents() {
         <p className="mt-1 text-[15px] text-ink-2">Three agents share one core. Each mascot changes its outfit to match the job&apos;s topic, and its face to match the job&apos;s status.</p>
       </header>
       {(Object.keys(THEMES) as AgentId[]).map((a) => (
-        <section key={a} data-agent={a} className="rounded-2xl border border-line bg-panel p-5">
+        <section key={a} data-agent={a} className="rounded-2xl border border-line bg-panel p-5" aria-label={THEMES[a].name}>
           <div className="flex items-center gap-4">
             <Mascot agent={a} size={88} mood="idle" />
             <div>
@@ -30,6 +31,19 @@ export default function Agents() {
               </p>
             </div>
           </div>
+          <dl className="mt-5 grid overflow-hidden rounded-xl border border-line text-[13px] sm:grid-cols-2 lg:grid-cols-4">
+            {[
+              ["Free while you chat", KITS[a].free.join(", ")],
+              ["Paid, after you approve", `${KITS[a].paid.map((x) => `${x.label} ${x.price}`).join(", ")} USDC`],
+              ["Can do", KITS[a].acts],
+              ["Never", KITS[a].never],
+            ].map(([k, v]) => (
+              <div key={k} className="border-b border-line px-3.5 py-2.5 last:border-b-0 sm:border-r lg:border-b-0 lg:last:border-r-0">
+                <dt className="font-semibold">{k}</dt>
+                <dd className="num mt-0.5 text-ink-2">{v}</dd>
+              </div>
+            ))}
+          </dl>
           <div className="mt-5 grid grid-cols-3 gap-3 sm:grid-cols-5 lg:grid-cols-9">
             {OUTFITS.map((o) => (
               <figure key={o} className="flex flex-col items-center gap-1.5">

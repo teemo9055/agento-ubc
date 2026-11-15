@@ -49,7 +49,7 @@ export function OrderStatus({ run }: { run: Run }) {
     <section className={`rounded-2xl border-2 bg-panel p-4 ${tone}`} aria-label="The move" data-testid="order-status">
       <div className="flex flex-wrap items-baseline justify-between gap-2">
         <div>
-          <div className="font-pixel text-[12px] uppercase tracking-wide text-agent-ink">The move</div>
+          <div className="font-pixel text-[12px] text-agent-ink">The move</div>
           <div className="mt-0.5 text-[16px] font-semibold">{p.title}</div>
         </div>
         {trade && <VenueBadge venue={o?.venue ?? p.venue ?? "paper"} />}
@@ -57,7 +57,7 @@ export function OrderStatus({ run }: { run: Run }) {
       <div className="mt-3 grid gap-2 text-[13px] sm:grid-cols-2">
         {p.condition && (
           <div className="rounded-lg border border-line p-2.5">
-            <div className="text-[11px] uppercase tracking-wide text-ink-3">Check before placing</div>
+            <div className="text-[12px] text-ink-3">Check before placing</div>
             <div className="font-medium">{conditionLabel(p.condition)}</div>
             <div className="mt-0.5 text-[12px] text-ink-2">
               {check?.status === "done" ? (
@@ -74,7 +74,7 @@ export function OrderStatus({ run }: { run: Run }) {
         )}
         {p.action && (
           <div className="rounded-lg border border-line p-2.5">
-            <div className="text-[11px] uppercase tracking-wide text-ink-3">{p.action.kind === "itinerary" ? "Plan" : "Order"}</div>
+            <div className="text-[12px] text-ink-3">{p.action.kind === "itinerary" ? "Plan" : "Order"}</div>
             <div className="font-medium">{actionText(p.action)}</div>
             <div className={`mt-0.5 text-[12px] ${st?.cls ?? "text-ink-2"}`} data-testid="order-result">
               {o ? (
