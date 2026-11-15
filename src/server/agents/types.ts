@@ -40,8 +40,6 @@ export interface AgentDef {
   defaults: Record<string, unknown>;
   /** Phase where payment faults are injected. */
   faultPhase: string;
-  /** Phase that can run in the user's own AI IDE instead. */
-  analysisPhase: string;
   plan(task: string, options: Record<string, unknown>): Promise<PlanDraft>;
   edit(card: Card["kind"], prompt: string, options: Record<string, unknown>): EditResult;
   runPhase(phaseId: string, ctx: AgentCtx): Promise<void>;

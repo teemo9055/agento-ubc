@@ -105,15 +105,6 @@ export function ReceiptView({ run }: { run: Run }) {
             {r.deliverable.method} · task: “{r.task}”
           </div>
         </div>
-        {run.deliverable?.contextPack && (
-          <Button
-            variant="ghost"
-            className="no-print"
-            onClick={() => download(`context-pack-${r.workOrderId}.json`, JSON.stringify(run.deliverable!.contextPack, null, 2), "application/json")}
-          >
-            Context pack for your AI IDE ↓
-          </Button>
-        )}
       </div>
 
       <h3 className="mt-7 text-[11px] font-medium uppercase tracking-wide text-ink-3">Where your money went</h3>

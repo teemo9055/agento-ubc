@@ -23,7 +23,7 @@ export type FailureCode =
   | "approval_timeout"
   | "unknown";
 
-export type FailureAction = "retry" | "skip" | "switch" | "edit" | "cancel" | "topup";
+export type FailureAction = "retry" | "skip" | "edit" | "cancel" | "topup";
 
 export interface Card {
   kind: "deliverable" | "risk" | "method" | "price";
@@ -127,8 +127,9 @@ export interface AiStats {
 }
 
 export interface Method {
-  seller: "primary" | "mirror";
-  analysis: "builtin" | "ide";
+  seller: "primary";
+  /** Older jobs only; analysis always runs in the app now (use MCP for your own AI). */
+  analysis?: "builtin" | "ide";
 }
 
 export type RunStatus = "exploring" | "draft" | "funding" | "running" | "done" | "cancelled";

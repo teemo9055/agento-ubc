@@ -7,7 +7,7 @@ import { arcAdapter } from "./arc";
 export interface X402Request {
   product: string;
   params: Record<string, string>;
-  seller: "primary" | "mirror";
+  seller: "primary";
   fault?: string;
 }
 

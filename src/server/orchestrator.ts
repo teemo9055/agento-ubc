@@ -12,7 +12,6 @@ import type {
   Decision,
   Failure,
   FailureAction,
-  Method,
   FailureCode,
   Payment,
   Phase,
@@ -54,7 +53,7 @@ interface Ctl {
   memory: Record<string, unknown>;
   cache: Map<string, unknown>;
   usedFaults: Set<FailureCode>;
-  seller: Record<string, "primary" | "mirror">;
+  seller: Record<string, "primary">;
   overrides: Map<string, bigint>;
   previews: Map<string, { ok: boolean; message: string; options?: Record<string, unknown>; alternatives?: string[] }>;
   requests: Map<string, ReqCtx>;
@@ -148,59 +147,15 @@ function priceCard(all: CostLine[], cap: bigint, threshold: bigint, fees: bigint
   };
 }
 
-const markup = (v: string, from: bigint, to: bigint) => ((BigInt(v) * to) / from).toString();
-
-/** Applies the chosen method (seller, analysis) to an agent's draft plan. */
+/** The model's own card copy, when it wrote some, over the agent's default cards. */
 function applyMethod(ctl: Ctl, draft: PlanDraft): PlanDraft {
-  const m = ctl.run.method;
-  const agent = AGENTS[ctl.run.agent];
-  let { lines, phases, cards } = draft;
-  if (m.seller === "mirror") {
-    const P = SELLERS.primary;
-    const M = SELLERS.mirror;
-    lines = lines.map((l) =>
-      l.rail === "x402" && l.payee === P.address
-        ? {
-            ...l,
-            payee: M.address,
-            payeeName: M.name,
-            approved: markup(l.approved, P.markup, M.markup),
-            calls: l.calls && { ...l.calls, unitPrice: markup(l.calls.unitPrice, P.markup, M.markup) },
-          }
-        : l,
-    );
-    phases = phases.map((p) => {
-      const line = lines.find((l) => l.id === p.lineId);
-      return line && line.rail === "x402"
-        ? { ...p, alternatives: [{ payeeName: P.name, payee: P.address, service: line.service, price: markup(line.approved, M.markup, P.markup) }] }
-        : p;
-    });
-  }
-  if (m.analysis === "ide") {
-    const ph = agent.analysisPhase;
-    lines = [
-      ...lines,
-      {
-        id: "ide",
-        phaseId: ph,
-        purpose: "Analysis in your AI IDE",
-        service: "context pack",
-        payeeName: "Your subscription",
-        payee: ctl.run.client,
-        rail: "subscription",
-        approved: "0",
-      },
-    ];
-    phases = phases.map((p) => (p.id === ph ? { ...p, sub: "context pack for your AI IDE", lineId: "ide" } : p));
-    cards = cards.map((c) => (c.kind === "method" ? { ...c, points: c.points.map((x) => (/^Built-in/.test(x) ? "Your AI IDE does the analysis" : x)) } : c));
-  }
+  let { cards } = draft;
   const copy = ctl.options.cards as { deliverableTitle: string; deliverablePoints: string[]; riskPoints: string[] } | undefined;
   if (copy)
     cards = cards.map((c) =>
       c.kind === "deliverable" ? { ...c, title: copy.deliverableTitle, points: copy.deliverablePoints } : c.kind === "risk" ? { ...c, points: copy.riskPoints } : c,
     );
-  cards = cards.map((c) => (c.kind === "method" ? { ...c, points: c.points.map((x) => (/^x402/.test(x) ? `x402 on Arc via ${m.seller === "mirror" ? SELLERS.mirror.name : SELLERS.primary.name}` : x)) } : c));
-  return { cards, lines, phases };
+  return { ...draft, cards };
 }
 
 function materialize(ctl: Ctl, raw: PlanDraft) {
@@ -522,20 +477,13 @@ async function execute(ctl: Ctl) {
 async function finish(ctl: Ctl) {
   const agent = AGENTS[ctl.run.agent];
   const deliverable = agent.deliver(agentCtx(ctl, "deliver"));
-  if (aiEnabled() && ctl.run.method.analysis !== "ide") {
+  if (aiEnabled()) {
     const r = await aiSummary(ctl.run.agent, ctl.run.proposal ? `${ctl.run.proposal.ask} (user first asked: ${ctl.run.task})` : ctl.run.task, compact(deliverable.data));
     if (r) {
       trackAi(ctl, "summary", r.usage);
       deliverable.summary = r.summary.headline;
       deliverable.notes = r.summary.bullets;
     }
-  }
-  if (ctl.run.method.analysis === "ide") {
-    deliverable.method = `${deliverable.method} · analysis in your AI IDE`;
-    deliverable.contextPack = {
-      prompt: `You are helping with: "${ctl.run.task}". The JSON below is data bought for this task (${deliverable.method}). Summarise what matters, flag uncertainty, keep it short.`,
-      data: deliverable.data,
-    };
   }
   const { refunded, txHash } = await closeVault(ctl.run);
   emit(ctl, { type: "run.done", deliverable, refunded: refunded.toString(), refundTx: txHash, at: now() });
@@ -551,7 +499,6 @@ function optionsFor(code: FailureCode, phase: Phase, retryable: boolean): Failur
   const opts: FailureAction[] = [];
   if (code === "insufficient_balance") opts.push("topup");
   else if (retryable) opts.push("retry");
-  if (phase.alternatives?.length && code !== "model_error") opts.push("switch");
   if (phase.optional) opts.push("skip");
   opts.push("cancel");
   return opts;
@@ -589,7 +536,7 @@ async function runPhase(ctl: Ctl, phaseId: string): Promise<void> {
         phaseId,
         what: `${phase.label}: ${failure.message}`,
         why: code,
-        outcome: action === "retry" ? "retried" : action === "skip" ? "skipped" : action === "switch" ? "switched" : action === "topup" ? "topped_up" : "cancelled",
+        outcome: action === "retry" ? "retried" : action === "skip" ? "skipped" : action === "topup" ? "topped_up" : "cancelled",
         by: "user",
       });
       if (action === "cancel") {
@@ -601,7 +548,6 @@ async function runPhase(ctl: Ctl, phaseId: string): Promise<void> {
         emit(ctl, { type: "phase.skipped", phaseId });
         return;
       }
-      if (action === "switch") ctl.seller[phaseId] = (ctl.seller[phaseId] ?? ctl.run.method.seller) === "mirror" ? "primary" : "mirror";
       if (action === "topup") {
         if (ctl.run.payer === "passkey" && ctl.run.mode === "live") {
           // The user's wallet signed the top-up; read the new balance from the vault.
@@ -654,7 +600,7 @@ async function buy<T>(ctl: Ctl, phaseId: string, lineId: string, product: string
   if (ctl.cache.has(key)) return ctl.cache.get(key) as T;
   if (ctl.cancelled) throw new Cancelled();
   const adapter = adapterFor(ctl.run);
-  const sellerId = ctl.seller[phaseId] ?? ctl.run.method.seller;
+  const sellerId = "primary" as const;
   const fault = takeFault(ctl, phaseId);
   const req = { product, params, seller: sellerId, fault: fault === "approval_timeout" ? "price_increase" : fault };
 
@@ -898,23 +844,6 @@ export function decideReapproval(runId: string, requestId: string, outcome: "app
   if (outcome === "approved" && amount) ctl.overrides.set(requestId, BigInt(amount));
   if (txHash) ctl.signedTx.set(requestId, txHash);
   w(outcome);
-}
-
-export async function setMethod(runId: string, method: Partial<Method>) {
-  const ctl = ctlOf(runId);
-  if (ctl.run.status !== "draft") throw new Error("work order already approved");
-  const next = { ...ctl.run.method, ...method };
-  ctl.run = { ...ctl.run, method: next };
-  const plan = materialize(ctl, await AGENTS[ctl.run.agent].plan(ctl.run.task, ctl.options));
-  emit(ctl, { type: "workorder.updated", run: { ...ctl.run, ...plan, editNote: undefined } });
-  log(ctl, {
-    kind: "card_edit",
-    what: `Method: ${next.seller === "mirror" ? SELLERS.mirror.name : SELLERS.primary.name} · ${next.analysis === "ide" ? "your AI IDE" : "built-in analysis"}`,
-    why: "Method picked",
-    outcome: "edited",
-    by: "user",
-  });
-  return ctl.run;
 }
 
 /** Dry run of a card edit: what would change, without changing anything. */

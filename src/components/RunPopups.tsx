@@ -122,7 +122,6 @@ export function ReapprovalModal({ run, req, onClose }: { run: Run; req: Reapprov
 const ACTION: Record<FailureAction, { label: string; hint: string }> = {
   retry: { label: "Retry", hint: "Same step again. Paid requests aren't paid twice." },
   skip: { label: "Skip", hint: "Optional step. Its cost is released." },
-  switch: { label: "Switch provider", hint: "Use the backup seller. Asks you if price or payee changes." },
   edit: { label: "Edit", hint: "Change the plan." },
   topup: { label: "Top up vault", hint: "Add USDC to the vault, then retry." },
   cancel: { label: "Cancel job", hint: "Stop here. Unspent funds return to you." },

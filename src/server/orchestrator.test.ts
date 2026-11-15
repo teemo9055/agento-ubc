@@ -128,14 +128,6 @@ describe("orchestrator (demo rail)", () => {
     expect(total(run)).toBe(settled(run).reduce((a, p) => a + BigInt(p.amount!), 0n));
   });
 
-  it("seller_402_timeout: switch provider needs re-approval for the new payee", async () => {
-    const { run, seen } = await drive("BTC odds", ["seller_402_timeout"], { failure: ["switch"], reapproval: "approved" });
-    expect(seen.failures).toEqual(["seller_402_timeout"]);
-    expect(seen.reapprovals).toBe(1);
-    expect(run.lines.find((l) => l.id === "r1")?.payeeName).toBe("Data Mirror");
-    expect(run.status).toBe("done");
-  });
-
   it("insufficient_balance offers top up", async () => {
     const { run, seen } = await drive("BTC odds", ["insufficient_balance"], { failure: ["topup"] });
     expect(seen.failures).toEqual(["insufficient_balance"]);
@@ -290,21 +282,6 @@ describe("edit alternatives", () => {
 });
 
 describe("method, preview and edited re-approval", () => {
-  it("mirror seller re-prices lines; AI IDE adds a 0 USDC subscription line and a context pack", async () => {
-    const r = await draft("BTC odds");
-    const base = BigInt(r.lines.find((l) => l.id === "r1")!.approved);
-    const m = await orch.setMethod(r.id, { seller: "mirror", analysis: "ide" });
-    expect(BigInt(m.lines.find((l) => l.id === "r1")!.approved)).toBe((base * 150n) / 100n);
-    expect(m.lines.find((l) => l.id === "ide")).toMatchObject({ rail: "subscription", approved: "0", payeeName: "Your subscription" });
-    expect(BigInt(m.estFees)).toBeGreaterThan(0n);
-    await orch.approve(r.id);
-    for (let i = 0; i < 300 && orch.getRun(r.id)!.status !== "done"; i++) await tick();
-    const done = orch.getRun(r.id)!;
-    expect(done.status).toBe("done");
-    expect(done.deliverable?.contextPack?.prompt).toMatch(/BTC odds/);
-    expect(done.phases.flatMap((p) => p.payments).every((p) => p.lineId !== "ide")).toBe(true);
-  });
-
   it("preview shows the new total without changing the work order", async () => {
     const r = await draft("BTC odds");
     const p = await orch.previewEdit(r.id, "deliverable", "drop the trade tape");

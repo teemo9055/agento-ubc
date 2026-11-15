@@ -81,7 +81,7 @@ Measured network fee per `authorize` call, paid by the agent: about 0.0026 USDC.
 6. **Check, then act.** An optional check on a different number (e.g. BTC spot before buying a BTC contract) is read fresh right before acting. The order then goes to Gemini as a real resting order: a **limit** order covers "buy if it drops to X", a **stop-limit** order covers "buy once it rises to X". The app tracks it (open, filled, cancelled), refreshes it, and can cancel it.
    - Every move is labelled where it goes: **Live** (real money), **Gemini sandbox** (real orders, test money) or **Simulation** (no exchange connected, nothing sent). The agent can only trade markets listed on the connected exchange.
 7. **Change → ask.** If the policy blocks a spend, that step pauses and you get a re-approval popup. Other steps keep going.
-8. **Fail → choose.** A failed step offers retry, skip (optional steps only), switch provider, top up, or cancel. Purchases are cached per request key, so a retry never pays twice.
+8. **Fail → choose.** A failed step offers retry, skip (optional steps only), top up, or cancel. Purchases are cached per request key, so a retry never pays twice.
 9. **Close.** The vault closes, unspent USDC returns to you, and you get the receipt.
 
 ## Safety limits

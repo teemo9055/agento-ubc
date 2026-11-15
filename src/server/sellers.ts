@@ -1,7 +1,7 @@
 import type { Hex } from "viem";
 
 export interface Seller {
-  id: "primary" | "mirror";
+  id: "primary";
   name: string;
   address: Hex;
   markup: bigint; // percent
@@ -15,12 +15,6 @@ export const SELLERS: Record<Seller["id"], Seller> = {
     name: "Data Feed",
     address: addr(process.env.SELLER_ADDRESS, "0x000000000000000000000000000000000000dA7A"),
     markup: 100n,
-  },
-  mirror: {
-    id: "mirror",
-    name: "Data Mirror",
-    address: addr(process.env.MIRROR_ADDRESS, "0x000000000000000000000000000000000000B0B0"),
-    markup: 150n,
   },
 };
 

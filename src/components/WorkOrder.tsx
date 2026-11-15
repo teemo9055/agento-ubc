@@ -3,7 +3,7 @@ import { useState } from "react";
 import { AnimatePresence, motion } from "framer-motion";
 import { fmt, fmtFee, sum } from "@/lib/money";
 import { short, addrUrl } from "@/lib/format";
-import { offVault, type Card, type CostLine, type Method, type Run } from "@/lib/types";
+import { offVault, type Card, type CostLine, type Run } from "@/lib/types";
 import { Modal } from "./Modal";
 import { Amount, Button, Spinner } from "./ui";
 import { post } from "./useRun";
@@ -59,71 +59,6 @@ export function Cards({ run, onEdit }: { run: Run; onEdit?: (k: Card["kind"]) =>
         </motion.button>
       ))}
     </div>
-  );
-}
-
-const SELLERS: { id: Method["seller"]; name: string; note: string }[] = [
-  { id: "primary", name: "Data Feed", note: "Base price · x402" },
-  { id: "mirror", name: "Data Mirror", note: "+50% · backup seller" },
-];
-const ANALYSIS: { id: Method["analysis"]; name: string; note: string }[] = [
-  { id: "builtin", name: "Built-in analysis", note: "Free · runs here" },
-  { id: "ide", name: "Your AI IDE", note: "0 USDC · uses your subscription" },
-];
-
-function Segment<T extends string>({ value, options, onChange, disabled, label }: { value: T; options: { id: T; name: string; note: string }[]; onChange: (v: T) => void; disabled?: boolean; label: string }) {
-  return (
-    <div role="radiogroup" aria-label={label} className="grid grid-cols-2 gap-1 rounded-xl border border-line bg-surface p-1">
-      {options.map((o) => {
-        const on = o.id === value;
-        return (
-          <button
-            key={o.id}
-            role="radio"
-            aria-checked={on}
-            disabled={disabled}
-            onClick={() => !on && onChange(o.id)}
-            className="pressable tap relative rounded-lg px-3 py-2 text-left disabled:cursor-not-allowed"
-          >
-            {on && <motion.span layoutId={`seg-${label}`} className="absolute inset-0 rounded-lg border border-line bg-panel shadow-sm" transition={{ type: "spring", duration: 0.35 }} />}
-            <span className="relative block text-[13px] font-medium">{o.name}</span>
-            <span className="relative block text-[11px] text-ink-3">{o.note}</span>
-          </button>
-        );
-      })}
-    </div>
-  );
-}
-
-/** Pick how the work gets done. Changing it re-prices the order. */
-export function MethodPicker({ run }: { run: Run }) {
-  const [busy, setBusy] = useState(false);
-  const set = async (m: Partial<Method>) => {
-    setBusy(true);
-    try {
-      await post(`/api/runs/${run.id}/method`, m);
-    } finally {
-      setBusy(false);
-    }
-  };
-  const disabled = busy || run.status !== "draft";
-  return (
-    <section className="rounded-2xl border border-line bg-panel p-4" aria-label="How it gets done">
-      <div className="mb-3 flex items-center justify-between">
-        <h2 className="text-[13px] font-semibold">How it gets done</h2>
-        {busy && (
-          <span className="flex items-center gap-1.5 text-[12px] text-ink-3">
-            <Spinner /> Repricing
-          </span>
-        )}
-      </div>
-      <div className="grid grid-cols-1 gap-3">
-        <div>
-          <div className="mb-1.5 text-[11px] font-medium uppercase tracking-wide text-ink-3">Data</div>
-          <Segment label="Data seller" value={run.method.seller} options={SELLERS} onChange={(seller) => set({ seller })} disabled={disabled} />
-        </div>
-      </div>
-    </section>
   );
 }
 

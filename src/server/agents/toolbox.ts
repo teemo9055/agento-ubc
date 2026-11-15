@@ -16,7 +16,6 @@ import { PhaseFailure } from "./types";
  */
 
 const seller = SELLERS.primary;
-const mirror = SELLERS.mirror;
 const usd = (x: number) => BigInt(Math.round(x * 1e6)).toString();
 export const EXCHANGE_PAYEE = "0x0000000000000000000000000000000000000e0e" as const;
 /** Quicknode's payTo for x402 on the Agent Marketplace (from its listing). */
@@ -116,8 +115,7 @@ export function planFromProposal(p: Proposal): PlanDraft {
       sub: r.why,
       dependsOn: [],
       optional: true,
-      lineId: r.id,
-      alternatives: [{ payeeName: mirror.name, payee: mirror.address, service: t.product, price: ((price * mirror.markup) / 100n).toString() }],
+      lineId: r.id
     });
   }
   const research = p.research.map((r) => r.id);
@@ -183,7 +181,6 @@ export function toolboxAgent(id: AgentId): AgentDef {
     ...TAGLINES[id],
     defaults: {},
     faultPhase: "r1",
-    analysisPhase: "check",
 
     async plan(_task, o) {
       const p = (o as Opts).proposal;

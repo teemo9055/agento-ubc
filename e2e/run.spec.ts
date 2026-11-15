@@ -65,14 +65,6 @@ test("impossible card edit explains why and offers alternatives", async ({ page 
   await expect(page.getByTestId("card-deliverable")).not.toContainText("Trade tape");
 });
 
-test("method picker re-prices with the other data seller", async ({ page }) => {
-  await draft(page, [], "BTC odds");
-  const before = await page.getByTestId("big-number").innerText();
-  await page.getByRole("radio", { name: /Data Mirror/ }).click();
-  await expect(page.getByTestId("big-number")).not.toHaveText(before);
-  await expect(page.getByRole("radio", { name: /Your AI IDE/ })).toHaveCount(0);
-});
-
 test("re-approval can be edited to a smaller amount", async ({ page }) => {
   await start(page, ["Seller raises price"]);
   await expect(page.getByRole("dialog", { name: "Needs your OK" })).toBeVisible({ timeout: 30_000 });

@@ -35,7 +35,7 @@ function open(): Db | null {
 export interface RunMeta {
   options: Record<string, unknown>;
   funded: string;
-  seller: Record<string, "primary" | "mirror">;
+  seller: Record<string, "primary">;
 }
 
 export function appendEvent(runId: string, e: SeqEvent, meta: RunMeta, createdAt: string) {

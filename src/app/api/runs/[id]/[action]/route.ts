@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { z } from "zod";
 import type { SeqEvent } from "@/lib/events";
-import { adopt, approve, backToChat, cancel, cancelRunOrder, refreshRunOrder, sendChat, decideReapproval, editCard, fundingInfo, previewEdit, reapprovalPlan, resolveFailure, setMethod, subscribe } from "@/server/orchestrator";
+import { adopt, approve, backToChat, cancel, cancelRunOrder, refreshRunOrder, sendChat, decideReapproval, editCard, fundingInfo, previewEdit, reapprovalPlan, resolveFailure, subscribe } from "@/server/orchestrator";
 
 export const dynamic = "force-dynamic";
 
@@ -10,9 +10,7 @@ type Ctx = { params: Promise<{ id: string; action: string }> };
 const Edit = z.object({ card: z.enum(["deliverable", "risk", "method", "price"]), prompt: z.string().min(1).max(200) });
 const Hash = z.string().regex(/^0x[0-9a-fA-F]{64}$/);
 const Reapproval = z.object({ requestId: z.string(), outcome: z.enum(["approved", "denied"]), amount: z.string().regex(/^\d+$/).optional(), txHash: Hash.optional() });
-// Analysis always runs here; to use your own AI, connect it over MCP instead.
-const Method = z.object({ seller: z.enum(["primary", "mirror"]).optional() });
-const Failure = z.object({ failureId: z.string(), action: z.enum(["retry", "skip", "switch", "edit", "cancel", "topup"]), txHash: Hash.optional() });
+const Failure = z.object({ failureId: z.string(), action: z.enum(["retry", "skip", "edit", "cancel", "topup"]), txHash: Hash.optional() });
 const Chat = z.object({ text: z.string().min(1).max(600) });
 const Adopt = z.object({ proposalId: z.string() });
 const Approve = z.object({ txHash: Hash.optional() });
@@ -45,8 +43,6 @@ export async function POST(req: NextRequest, ctx: Ctx) {
         const b = Edit.parse(await req.json());
         return NextResponse.json(await previewEdit(id, b.card, b.prompt));
       }
-      case "method":
-        return NextResponse.json(await setMethod(id, Method.parse(await req.json())));
       case "approve": {
         const b = Approve.parse(await req.json().catch(() => ({})));
         return NextResponse.json(await approve(id, { txHash: b.txHash as `0x${string}` | undefined }));

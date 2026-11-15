@@ -7,7 +7,7 @@ import { Mascot } from "@/components/Mascot";
 import dynamic from "next/dynamic";
 import { CancelModal, FailureModal, ReapprovalModal } from "@/components/RunPopups";
 import { transitionReady } from "@/components/transitions";
-import { ApproveModal, Cards, CostTable, EditCardModal, MethodPicker } from "@/components/WorkOrder";
+import { ApproveModal, Cards, CostTable, EditCardModal } from "@/components/WorkOrder";
 import { Chat, MoveCard } from "@/components/Chat";
 import { OrderStatus } from "@/components/OrderStatus";
 import { post } from "@/components/useRun";
@@ -216,7 +216,6 @@ export default function RunPage({ params }: { params: Promise<{ id: string }> })
             </div>
           )}
           <Cards run={run} onEdit={run.status === "draft" ? setEditing : undefined} />
-          <MethodPicker run={run} />
           <CostTable run={run} />
           <AnimatePresence>
             {run.editNote && (
