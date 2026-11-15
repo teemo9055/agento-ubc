@@ -204,6 +204,8 @@ export interface Proposal {
   budgetUsd?: number;
   /** The book when the move was proposed, so outcomes can teach later moves. */
   market?: { ask: number | null; bid: number | null; closesAt?: string };
+  /** What this version changed compared with the move before it, e.g. "+ Odds history", "$5 → $10". */
+  changes?: string[];
   /** Changes code made to the model's move (rounding, budget), shown to the user. */
   adjustments?: string[];
 }

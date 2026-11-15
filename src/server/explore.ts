@@ -7,6 +7,8 @@ import { ACTIONS, FREE_TOOLS, ProposalInput, researchMenu, runFreeTool, TOOLKIT,
 import { conditionText } from "./agents/toolbox";
 import { lessonLines, PRIMERS } from "./knowledge";
 import { providerDirectory } from "./providers";
+import { diffMoves } from "./move-diff";
+import { toProposalInput } from "./tools";
 
 /**
  * Explore: the agent answers questions with free tools, then turns the
@@ -147,6 +149,16 @@ export interface TurnResult {
   usage: AiUsage[];
 }
 
+/** Two moves aim at the same thing: same contract or coin, or both are data-only. */
+function sameTarget(a: Proposal, b: Proposal) {
+  const x = a.action;
+  const y = b.action;
+  if (!x || !y) return true;
+  if (x.kind !== y.kind) return false;
+  if (x.kind === "itinerary" || y.kind === "itinerary") return true;
+  return x.symbol === y.symbol;
+}
+
 /** With a move on screen: "Yes, set it up" first, then the agent's own options for this move. */
 function withAccept(suggestions: string[], p: Proposal) {
   const rest = suggestions.filter((x) => !/^(yes|ok|sure|set it up|do it)/i.test(x.trim()));
@@ -165,7 +177,13 @@ function splitNext(text: string) {
 
 export async function exploreTurn(agent: AgentId, chat: ChatMsg[], onTool: (note: string) => void, proposalId: string): Promise<TurnResult> {
   if (!aiEnabled()) return rulesTurn(agent, chat, onTool, proposalId);
+  const onScreen = [...chat].reverse().find((m) => m.proposal)?.proposal;
   const messages: ChatTurn[] = [{ role: "system", content: system(agent) }, ...historyTurns(chat)];
+  if (onScreen)
+    messages.splice(1, 0, {
+      role: "system",
+      content: `CURRENT MOVE ON SCREEN: ${JSON.stringify(toProposalInput(onScreen))}\nIf the user's message adds to or adjusts it ("add the odds history", "also check Chainlink", "make it $10", "only if it's under 40¢", "for it"), call propose_move with the WHOLE move: everything already in it plus the change. Start a fresh move only when they ask about a different market or a different goal.`,
+    });
   const tools: ToolCall[] = [];
   const usage: AiUsage[] = [];
   const facts: string[] = [];
@@ -188,6 +206,11 @@ export async function exploreTurn(agent: AgentId, chat: ChatMsg[], onTool: (note
         if ("error" in v) content = { ok: false, error: v.error, hint: "Fix the move using real data from the tools, or explain to the user why no move fits." };
         else {
           proposal = v.proposal;
+          // Same market as the move on screen: it's an update, so say exactly what changed.
+          if (onScreen && sameTarget(onScreen, proposal)) {
+            const changes = diffMoves(onScreen, proposal);
+            proposal = { ...proposal, changes: changes.length ? changes : undefined };
+          }
           content = { ok: true, shown: "The move card is shown right below your reply, with a Set it up button. Reply in 1-2 short sentences: why this move, then point at the card below. Don't repeat its numbers." };
         }
       } else {

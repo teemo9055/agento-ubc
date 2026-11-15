@@ -3,6 +3,7 @@ import type { AgentId, Proposal } from "@/lib/types";
 import { aiJson, FAST_MODEL, type AiUsage } from "./ai";
 import { ProposalInput, RESEARCH, researchMenu, TOOLKIT, toProposalInput, validateProposal } from "./tools";
 import { providerDirectory, providersIn } from "./providers";
+import { diffMoves, guardEdit } from "./move-diff";
 
 const Reply = z.object({
   understood: z.boolean().describe("false if the request can't be done by changing this move"),
@@ -56,5 +57,16 @@ export async function aiEditMove(agent: AgentId, current: Proposal, prompt: stri
   if (!understood || !move) return { ok: false, message, alternatives: alternatives.length ? alternatives : undefined, usage: r.usage };
   const v = await validateProposal(agent, move, current.id);
   if ("error" in v) return { ok: false, message: v.error.slice(0, 160), alternatives: alternatives.length ? alternatives : undefined, usage: r.usage };
-  return { ok: true, message, proposal: v.proposal, usage: r.usage };
+  // Only the part being edited may change; anything else the model touched is put back.
+  const { move: guarded, undone } = guardEdit(current, v.proposal, step);
+  let proposal = guarded;
+  if (undone.length) {
+    const again = await validateProposal(agent, toProposalInput(guarded), current.id);
+    if ("error" in again) return { ok: false, message: again.error.slice(0, 160), usage: r.usage };
+    proposal = again.proposal;
+  }
+  const changes = diffMoves(current, proposal);
+  if (!changes.length) return { ok: false, message: undone.length ? `That would change ${undone.join(" and ")}, which this step doesn't control. Ask in the chat.` : "Nothing to change.", alternatives: alternatives.length ? alternatives : undefined, usage: r.usage };
+  proposal = { ...proposal, changes };
+  return { ok: true, message: `${changes.join(" · ")}${undone.length ? ` (kept ${undone.join(" and ")} as is)` : ""}`, proposal, usage: r.usage };
 }

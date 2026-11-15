@@ -102,6 +102,11 @@ export function MoveCard({ p, run, chosen, onChoose, busy }: { p: Proposal; run:
           </li>
         ))}
       </ol>
+      {p.changes && p.changes.length > 0 && (
+        <p className="mt-2 text-[12px] font-medium text-agent-ink" data-testid="move-changes">
+          Changed: {p.changes.join(" · ")}
+        </p>
+      )}
       {n.length > 0 && <p className="mt-2 text-[12px] text-ink-3">{n.join(" · ")}</p>}
       {onChoose && !chosen && (
         <div className="mt-3 flex items-center justify-between gap-2 border-t border-[#f1f0ec] pt-2.5">
