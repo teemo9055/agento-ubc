@@ -453,7 +453,7 @@ export default function RunPage({ params }: { params: Promise<{ id: string }> })
         </div>
       </div>
       {/* The agent's own toolkit: what it looks up for free and what it can do. */}
-      <div className="flex gap-1.5 overflow-x-auto border-b border-line bg-panel px-4 py-2.5 lg:flex-wrap" aria-label={`${theme.name}'s tools`}>
+      <div className="flex shrink-0 gap-1.5 overflow-x-auto border-b border-line bg-panel px-4 py-2.5" aria-label={`${theme.name}'s tools`}>
         {KITS[run.agent].free.map((t) => (
           <span key={t} className="inline-flex h-6 shrink-0 items-center gap-1 rounded-md bg-[#f1f0ec] px-2 text-[12px] text-ink-2">
             <Icon name="search" size={11} /> {t}
