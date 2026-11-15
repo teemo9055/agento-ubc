@@ -1,6 +1,7 @@
 import { fmt, fmtFee, sum } from "./money";
 import { THEMES } from "./themes";
 import { paidInUsdc, type Decision, type Hex, type Run } from "./types";
+import { orderDigest, orderRecord } from "./order-record";
 
 export interface ReceiptLine {
   step: string;
@@ -37,10 +38,13 @@ export interface Receipt {
   decisions: Decision[];
   policy: { spendsOnPlan: number; bigSpendsPreApproved: number; reapprovals: number; offPlanBlocked: number; threshold: string };
   job: { started?: string; finished?: string; durationSec: number };
+  /** The exchange order, as fingerprinted on Arc: keccak256 of JSON.stringify(record) = digest. */
+  order?: { record: ReturnType<typeof orderRecord>; status: string; filled?: number; digest: Hex; anchorTx?: string };
 }
 
 /** One row per settled payment. Amounts in USDC base units; fees in 18-decimal native units. */
 export function buildReceipt(run: Run): Receipt {
+  const o = run.order && run.order.venue !== "paper" && run.order.orderId ? run.order : undefined;
   const lines: ReceiptLine[] = run.phases.flatMap((p) =>
     p.payments
       .filter((x) => x.txState === "settled")
@@ -103,6 +107,7 @@ export function buildReceipt(run: Run): Receipt {
       finished: run.finishedAt,
       durationSec: run.finishedAt ? Math.round((Date.parse(run.finishedAt) - Date.parse(started)) / 1000) : 0,
     },
+    order: o && { record: orderRecord(run, o), status: o.status, filled: o.filledQuantity, digest: orderDigest(run, o), anchorTx: o.anchor?.tx },
   };
 }
 

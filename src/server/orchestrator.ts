@@ -25,6 +25,7 @@ import { exploreTurn } from "./explore";
 import { cancelOrder, refreshOrder } from "./exchange";
 import { stillTradable } from "./tools";
 import { ensureGatewayFunds, GatewayFundsError } from "./nanopay";
+import { anchorOrder, canAnchor } from "./anchor";
 import { recordOrder } from "./knowledge";
 import { aiEditMove } from "./edit-move";
 import { offVault, paidInUsdc, type ChatMsg, type Proposal } from "@/lib/types";
@@ -47,6 +48,8 @@ type Waiter = (v: string) => void;
 
 interface Ctl {
   run: Run;
+  /** An order fingerprint is being written; only one per job. */
+  anchoring?: boolean;
   events: SeqEvent[];
   listeners: Set<(e: SeqEvent) => void>;
   waiters: Map<string, Waiter>;
@@ -96,6 +99,19 @@ function emit(ctl: Ctl, e: RunEvent) {
       recordOrder(ctl.run, e.order);
     } catch (err) {
       console.warn("lesson not saved", (err as Error).message);
+    }
+    // First sight of a real order: fingerprint it onchain. Never blocks or fails the job.
+    if (canAnchor(ctl.run, e.order) && !ctl.anchoring) {
+      ctl.anchoring = true;
+      const placed = e.order;
+      void anchorOrder(ctl.run, placed).then(
+        (anchor) => {
+          const cur = ctl.run.order;
+          if (cur && cur.orderId === placed.orderId) emit(ctl, { type: "order.updated", order: { ...cur, anchor } });
+          log(ctl, { kind: "failure", what: "Order fingerprint written to Arc", why: `Hash of the order record (${anchor.digest.slice(0, 10)}…), so it can be checked later`, outcome: "approved", by: "system", tx: anchor.tx as Hex });
+        },
+        (err) => console.warn(`anchor ${ctl.run.id}:`, (err as Error).message),
+      );
     }
   }
   for (const w of watchers) w(ctl.run);
@@ -466,7 +482,36 @@ export async function approve(runId: string, signed?: { txHash?: Hex }) {
   return ctl.run;
 }
 
+// ---------- a cap on jobs running at once ----------
+
+/** Jobs share one agent wallet, one exchange key and one AI quota; past this many, new ones wait their turn. */
+const MAX_ACTIVE = Number(process.env.MAX_ACTIVE_JOBS ?? 8);
+const slots = ((globalThis as unknown as { __agentoSlots?: { active: number; queue: (() => void)[] } }).__agentoSlots ??= { active: 0, queue: [] });
+
+async function takeSlot(ctl: Ctl) {
+  if (slots.active < MAX_ACTIVE) {
+    slots.active++;
+    return;
+  }
+  log(ctl, { kind: "failure", what: "Waiting for a free slot", why: `${slots.active} jobs are running; this one starts when one finishes (${slots.queue.length + 1} in line)`, outcome: "retried", by: "system" });
+  await new Promise<void>((r) => slots.queue.push(r));
+}
+function freeSlot() {
+  const next = slots.queue.shift();
+  if (next) next();
+  else slots.active = Math.max(0, slots.active - 1);
+}
+
 async function execute(ctl: Ctl) {
+  await takeSlot(ctl);
+  try {
+    await executeNow(ctl);
+  } finally {
+    freeSlot();
+  }
+}
+
+async function executeNow(ctl: Ctl) {
   const running = new Map<string, Promise<void>>();
   const terminal = (p: Phase) => p.status === "done" || p.status === "skipped";
   try {

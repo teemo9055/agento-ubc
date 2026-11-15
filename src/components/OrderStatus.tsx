@@ -97,6 +97,18 @@ export function OrderStatus({ run }: { run: Run }) {
                 {o.updatedAt ? ` · checked ${new Date(o.updatedAt).toLocaleTimeString()}` : ""}
               </div>
             )}
+            {o?.anchor && (
+              <a
+                className="mt-1 inline-block text-[12px] text-ink-3 underline decoration-line underline-offset-2"
+                href={`${process.env.NEXT_PUBLIC_EXPLORER_URL ?? "https://explorer.testnet.arc.io"}/tx/${o.anchor.tx}`}
+                target="_blank"
+                rel="noreferrer"
+                title={`Hash of this order's record: ${o.anchor.digest}`}
+                data-testid="order-anchor"
+              >
+                Order fingerprint on Arc ↗
+              </a>
+            )}
             {o?.status === "open" && o.venue !== "paper" && (
               <div className="mt-2 flex gap-2">
                 <Button variant="ghost" className="h-8 text-[12px]" disabled={!!busy} onClick={() => act2("refresh")} data-testid="order-refresh">

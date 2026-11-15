@@ -229,6 +229,8 @@ export interface OrderResult {
   filledQuantity?: number;
   avgPrice?: number;
   updatedAt?: string;
+  /** Fingerprint of the order written to Arc: digest of the order record and the transaction. */
+  anchor?: { digest: string; tx: string };
 }
 
 export interface Run {
