@@ -10,6 +10,8 @@ const MODEL = process.env.AI_MODEL ?? "gemini-flash-latest";
 const FALLBACK_MODEL = process.env.AI_FALLBACK_MODEL ?? "gemini-flash-lite-latest";
 const KEY = process.env.AI_API_KEY ?? process.env.GEMINI_API_KEY;
 const TIMEOUT_MS = Number(process.env.AI_TIMEOUT_MS ?? 20_000);
+/** How hard the model thinks before answering. "low" is faster and spends fewer hidden tokens. */
+const EFFORT = process.env.AI_REASONING_EFFORT ?? "low";
 
 export const aiEnabled = () => Boolean(KEY) && process.env.AI_DISABLED !== "true";
 export const aiModel = () => MODEL;
@@ -127,6 +129,7 @@ export async function aiChat(messages: ChatTurn[], tools: ToolSpec[], opts: { ma
           messages,
           tools: tools.map((t) => ({ type: "function", function: t })),
           tool_choice: opts.force ? "required" : "auto",
+          ...(EFFORT !== "default" ? { reasoning_effort: EFFORT } : {}),
         }),
       });
       if (!res.ok) {
