@@ -38,9 +38,9 @@ export function Cards({ run, onEdit, focused }: { run: Run; onEdit?: (k: Card["k
             initial={{ opacity: 0, y: 10 }}
             animate={{ opacity: 1, y: 0 }}
             transition={{ delay: i * 0.05, duration: 0.3, ease: [0.2, 0.8, 0.2, 1] }}
-            className={`group/card relative min-w-0 transition-[flex-grow,opacity] sm:basis-0 duration-300 ease-[cubic-bezier(0.2,0.8,0.2,1)] sm:flex-1 ${
-              on ? "sm:grow-[2.2]" : "sm:hover:grow-[1.7] sm:focus-within:grow-[1.7]"
-            } ${dim ? "opacity-60 hover:opacity-100" : ""}`}
+            className={`group/card relative min-w-0 transition-[flex-grow,opacity] duration-300 ease-[cubic-bezier(0.2,0.8,0.2,1)] sm:flex-1 sm:basis-0 ${
+              on ? "sm:grow-[2.2]" : ""
+            } ${dim ? "opacity-60 hover:opacity-100" : ""} ${on ? "" : "sm:h-[208px] sm:hover:z-20 sm:focus-within:z-20"}`}
           >
             {/* Step marker and the rail that joins the cards. */}
             <div className="mb-2 flex items-center gap-2" aria-hidden>
@@ -62,10 +62,12 @@ export function Cards({ run, onEdit, focused }: { run: Run; onEdit?: (k: Card["k
               aria-expanded={on}
               aria-label={onEdit ? `${CARD_LABEL[c.kind]}: ${c.title}. Edit in chat` : undefined}
               data-testid={`card-${c.kind}`}
-              className={`pressable relative flex w-full flex-col overflow-hidden rounded-2xl p-4 text-left sm:h-full transition-[border-color,box-shadow,transform] duration-200 disabled:cursor-default ${
+              className={`pressable flex w-full flex-col overflow-hidden rounded-2xl p-4 text-left transition-[border-color,box-shadow] duration-200 disabled:cursor-default ${
+                on ? "relative sm:h-full" : "relative sm:absolute sm:inset-x-0 sm:top-[30px] sm:min-h-[178px] sm:group-hover/card:shadow-[0_12px_28px_-12px_rgb(11_11_11/0.28)] sm:group-focus-within/card:shadow-[0_12px_28px_-12px_rgb(11_11_11/0.28)]"
+              } ${
                 on
                   ? "border-[1.5px] border-ink shadow-[3px_3px_0_0_var(--agent)]"
-                  : `border ${onEdit ? "enabled:hover:-translate-y-0.5 enabled:hover:border-ink enabled:hover:shadow-[3px_3px_0_0_var(--agent)]" : ""}`
+                  : `border ${onEdit ? "enabled:hover:border-ink" : ""}`
               } ${price ? "border-agent/30 bg-agent-soft" : "border-line bg-panel"} ${on ? "!border-ink" : ""}`}
             >
               {/* A short wash of the agent colour when the card's content changes (an applied edit). */}
@@ -108,7 +110,7 @@ export function Cards({ run, onEdit, focused }: { run: Run; onEdit?: (k: Card["k
               {c.points[0] && <span className={`mt-1.5 block text-[13px] leading-snug text-ink-2 ${on ? "" : "line-clamp-2"}`}>{c.points[0]}</span>}
               {c.points.length > 1 && (
                 <span
-                  className={`grid transition-[grid-template-rows,opacity] duration-300 ease-[cubic-bezier(0.2,0.8,0.2,1)] ${
+                  className={`grid transition-[grid-template-rows,opacity] duration-[380ms] ease-[cubic-bezier(0.22,1,0.36,1)] ${
                     on ? "grid-rows-[1fr] opacity-100" : "grid-rows-[1fr] opacity-100 sm:grid-rows-[0fr] sm:opacity-0 group-hover/card:grid-rows-[1fr] group-hover/card:opacity-100 group-focus-within/card:grid-rows-[1fr] group-focus-within/card:opacity-100"
                   }`}
                 >
@@ -127,7 +129,7 @@ export function Cards({ run, onEdit, focused }: { run: Run; onEdit?: (k: Card["k
                 </span>
               )}
               {c.points.length > 1 && !on && (
-                <span className="mt-auto hidden pt-2 text-[12px] text-ink-3 transition-opacity sm:block group-hover/card:opacity-0 group-focus-within/card:opacity-0" aria-hidden>
+                <span className="mt-auto hidden pt-2 text-[12px] text-ink-3 transition-opacity duration-200 sm:block group-hover/card:hidden group-focus-within/card:hidden" aria-hidden>
                   +{c.points.length - 1} more
                 </span>
               )}
@@ -206,7 +208,7 @@ export function CostTable({ run, compact = false }: { run: Run; compact?: boolea
                       </a>
                     )}
                   </td>
-                  {!compact && <td className="hidden px-2 py-2.5 text-ink-3 sm:table-cell">{l.rail === "exchange" ? "exchange · not from vault" : sub ? "your subscription" : l.rail}</td>}
+                  {!compact && <td className="hidden px-2 py-2.5 text-ink-3 sm:table-cell">{l.rail === "exchange" ? "exchange · not from vault" : l.rail === "gateway" ? "Gateway nanopayment" : l.rail === "x402" ? "x402 from vault" : l.rail}</td>}
                   <td className="num px-4 py-2.5 text-right">
                     {st === "planned" && <span>{fmt(l.approved)}</span>}
                     {st === "progress" && (

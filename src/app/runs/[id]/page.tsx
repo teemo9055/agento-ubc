@@ -62,12 +62,15 @@ function Skeleton() {
   );
 }
 
-function Section({ title, aside, children, label }: { title: string; aside?: React.ReactNode; children: React.ReactNode; label?: string }) {
+function Section({ title, sub, aside, children, label }: { title: string; sub?: React.ReactNode; aside?: React.ReactNode; children: React.ReactNode; label?: string }) {
   return (
     <section className="rounded-2xl border border-line bg-panel" aria-label={label ?? title}>
-      <div className="flex flex-wrap items-center justify-between gap-2 border-b border-[#f1f0ec] px-4 py-3">
-        <h2 className="text-[15px] font-semibold">{title}</h2>
-        {aside}
+      <div className="flex min-h-[60px] items-center justify-between gap-3 border-b border-[#f1f0ec] px-4 py-2.5">
+        <div className="min-w-0">
+          <h2 className="text-[15px] font-semibold leading-tight">{title}</h2>
+          {sub && <p className="num mt-0.5 truncate text-[12px] leading-tight text-ink-3">{sub}</p>}
+        </div>
+        {aside && <div className="flex shrink-0 items-center gap-3">{aside}</div>}
       </div>
       <div className="p-4">{children}</div>
     </section>
@@ -298,15 +301,15 @@ export default function RunPage({ params }: { params: Promise<{ id: string }> })
           <Section
             title="Steps"
             label="Plan graph"
+            sub={`${run.phases.length} steps · nothing runs until you approve · click a step to change it`}
             aside={
-              <div className="flex items-center gap-3">
-                <span className="num hidden text-[12px] text-ink-3 sm:inline">{run.phases.length} steps · none run until you approve · click a step to edit it</span>
+              <>
                 {run.status === "draft" && (
                   <Button variant="quiet" className="h-8 px-2.5 text-[12.5px]" onClick={() => post(`/api/runs/${run.id}/back`).catch((e) => toast((e as Error).message, "bad"))} data-testid="back-to-chat">
                     <Icon name="back" size={14} /> Change the move
                   </Button>
                 )}
-              </div>
+              </>
             }
           >
             <PhaseGraph

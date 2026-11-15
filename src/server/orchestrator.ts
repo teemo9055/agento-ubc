@@ -27,7 +27,7 @@ import { stillTradable } from "./tools";
 import { depositToGateway, gatewayBalance } from "./nanopay";
 import { recordOrder } from "./knowledge";
 import { aiEditMove } from "./edit-move";
-import { offVault, type ChatMsg, type Proposal } from "@/lib/types";
+import { offVault, paidInUsdc, type ChatMsg, type Proposal } from "@/lib/types";
 import { PhaseFailure, type AgentCtx, type PlanDraft } from "./agents/types";
 import { FACTORY, USDC, addresses, factoryAbi, liveReady, publicClient, vaultAbi } from "./chain";
 import { planTree } from "./merkle";
@@ -130,7 +130,7 @@ export function planHash(run: Pick<Run, "id" | "task" | "threshold" | "lines" | 
 }
 
 function priceCard(all: CostLine[], cap: bigint, threshold: bigint, fees: bigint): Card {
-  const lines = all.filter((l) => !offVault(l.rail));
+  const lines = all.filter((l) => paidInUsdc(l.rail));
   const order = all.find((l) => l.rail === "exchange");
   const total = sum(lines.map((l) => l.approved));
   const big = lines.filter((l) => l.bigSpend).length;
