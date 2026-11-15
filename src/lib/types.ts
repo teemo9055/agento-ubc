@@ -143,6 +143,8 @@ export interface ChatMsg {
   text: string;
   at: string;
   tools?: ToolCall[];
+  /** Compact notes from the lookups (symbols, prices), so later turns remember them. */
+  facts?: string;
   proposal?: Proposal;
   /** Quick replies the user can tap. */
   suggestions?: string[];

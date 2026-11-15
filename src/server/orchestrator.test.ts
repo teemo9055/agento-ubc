@@ -188,6 +188,15 @@ describe("explore, then act", () => {
     expect(BigInt(d.cap)).toBe(vault + vault / 5n);
   });
 
+  it("a typed yes sets up the move just shown, without asking the model again", async () => {
+    const r = await orch.createRun({ agent: "inso", task: "BTC odds" });
+    const shown = r.chat!.find((m) => m.proposal)!.proposal!;
+    const after = await orch.sendChat(r.id, "yes!");
+    expect(after.status).toBe("draft");
+    expect(after.proposal?.id).toBe(shown.id);
+    expect(after.chat!.filter((m) => m.proposal)).toHaveLength(1);
+  });
+
   it("back to chat clears the priced order and keeps the conversation", async () => {
     const d = await draft("BTC odds");
     const back = orch.backToChat(d.id);

@@ -196,6 +196,8 @@ export type ProposalInput = z.infer<typeof ProposalInput>;
 
 const MAX_NOTIONAL = Number(process.env.MAX_ORDER_USD ?? 50);
 const round2 = (x: number) => Math.round(x * 100) / 100;
+/** An order needs time to rest; refuse contracts closing sooner than this. */
+const MIN_EXPIRY_MS = Number(process.env.MIN_ORDER_EXPIRY_MIN ?? 20) * 60_000;
 
 /**
  * Checks a move against the exchange it would trade on and the user's limits.
@@ -207,6 +209,7 @@ export async function validateProposal(agent: AgentId, input: unknown, id: strin
   const p = parsed.data;
   const venue = tradingVenue();
   const adjustments: string[] = [];
+  let eventContracts: string[] = [];
   const budget = p.budgetUsd ?? undefined;
   let action: MoveAction | undefined;
   const raw = p.action ?? undefined;
@@ -224,6 +227,8 @@ export async function validateProposal(agent: AgentId, input: unknown, id: strin
             : `Contract ${raw.symbol} not found in event ${raw.eventTicker}`,
       };
     if (c.open === false) return { error: `${c.label} isn't open for trading right now` };
+    const left = c.expiry ? Date.parse(c.expiry) - Date.now() : Infinity;
+    if (left < MIN_EXPIRY_MS) return { error: `${c.label} closes ${left <= 0 ? "now" : `in ${Math.max(1, Math.round(left / 60_000))} min`}; too soon for an order to rest. Pick a later contract.` };
     const maxPrice = round2(raw.maxPrice);
     let quantity = raw.quantity;
     let stopPrice = raw.stopPrice != null ? round2(raw.stopPrice) : undefined;
@@ -240,6 +245,13 @@ export async function validateProposal(agent: AgentId, input: unknown, id: strin
     if (maxPrice * quantity > MAX_NOTIONAL) return { error: `Order over the ${MAX_NOTIONAL} USD limit` };
     if (maxPrice !== raw.maxPrice) adjustments.push(`Price rounded to ${Math.round(maxPrice * 100)}¢`);
     action = { kind: "prediction_order", eventTicker: raw.eventTicker, symbol: raw.symbol, label: raw.label, side: raw.side, orderType: raw.orderType, maxPrice, stopPrice, quantity };
+    // Tell the user whether this buys now or waits: the cheapest seller right now is the ask.
+    const askNow = raw.side === "yes" ? c.ask : c.bid != null ? round2(1 - c.bid) : null;
+    if (raw.orderType === "limit" && askNow != null)
+      adjustments.push(maxPrice >= askNow ? `Fills now: cheapest ${raw.side.toUpperCase()} seller is at ${Math.round(askNow * 100)}¢` : `Waits on the book: cheapest ${raw.side.toUpperCase()} seller is at ${Math.round(askNow * 100)}¢ now`);
+    else if (raw.orderType === "limit") adjustments.push("Waits on the book: no sellers right now");
+    if (Number.isFinite(left)) adjustments.push(`Contract closes ${new Date(Date.parse(c.expiry!)).toUTCString().replace(/:\d\d GMT$/, " UTC")}`);
+    eventContracts = ev.contracts.map((x) => x.symbol);
   } else if (raw?.kind === "spot_order") {
     const symbol = raw.symbol.toLowerCase();
     const list = await spotSymbols().catch(() => [] as string[]);
@@ -257,10 +269,26 @@ export async function validateProposal(agent: AgentId, input: unknown, id: strin
     const t = RESEARCH[r.tool];
     const missing = t.args.filter((x) => x !== "tf" && !r.args[x]);
     if (missing.length) return { error: `${r.tool} needs ${missing.join(", ")}` };
+    // Paid lookups read live Gemini data. Don't charge the user for a symbol that has none.
+    if (r.tool === "odds_history" || r.tool === "trade_tape") {
+      const known = await gemini.recentTrades(r.args.symbol, 1).then(() => true, () => false);
+      if (!known) return { error: `${r.args.symbol} has no live market data to buy${venue === "gemini-sandbox" ? " (test-exchange-only contracts have none; research the live market with the same strike, or drop the research)" : ""}` };
+    }
+    if (r.tool === "spot_candles") {
+      const list = await spotSymbols().catch(() => [] as string[]);
+      if (list.length && !list.includes(r.args.symbol?.toLowerCase())) return { error: `Unknown spot symbol ${r.args.symbol}` };
+    }
   }
 
   // A condition on the order's own price adds nothing: the exchange enforces the limit, and it keeps resting.
   let condition = (p.condition ?? undefined) as MoveCondition | undefined;
+  // Only accept checks the app can actually read right before placing.
+  if (condition?.metric === "spot_price") {
+    const list = await spotSymbols().catch(() => [] as string[]);
+    if (list.length && !list.includes(condition.symbol.toLowerCase())) return { error: `Condition uses unknown spot symbol ${condition.symbol}` };
+    condition = { ...condition, symbol: condition.symbol.toLowerCase() };
+  } else if (condition && !eventContracts.includes(condition.symbol))
+    return { error: "A price condition must be on a contract in the same event as the order, or on a spot price (spot_price)" };
   if (condition && action?.kind === "prediction_order" && condition.symbol === action.symbol && condition.metric !== "spot_price") {
     condition = undefined;
     adjustments.push("Price check folded into the order: it rests on the exchange until the price is right");
@@ -284,6 +312,19 @@ export async function validateProposal(agent: AgentId, input: unknown, id: strin
       adjustments: adjustments.length ? adjustments : undefined,
     },
   };
+}
+
+/** Right before approval: is the move still placeable? Markets close and contracts expire while you think. */
+export async function stillTradable(p: Proposal): Promise<string | null> {
+  const a = p.action;
+  if (!a || a.kind !== "prediction_order" || p.venue === "paper") return null;
+  const ev = await gemini.getEvent(a.eventTicker, marketBase(p.venue)).catch(() => null);
+  const c = ev?.contracts.find((x) => x.symbol === a.symbol);
+  if (!c) return "This market is no longer listed. Go back to chat for a new move.";
+  if (c.open === false) return `${c.label} closed for trading since this move was proposed. Go back to chat for a new move.`;
+  const left = c.expiry ? Date.parse(c.expiry) - Date.now() : Infinity;
+  if (left < MIN_EXPIRY_MS / 2) return `${c.label} closes too soon for this order now. Go back to chat for a new move.`;
+  return null;
 }
 
 export { pctOf };

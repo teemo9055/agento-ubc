@@ -27,6 +27,8 @@ export interface RunSummary {
   /** Latest chat line, for jobs still exploring. */
   lastMessage?: string;
   move?: string;
+  /** The move's exchange order, for lists: open, filled, cancelled… */
+  order?: { status: string; filled?: number; quantity?: number; venue: string };
 }
 
 export function summarize(r: Run): RunSummary {
@@ -53,6 +55,7 @@ export function summarize(r: Run): RunSummary {
     thinking: Boolean(r.thinking),
     lastMessage: r.chat?.[r.chat.length - 1]?.text.slice(0, 140),
     move: r.proposal?.title,
+    order: r.order && { status: r.order.status, filled: r.order.filledQuantity, quantity: r.order.quantity, venue: r.order.venue },
   };
 }
 

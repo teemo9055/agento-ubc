@@ -1,12 +1,19 @@
 import { describe, expect, it, vi } from "vitest";
 
+vi.mock("@/server/agents/ai-planning", async (orig) => ({ ...(await orig<typeof import("@/server/agents/ai-planning")>()), spotSymbols: async () => ["btcusd", "ethusd"] }));
 vi.mock("@/server/gemini", async (orig) => {
   const real = await orig<typeof import("@/server/gemini")>();
   return {
     ...real,
     getEvent: async (t: string) => {
+      if (t === "SOON-1") return { ticker: t, title: "Closing", category: "Crypto", volume: 5, contracts: [{ symbol: "GEMI-SOON-1", label: "Soon", last: 0.5, bid: 0.49, ask: 0.51, open: true, expiry: new Date(Date.now() + 5 * 60_000).toISOString() }] };
       if (t !== "BTC-1") throw new Error("404");
-      return { ticker: "BTC-1", title: "BTC today", category: "Crypto", volume: 5, contracts: [{ symbol: "GEMI-BTC-1", label: "Up", last: 0.5, bid: 0.49, ask: 0.51 }] };
+      return { ticker: "BTC-1", title: "BTC today", category: "Crypto", volume: 5, contracts: [{ symbol: "GEMI-BTC-1", label: "Up", last: 0.5, bid: 0.49, ask: 0.51, open: true }, { symbol: "GEMI-BTC-2", label: "Higher", last: 0.2, bid: 0.19, ask: 0.21, open: true }] };
+    },
+    // Trade data exists only for real contracts; anything else has nothing to buy.
+    recentTrades: async (sym: string) => {
+      if (!sym.startsWith("GEMI-BTC")) throw new Error("400 InvalidSymbol");
+      return [];
     },
   };
 });
@@ -67,6 +74,32 @@ describe("moves are validated by code, whoever wrote them", () => {
   it("without exchange keys every order is labelled a simulation", async () => {
     const r = await validateProposal("inso", move(), "p10");
     expect("proposal" in r && r.proposal.venue).toBe("paper");
+  });
+
+  it("refuses contracts that close too soon for an order to rest", async () => {
+    const r = await validateProposal("inso", move({ research: [], action: { kind: "prediction_order", eventTicker: "SOON-1", symbol: "GEMI-SOON-1", label: "Soon", side: "yes", orderType: "limit", maxPrice: 0.5, stopPrice: null, quantity: 1 } }), "p11");
+    expect(r).toMatchObject({ error: expect.stringContaining("too soon") });
+  });
+
+  it("says whether a limit order fills now or waits on the book", async () => {
+    const now = await validateProposal("inso", move(), "p12"); // 52¢ ≥ 51¢ ask
+    expect("proposal" in now && now.proposal.adjustments?.join(" ")).toMatch(/Fills now/);
+    const wait = await validateProposal("inso", move({ action: { kind: "prediction_order", eventTicker: "BTC-1", symbol: "GEMI-BTC-1", label: "Up", side: "yes", orderType: "limit", maxPrice: 0.4, stopPrice: null, quantity: 2 } }), "p13");
+    expect("proposal" in wait && wait.proposal.adjustments?.join(" ")).toMatch(/Waits on the book/);
+  });
+
+  it("never charges for research on a symbol with no data", async () => {
+    const r = await validateProposal("inso", move({ research: [{ tool: "trade_tape", args: { symbol: "GEMI-MADEUP" }, label: "Tape", why: "x" }] }), "p14");
+    expect(r).toMatchObject({ error: expect.stringContaining("no live market data") });
+  });
+
+  it("only accepts conditions it can read before placing", async () => {
+    const other = await validateProposal("inso", move({ condition: { metric: "yes_price", symbol: "GEMI-ELSEWHERE", op: ">=", value: 0.3 } }), "p15");
+    expect(other).toMatchObject({ error: expect.stringContaining("same event") });
+    const sibling = await validateProposal("inso", move({ condition: { metric: "yes_price", symbol: "GEMI-BTC-2", op: "<=", value: 0.3 } }), "p16");
+    expect("proposal" in sibling && sibling.proposal.condition).toMatchObject({ symbol: "GEMI-BTC-2" });
+    const spot = await validateProposal("inso", move({ condition: { metric: "spot_price", symbol: "BTCUSD", op: ">=", value: 60000 } }), "p17");
+    expect("proposal" in spot && spot.proposal.condition).toMatchObject({ symbol: "btcusd" });
   });
 
   it("rejects out-of-range prices via the schema", async () => {

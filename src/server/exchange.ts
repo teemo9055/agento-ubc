@@ -103,7 +103,37 @@ export function describeAction(a: MoveAction) {
 
 const now = () => new Date().toISOString();
 
-export async function placeOrder(action: MoveAction): Promise<OrderResult> {
+/**
+ * An order this job already placed, found on the exchange. Gemini's docs: on a timeout,
+ * check active orders before retrying, because the first request may have gone through.
+ */
+async function alreadyPlaced(action: Extract<MoveAction, { kind: "prediction_order" }>, since: number) {
+  const active = await priv<{ orders: (PmOrder & { price: string; outcome: string; side: string; createdAt: string })[] }>("/v1/prediction-markets/orders/active", { symbol: action.symbol, limit: 100 });
+  return active.orders.find(
+    (o) =>
+      o.side === "buy" &&
+      o.outcome === action.side &&
+      Number(o.price) === action.maxPrice &&
+      Number(o.quantity) === action.quantity &&
+      Date.parse(o.createdAt) >= since - 5_000,
+  );
+}
+
+/** Symbol rules for spot orders: price and size steps, minimum size. */
+async function spotRules(symbol: string) {
+  const r = await fetch(`${tradeBase()}/v1/symbols/details/${encodeURIComponent(symbol)}`, { cache: "no-store", signal: AbortSignal.timeout(10_000) });
+  if (!r.ok) throw new ExchangeError(`Unknown symbol ${symbol}`);
+  const d = (await r.json()) as { tick_size: number; quote_increment: number; min_order_size: string; status: string };
+  return { tick: Number(d.tick_size), quoteStep: Number(d.quote_increment), min: Number(d.min_order_size), open: d.status === "open" };
+}
+
+const stepDown = (x: number, step: number) => {
+  const decimals = Math.max(0, Math.round(-Math.log10(step)));
+  return (Math.floor(x / step + 1e-9) * step).toFixed(decimals);
+};
+
+/** Places the approved order. `since` = when this job's order step began, for duplicate detection on retry. */
+export async function placeOrder(action: MoveAction, since = Date.now()): Promise<OrderResult> {
   const venue = tradingVenue();
   const notional = notionalOf(action);
   const detail = describeAction(action);
@@ -113,6 +143,9 @@ export async function placeOrder(action: MoveAction): Promise<OrderResult> {
   if (action.kind === "prediction_order") {
     const terms = await priv<{ hasAcceptedLatest: boolean }>("/v1/prediction-markets/terms/status", {}, "GET");
     if (!terms.hasAcceptedLatest) throw new ExchangeError("Accept Gemini's prediction-market terms first (New job → Exchange)", "terms");
+    const dup = await alreadyPlaced(action, since).catch(() => undefined);
+    if (dup)
+      return { venue, status: dup.status === "filled" ? "filled" : "open", detail, orderId: String(dup.orderId), notional, symbol: action.symbol, quantity: action.quantity, filledQuantity: Number(dup.filledQuantity ?? 0), updatedAt: now() };
     const r = await priv<{ orderId: number; status: string; filledQuantity?: string; avgExecutionPrice?: string | null }>("/v1/prediction-markets/order", {
       symbol: action.symbol,
       orderType: action.orderType,
@@ -137,14 +170,24 @@ export async function placeOrder(action: MoveAction): Promise<OrderResult> {
     };
   }
 
-  const amount = (action.amountUsd / action.limitPrice).toPrecision(6);
+  // Round to the symbol's steps so the exchange accepts it, never above the approved amount.
+  const rules = await spotRules(action.symbol);
+  if (!rules.open) throw new ExchangeError(`${action.symbol.toUpperCase()} isn't open for trading`);
+  const price = stepDown(action.limitPrice, rules.quoteStep);
+  const amount = stepDown(action.amountUsd / Number(price), rules.tick);
+  if (Number(amount) < rules.min) throw new ExchangeError(`$${action.amountUsd} is below the minimum order (${rules.min} ${action.symbol.replace(/usd$/, "").toUpperCase()})`);
+  // A client id per job step lets a retry find the first attempt instead of buying twice.
+  const clientId = `agento-${Math.floor(since / 1000)}-${action.symbol}`;
+  const open = await priv<{ order_id: string; client_order_id?: string; is_live: boolean; executed_amount: string; avg_execution_price: string }[]>("/v1/orders").catch(() => []);
+  const prior = Array.isArray(open) ? open.find((o) => o.client_order_id === clientId) : undefined;
+  if (prior) return { venue, status: "open", detail, orderId: String(prior.order_id), notional, symbol: action.symbol, quantity: Number(amount), filledQuantity: Number(prior.executed_amount ?? 0), updatedAt: now() };
   const r = await priv<{ order_id: string; is_live: boolean; is_cancelled: boolean; executed_amount: string; avg_execution_price: string }>("/v1/order/new", {
     symbol: action.symbol,
     side: action.side,
     type: "exchange limit",
-    price: String(action.limitPrice),
+    price,
     amount,
-    client_order_id: `agento-${randomUUID().slice(0, 8)}`,
+    client_order_id: clientId,
   });
   const filled = Number(r.executed_amount ?? 0);
   return {

@@ -24,6 +24,7 @@ import { aiSummary } from "./agents/ai-planning";
 import { aiEnabled, type AiUsage } from "./ai";
 import { exploreTurn } from "./explore";
 import { cancelOrder, refreshOrder } from "./exchange";
+import { stillTradable } from "./tools";
 import { offVault, type ChatMsg, type Proposal } from "@/lib/types";
 import { PhaseFailure, type AgentCtx, type PlanDraft } from "./agents/types";
 import { FACTORY, USDC, addresses, factoryAbi, liveReady, publicClient, vaultAbi } from "./chain";
@@ -304,13 +305,29 @@ export function sendChat(runId: string, text: string): Promise<Run> {
   return agentReply(ctl);
 }
 
+const YES = /^(yes|yep|yeah|yup|ok|okay|sure|do it|set it up|go|go ahead|sounds good|let'?s do it)\b[\s.!]*$/i;
+
 async function agentReply(ctl: Ctl) {
   const runId = ctl.run.id;
+  const chat = ctl.run.chat ?? [];
+  const said = chat[chat.length - 1]?.text ?? "";
+  const latest = [...chat].reverse().find((m) => m.role === "agent")?.proposal;
+  // A plain "yes" to the move just shown means: set it up. No need to ask the model again.
+  if (YES.test(said.trim()) && latest && ctl.run.status === "exploring") {
+    try {
+      emit(ctl, { type: "chat.message", message: { id: id(), role: "agent", text: "Set up. Review the work order and approve it when you're ready.", at: now() } });
+      await adoptProposal(ctl, latest);
+      log(ctl, { kind: "card_edit", what: `Move chosen: ${latest.title}`, why: latest.ask, outcome: "approved", by: "user" });
+    } finally {
+      chatBusy.delete(runId);
+    }
+    return ctl.run;
+  }
   try {
     const r = await exploreTurn(ctl.run.agent, ctl.run.chat ?? [], (note) => emit(ctl, { type: "chat.thinking", note }), id());
     for (const u of r.usage) trackAi(ctl, "chat", u);
     if (r.usage.length) ctl.run = { ...ctl.run, planner: "ai" };
-    emit(ctl, { type: "chat.message", message: { id: id(), role: "agent", text: r.text, at: now(), tools: r.tools, proposal: r.proposal, suggestions: r.suggestions } });
+    emit(ctl, { type: "chat.message", message: { id: id(), role: "agent", text: r.text, at: now(), tools: r.tools, facts: r.facts, proposal: r.proposal, suggestions: r.suggestions } });
   } catch (e) {
     console.warn("chat failed", e);
     emit(ctl, { type: "chat.message", message: { id: id(), role: "agent", text: "Something went wrong looking that up. Try again?", at: now() } });
@@ -440,6 +457,10 @@ export async function approve(runId: string, signed?: { txHash?: Hex }) {
   const ctl = ctlOf(runId);
   if (ctl.run.status !== "draft") throw new Error("already approved");
   if (ctl.run.planning) throw new Error("still planning");
+  if (ctl.run.proposal) {
+    const stale = await stillTradable(ctl.run.proposal);
+    if (stale) throw new Error(stale);
+  }
   const noVault = BigInt(ctl.run.cap) === 0n;
   if (ctl.run.payer === "passkey" && !signed?.txHash && !noVault) throw new Error("sign the funding with your passkey wallet first");
   emit(ctl, { type: "run.funding" });
@@ -881,6 +902,10 @@ export async function cancel(runId: string) {
     return ctl.run;
   }
   const { refunded, txHash } = await closeVault(ctl.run);
+  if (ctl.run.order?.status === "open" && ctl.run.proposal?.action) {
+    const next = await cancelOrder(ctl.run.order, ctl.run.proposal.action.kind).catch(() => null);
+    if (next) emit(ctl, { type: "order.updated", order: next });
+  }
   log(ctl, { kind: "failure", what: "Job cancelled", why: "Stopped by you", outcome: "cancelled", by: "user", amount: refunded.toString(), tx: txHash });
   emit(ctl, { type: "run.cancelled", refunded: refunded.toString(), refundTx: txHash, at: now() });
   return ctl.run;
@@ -917,6 +942,7 @@ function restore() {
     run.payer ??= "server";
     runs.set(run.id, ctl);
     if (run.planning) ctl.run = { ...run, planning: false, editNote: { ok: false, message: "Planning was interrupted by a restart. Start the job again." } };
+    if (run.thinking) emit(ctl, { type: "chat.message", message: { id: id(), role: "agent", text: "I was interrupted by a restart before answering. Could you send that again?", at: now() } });
     if (run.status === "running" || run.status === "funding") void recover(ctl);
   }
 }
@@ -940,7 +966,31 @@ async function recover(ctl: Ctl) {
   emit(ctl, { type: "run.cancelled", refunded: refunded.toString(), refundTx, at: now() });
 }
 
-if (process.env.NEXT_PHASE !== "phase-production-build") restore();
+if (process.env.NEXT_PHASE !== "phase-production-build") {
+  restore();
+  trackOpenOrders();
+}
+
+/** Keeps resting orders current while nobody is looking: fills, partial fills, cancels on the exchange. */
+function trackOpenOrders() {
+  const gg = globalThis as unknown as { __agentoOrderPoll?: ReturnType<typeof setInterval> };
+  if (gg.__agentoOrderPoll) return;
+  const every = Number(process.env.ORDER_POLL_MS ?? 60_000);
+  gg.__agentoOrderPoll = setInterval(() => {
+    for (const ctl of runs.values()) {
+      const o = ctl.run.order;
+      if (o?.status !== "open" || o.venue === "paper") continue;
+      void refreshRunOrder(ctl.run.id).then(
+        (run) => {
+          if (run.order?.status === "filled" && o.status !== "filled")
+            log(ctl, { kind: "failure", what: `Order filled: ${o.detail}`, why: `${run.order.filledQuantity ?? ""} filled on the exchange`, outcome: "approved", by: "system" });
+        },
+        (e) => console.warn(`order poll ${ctl.run.id}:`, (e as Error).message),
+      );
+    }
+  }, every);
+  gg.__agentoOrderPoll.unref?.();
+}
 
 // ---------- the order after the job ----------
 

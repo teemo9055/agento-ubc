@@ -20,7 +20,7 @@ const usd = (x: number) => BigInt(Math.round(x * 1e6)).toString();
 export const EXCHANGE_PAYEE = "0x0000000000000000000000000000000000000e0e" as const;
 
 type Opts = { proposal?: Proposal };
-type Mem = { data: Record<string, unknown>; check?: CheckResult; order?: OrderResult; days?: Day[]; route?: geo.Route; places?: geo.Place[] };
+type Mem = { orderSince?: number; data: Record<string, unknown>; check?: CheckResult; order?: OrderResult; days?: Day[]; route?: geo.Route; places?: geo.Place[] };
 type Day = { day: number; from: string; to: string; hours: number; km: number };
 interface CheckResult {
   met: boolean;
@@ -240,7 +240,9 @@ export function toolboxAgent(id: AgentId): AgentDef {
         }
         ctx.progress(0.3, "Sending order");
         try {
-          mem.order = await placeOrder(a);
+          // Same timestamp on every retry, so a retry finds the first attempt instead of ordering twice.
+          mem.orderSince ??= Date.now();
+          mem.order = await placeOrder(a, mem.orderSince);
         } catch (e) {
           const err = e as ExchangeError;
           ctx.order?.({ venue: p.venue, status: "rejected", detail: err.message, notional: 0 });
