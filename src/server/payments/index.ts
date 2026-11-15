@@ -28,6 +28,8 @@ export class PaymentError extends Error {
 }
 
 export interface PaymentAdapter {
+  /** After a restart: what the vault held and what was already spent, for adapters that keep it in memory. */
+  restore?(run: Run, funded: bigint, spent: bigint): void;
   live: boolean;
   /** Fund the vault with the approved plan. */
   open(run: Run, planHash: Hex): Promise<{ vault?: Hex; fundingTx?: Hex }>;

@@ -3,6 +3,7 @@ import type { AiStats, ChatMsg, OrderResult, CostLine, Decision, Deliverable, Fa
 export type RunEvent =
   | { type: "workorder.updated"; run: Run }
   | { type: "run.funding" }
+  | { type: "run.resumed"; at: string }
   | { type: "chat.message"; message: ChatMsg }
   | { type: "chat.thinking"; note?: string }
   | { type: "order.updated"; order: OrderResult }

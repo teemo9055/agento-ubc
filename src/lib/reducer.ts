@@ -18,6 +18,14 @@ export function reduce(run: Run | null, e: SeqEvent): Run | null {
       return { ...run, thinking: e.note };
     case "order.updated":
       return { ...run, order: e.order };
+    case "run.resumed":
+      // After a restart: steps that were cut off run again; questions that were open are asked again.
+      return {
+        ...run,
+        pendingFailures: [],
+        pendingReapprovals: [],
+        phases: run.phases.map((p) => (["active", "awaiting_reapproval", "failed_waiting"].includes(p.status) ? { ...p, status: "planned", progress: 0, error: undefined } : p)),
+      };
     case "run.funding":
       return { ...run, status: "funding" };
     case "run.approved":

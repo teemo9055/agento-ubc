@@ -1,4 +1,4 @@
-import type { AgentId, Card, CostLine, Deliverable, OrderResult, Phase } from "@/lib/types";
+import type { AgentId, Card, CostLine, Deliverable, OrderResult, Phase, Run } from "@/lib/types";
 
 export type LineDraft = Omit<CostLine, "index" | "actual" | "bigSpend">;
 export type PhaseDraft = Omit<Phase, "status" | "payments">;
@@ -45,6 +45,8 @@ export interface AgentDef {
   edit(card: Card["kind"], prompt: string, options: Record<string, unknown>, step?: string): EditResult;
   runPhase(phaseId: string, ctx: AgentCtx): Promise<void>;
   deliver(ctx: AgentCtx): Deliverable;
+  /** Rebuilds the agent's working memory from a saved job, so it can carry on after a restart. */
+  restore?(options: Record<string, unknown>, run: Run): Record<string, unknown>;
 }
 
 export class PhaseFailure extends Error {

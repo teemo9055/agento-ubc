@@ -937,8 +937,36 @@ function restore() {
     runs.set(run.id, ctl);
     if (run.planning) ctl.run = { ...run, planning: false, editNote: { ok: false, message: "Planning was interrupted by a restart. Start the job again." } };
     if (run.thinking) emit(ctl, { type: "chat.message", message: { id: id(), role: "agent", text: "I was interrupted by a restart before answering. Could you send that again?", at: now() } });
-    if (run.status === "running" || run.status === "funding") void recover(ctl);
+    if (run.status === "running") void resume(ctl).catch((e) => (console.warn(`resume ${run.id}:`, (e as Error).message), recover(ctl)));
+    if (run.status === "funding") void resumeFunding(ctl).catch((e) => (console.warn(`resume funding ${run.id}:`, (e as Error).message), recover(ctl)));
   }
+}
+
+/** Picks a running job up where it stopped: finished steps stay finished, bought data is reused. */
+async function resume(ctl: Ctl) {
+  const agent = AGENTS[ctl.run.agent];
+  ctl.memory = agent.restore?.(ctl.options, ctl.run) ?? {};
+  for (const [k, v] of Object.entries(ctl.run.feed ?? {})) ctl.cache.set(k, v.data);
+  adapterFor(ctl.run).restore?.(ctl.run, ctl.funded, sum(ctl.run.lines.filter((l) => !offVault(l.rail)).map((l) => l.actual)));
+  emit(ctl, { type: "run.resumed", at: now() });
+  log(ctl, { kind: "failure", what: "Server restarted", why: "Picked up where it left off; finished steps and bought data were kept", outcome: "retried", by: "system" });
+  await execute(ctl);
+}
+
+/** A job cut off while its vault was being funded: carry on if the vault exists onchain, otherwise back to draft. */
+async function resumeFunding(ctl: Ctl) {
+  const hash = planHash(ctl.run);
+  if (ctl.run.mode === "live" && FACTORY) {
+    const vault = await publicClient.readContract({ address: FACTORY, abi: factoryAbi, functionName: "vaultFor", args: [ctl.run.client, hash] });
+    const funded = vault && vault !== "0x0000000000000000000000000000000000000000" ? BigInt(await publicClient.readContract({ address: vault, abi: vaultAbi, functionName: "funded" }).catch(() => 0n)) : 0n;
+    if (funded >= BigInt(ctl.run.cap) && funded > 0n) {
+      ctl.funded = funded;
+      emit(ctl, { type: "run.approved", planHash: hash, vault, at: now() });
+      log(ctl, { kind: "plan_approval", what: "Vault found onchain after a restart", why: "Funding had gone through; the job carries on", outcome: "approved", by: "system" });
+      return resume(ctl);
+    }
+  }
+  emit(ctl, { type: "workorder.updated", run: { ...ctl.run, status: "draft", editNote: { ok: false, message: "Funding was interrupted by a restart and nothing was charged. Approve again when you're ready." } } });
 }
 
 async function recover(ctl: Ctl) {

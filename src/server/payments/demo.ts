@@ -14,6 +14,11 @@ const closedRuns = new Set<string>();
 export const demoAdapter: PaymentAdapter = {
   live: false,
 
+  restore(run, funded, spent) {
+    fundedByRun.set(run.id, funded);
+    spentByRun.set(run.id, spent);
+  },
+
   async open(run) {
     fundedByRun.set(run.id, BigInt(run.cap));
     spentByRun.set(run.id, 0n);

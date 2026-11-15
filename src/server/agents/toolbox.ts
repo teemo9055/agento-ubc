@@ -1,4 +1,4 @@
-import type { AgentId, Card, Deliverable, MoveAction, MoveCondition, OrderResult, Proposal } from "@/lib/types";
+import type { AgentId, Card, Deliverable, MoveAction, MoveCondition, OrderResult, Proposal, Run } from "@/lib/types";
 import { SELLERS } from "../sellers";
 import { PRODUCTS } from "../x402";
 import * as gemini from "../gemini";
@@ -393,10 +393,30 @@ export function toolboxAgent(id: AgentId): AgentDef {
       ctx.progress(1);
     },
     deliver: deliverFor,
+    restore: restoreMemory,
   };
 }
 
 const a0 = (p: Proposal) => p.action!;
+
+/** Working memory from a saved job: bought data from the feed, the order if one was placed. */
+function restoreMemory(options: Record<string, unknown>, run: Run): Record<string, unknown> {
+  const p = (options as Opts).proposal;
+  const mem: Mem = { data: {} };
+  if (!p) return mem as unknown as Record<string, unknown>;
+  const done = new Set(run.phases.filter((x) => x.status === "done").map((x) => x.id));
+  for (const r of p.research) {
+    if (!done.has(r.id)) continue;
+    const k = r.tool === "oracle_price" ? `oracle:${r.args.symbol.toLowerCase()}` : RESEARCH[r.tool].key(r.args);
+    const hit = run.feed?.[k];
+    if (hit) mem.data[r.id] = hit.data;
+    if (r.tool === "drive_route" && hit) mem.route = hit.data as geo.Route;
+  }
+  if (run.order && run.order.status !== "rejected") mem.order = run.order;
+  // Any matching order placed after approval is ours: a retry after a restart finds it instead of ordering twice.
+  if (run.startedAt) mem.orderSince = Date.parse(run.startedAt);
+  return mem as unknown as Record<string, unknown>;
+}
 
 /** Reads what the paid lookups returned and evaluates the condition. Used by the check step, or by the order step when there's none. */
 async function analyse(p: Proposal, mem: Mem, ctx: AgentCtx) {
