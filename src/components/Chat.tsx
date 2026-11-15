@@ -279,9 +279,14 @@ function EditReply({ t, run, onApply, onDrop, onTry, last }: { t: EditTurn; run:
         )}
         <div className="mt-3 flex items-center justify-end gap-2 border-t border-[#f1f0ec] pt-2.5">
           {t.state === "applied" ? (
-            <span className="inline-flex items-center gap-1 text-[12.5px] font-semibold text-good">
+            <motion.span
+              initial={{ scale: 0.6, opacity: 0 }}
+              animate={{ scale: 1, opacity: 1 }}
+              transition={{ type: "spring", stiffness: 520, damping: 18 }}
+              className="inline-flex items-center gap-1 text-[12.5px] font-semibold text-good"
+            >
               <Icon name="check" size={13} stroke={2.6} /> Applied to the plan
-            </span>
+            </motion.span>
           ) : settled ? (
             <span className="text-[12.5px] text-ink-3">Not applied</span>
           ) : (

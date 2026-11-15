@@ -300,6 +300,38 @@ body {
   animation: flow 0.8s linear infinite;
 }
 
+/* ---------- moments: steps appearing, attention nudges ---------- */
+@keyframes node-in {
+  from {
+    opacity: 0;
+    transform: translateY(8px) scale(0.97);
+  }
+}
+.node-in {
+  animation: node-in 360ms cubic-bezier(0.2, 0.8, 0.2, 1) both;
+}
+@keyframes nudge {
+  0%,
+  100% {
+    transform: rotate(0);
+  }
+  20% {
+    transform: rotate(-8deg);
+  }
+  40% {
+    transform: rotate(7deg);
+  }
+  60% {
+    transform: rotate(-4deg);
+  }
+  80% {
+    transform: rotate(2deg);
+  }
+}
+.nudge {
+  animation: nudge 600ms steps(5, end) 250ms 2;
+}
+
 /* ---------- agent scenes (empty plan) ---------- */
 .scene-bar {
   y: calc(84px - var(--a));
@@ -347,6 +379,8 @@ body {
 }
 
 @media (prefers-reduced-motion: reduce) {
+  .node-in,
+  .nudge,
   .scene-bar,
   .scene-candle,
   .scene-trend,

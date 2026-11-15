@@ -36,7 +36,13 @@ function Hash({ h }: { h?: string }) {
         className="reveal hit no-print shrink-0 rounded px-1 text-[10px] text-ink-3 opacity-0 transition-opacity hover:bg-ink/5 hover:text-ink focus-visible:opacity-100 group-hover:opacity-100"
         aria-label="Copy transaction hash"
       >
-        {copied ? "Copied" : "Copy"}
+        {copied ? (
+          <motion.span initial={{ scale: 0.6 }} animate={{ scale: 1 }} transition={{ type: "spring", stiffness: 600, damping: 18 }} className="inline-block font-semibold text-good">
+            Copied
+          </motion.span>
+        ) : (
+          "Copy"
+        )}
       </button>
     </span>
   );

@@ -11,6 +11,7 @@ import { ApproveModal, Cards, CostTable } from "@/components/WorkOrder";
 import { Chat, MoveCard, actionText, stepTarget, targetKey, type EditTarget } from "@/components/Chat";
 import { OrderStatus } from "@/components/OrderStatus";
 import { Expect } from "@/components/Expect";
+import { FinishCard } from "@/components/Celebrate";
 import { AgentScene } from "@/components/AgentScene";
 import { KITS } from "@/lib/agentKit";
 import { Amount, Button, Spinner } from "@/components/ui";
@@ -149,6 +150,7 @@ export default function RunPage({ params }: { params: Promise<{ id: string }> })
   const [approving, setApproving] = useState(false);
   const [cancelling, setCancelling] = useState(false);
   const [dismissed, setDismissed] = useState<string | null>(null);
+  const [finish, setFinish] = useState<"done" | "cancelled" | null>(null);
   useAgentTheme(run?.agent);
   const wide = useWide();
 
@@ -176,8 +178,9 @@ export default function RunPage({ params }: { params: Promise<{ id: string }> })
   // Toast the moments that matter, only when they happen live (not on replay).
   useEffect(() => {
     if (!lastEvent || !isLive(lastEvent)) return;
-    if (lastEvent.type === "run.done") toast(`Done · ${fmt(lastEvent.refunded)} USDC returned · receipt ready`, "good");
-    if (lastEvent.type === "run.cancelled") toast(`Cancelled · ${fmt(lastEvent.refunded)} USDC returned`);
+    // The finish card says it all; no toast on top of it.
+    if (lastEvent.type === "run.done") setFinish("done");
+    if (lastEvent.type === "run.cancelled") setFinish("cancelled");
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [lastEvent]);
 
@@ -516,6 +519,7 @@ export default function RunPage({ params }: { params: Promise<{ id: string }> })
         </>
       )}
 
+      <FinishCard run={run} kind={finish} onClose={() => setFinish(null)} />
       <ApproveModal run={run} open={approving} onClose={() => setApproving(false)} />
       <CancelModal run={run} open={cancelling} onClose={() => setCancelling(false)} />
       {showPopup && reapproval && <ReapprovalModal key={reapproval.id} run={run} req={reapproval} onClose={() => setDismissed(reapproval.id)} />}
