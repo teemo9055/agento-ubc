@@ -201,6 +201,8 @@ export interface Proposal {
   venue: Venue;
   /** The most the user said they'd spend on the order, enforced. */
   budgetUsd?: number;
+  /** The book when the move was proposed, so outcomes can teach later moves. */
+  market?: { ask: number | null; bid: number | null; closesAt?: string };
   /** Changes code made to the model's move (rounding, budget), shown to the user. */
   adjustments?: string[];
 }

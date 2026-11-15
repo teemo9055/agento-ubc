@@ -229,6 +229,7 @@ export async function validateProposal(agent: AgentId, input: unknown, id: strin
   const venue = tradingVenue();
   const adjustments: string[] = [];
   let eventContracts: string[] = [];
+  let market: Proposal["market"];
   const budget = p.budgetUsd ?? undefined;
   let action: MoveAction | undefined;
   const raw = p.action ?? undefined;
@@ -271,6 +272,7 @@ export async function validateProposal(agent: AgentId, input: unknown, id: strin
     else if (raw.orderType === "limit") adjustments.push("Waits on the book: no sellers right now");
     if (Number.isFinite(left)) adjustments.push(`Contract closes ${new Date(Date.parse(c.expiry!)).toUTCString().replace(/:\d\d GMT$/, " UTC")}`);
     eventContracts = ev.contracts.map((x) => x.symbol);
+    market = { ask: raw.side === "yes" ? c.ask : c.bid != null ? round2(1 - c.bid) : null, bid: raw.side === "yes" ? c.bid : c.ask != null ? round2(1 - c.ask) : null, closesAt: c.expiry };
   } else if (raw?.kind === "spot_order") {
     const symbol = raw.symbol.toLowerCase();
     const list = await spotSymbols().catch(() => [] as string[]);
@@ -335,6 +337,7 @@ export async function validateProposal(agent: AgentId, input: unknown, id: strin
       condition,
       venue: action && action.kind !== "itinerary" ? venue : "paper",
       budgetUsd: budget,
+      market,
       adjustments: adjustments.length ? adjustments : undefined,
     },
   };

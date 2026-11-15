@@ -26,6 +26,7 @@ import { exploreTurn } from "./explore";
 import { cancelOrder, refreshOrder } from "./exchange";
 import { stillTradable } from "./tools";
 import { depositToGateway, gatewayBalance } from "./nanopay";
+import { recordOrder } from "./knowledge";
 import { offVault, type ChatMsg, type Proposal } from "@/lib/types";
 import { PhaseFailure, type AgentCtx, type PlanDraft } from "./agents/types";
 import { FACTORY, USDC, addresses, factoryAbi, liveReady, publicClient, vaultAbi } from "./chain";
@@ -90,6 +91,13 @@ function emit(ctl: Ctl, e: RunEvent) {
     console.warn("persist failed", (err as Error).message);
   }
   for (const l of ctl.listeners) l(se);
+  if (e.type === "order.updated") {
+    try {
+      recordOrder(ctl.run, e.order);
+    } catch (err) {
+      console.warn("lesson not saved", (err as Error).message);
+    }
+  }
   for (const w of watchers) w(ctl.run);
 }
 
