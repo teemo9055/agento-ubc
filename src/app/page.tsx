@@ -246,7 +246,9 @@ function Dashboard() {
               {needs.map((r) => (
                 <motion.li key={r.id} layout initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }} data-agent={r.agent} className="border-b border-[#f1e3ba] last:border-0">
                   <Link href={`/runs/${r.id}`} className="pressable flex flex-wrap items-center gap-4 px-4 py-4 sm:px-5" data-testid={`needs-${r.id}`}>
-                    <AgentIcon agent={r.agent} size={44} outfit={r.outfit} mood="alert" />
+                    <span className="nudge inline-flex">
+                      <AgentIcon agent={r.agent} size={44} outfit={r.outfit} mood="alert" />
+                    </span>
                     <div className="min-w-0 flex-[999_1_280px]">
                       <div className="text-[12px] text-ink-3">
                         <b className="font-semibold text-agent-ink">{THEMES[r.agent].name}</b> · {r.mode === "live" ? "Arc testnet" : "demo"} · step {Math.min(r.stepsDone + 1, r.stepsTotal)} of {r.stepsTotal}

@@ -1,7 +1,7 @@
 "use client";
 import { useEffect, useMemo, useRef, useState } from "react";
 import { ReactFlow, Handle, Position, BaseEdge, getSmoothStepPath, useReactFlow, type Edge, type EdgeProps, type Node, type NodeProps } from "@xyflow/react";
-import { useReducedMotion } from "framer-motion";
+import { motion, useReducedMotion } from "framer-motion";
 import "@xyflow/react/dist/style.css";
 import { fmt } from "@/lib/money";
 import type { CostLine, Phase } from "@/lib/types";
@@ -16,7 +16,12 @@ const NODE_H = 92;
 /** One quiet mark per state: outline (planned), filled square (running), check (done), "!" (needs you). */
 function StateMark({ p, step }: { p: Phase; step: number }) {
   const base = "inline-flex h-[22px] w-[22px] shrink-0 items-center justify-center rounded-[5px] text-[11px] font-semibold";
-  if (p.status === "done") return <span className={`${base} bg-good text-white`}><Icon name="check" size={13} stroke={3} /></span>;
+  if (p.status === "done")
+    return (
+      <motion.span className={`${base} bg-good text-white`} initial={{ scale: 0.4, rotate: -12 }} animate={{ scale: 1, rotate: 0 }} transition={{ type: "spring", stiffness: 520, damping: 16 }}>
+        <Icon name="check" size={13} stroke={3} />
+      </motion.span>
+    );
   if (p.status === "active") return <span className={`${base} border-[1.5px] border-ink bg-agent`}><span className="mascot-spark h-1.5 w-1.5 bg-white" /></span>;
   if (p.status === "awaiting_reapproval") return <span className={`${base} border-[1.5px] border-ink bg-warn font-pixel text-ink`}>!</span>;
   if (p.status === "failed_waiting" || p.status === "failed") return <span className={`${base} bg-bad font-pixel text-white`}>!</span>;
@@ -56,10 +61,10 @@ function PhaseNode({ data }: NodeProps<Node<PhaseNodeData>>) {
       onClick={onEdit}
       aria-pressed={onEdit ? Boolean(focused) : undefined}
       aria-label={onEdit ? `Step ${step}: ${p.label}. Edit in chat` : undefined}
-      className={`nodrag group relative flex flex-col overflow-hidden rounded-xl bg-panel px-3.5 pb-2.5 pt-3 text-left transition-[box-shadow,border-color,opacity,transform] duration-200 ${frame} ${
+      className={`node-in nodrag group relative flex flex-col overflow-hidden rounded-xl bg-panel px-3.5 pb-2.5 pt-3 text-left transition-[box-shadow,border-color,opacity,transform] duration-200 ${frame} ${
         onEdit && !focused ? "cursor-pointer hover:-translate-y-0.5 hover:border-ink hover:shadow-[3px_3px_0_0_var(--agent)]" : ""
       } ${dim ? "opacity-55" : ""}`}
-      style={{ width: NODE_W, height: NODE_H }}
+      style={{ width: NODE_W, height: NODE_H, animationDelay: `${(step - 1) * 70}ms` }}
       data-testid={`phase-${p.id}`}
       data-status={p.status}
     >

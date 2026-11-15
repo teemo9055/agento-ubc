@@ -1,5 +1,6 @@
 "use client";
-import { motion, AnimatePresence } from "framer-motion";
+import { useEffect, useRef, useState } from "react";
+import { motion, AnimatePresence, useReducedMotion } from "framer-motion";
 import { fmt } from "@/lib/money";
 import { short, txUrl } from "@/lib/format";
 import type { PhaseStatus, TxState } from "@/lib/types";
@@ -20,16 +21,40 @@ export function Button({
   return <button {...p} className={`tap inline-flex h-10 items-center justify-center gap-2 rounded-lg px-4 text-sm transition-colors disabled:cursor-not-allowed ${v} ${className}`} />;
 }
 
-/** Number that changes in place. */
+/** Counts from the old value to the new one (in base units) when it changes; shows the first value as is. */
+function useCountUp(target: bigint, ms = 550) {
+  const reduce = useReducedMotion();
+  const [shown, setShown] = useState(target);
+  const from = useRef(target);
+  useEffect(() => {
+    const start = from.current;
+    from.current = target;
+    if (reduce || start === target) {
+      setShown(target);
+      return;
+    }
+    let raf = 0;
+    const t0 = performance.now();
+    const step = (now: number) => {
+      const k = Math.min(1, (now - t0) / ms);
+      const e = 1 - Math.pow(1 - k, 3);
+      setShown(start + BigInt(Math.round(Number(target - start) * e)));
+      if (k < 1) raf = requestAnimationFrame(step);
+    };
+    raf = requestAnimationFrame(step);
+    return () => cancelAnimationFrame(raf);
+  }, [target, ms, reduce]);
+  return shown;
+}
+
+/** Number that changes in place: counts to new values, with a short highlight while it moves. */
 export function Amount({ value, className = "", unit = true }: { value?: string | bigint; className?: string; unit?: boolean }) {
-  const s = fmt(value);
+  const target = BigInt(value ?? 0);
+  const shown = useCountUp(target);
+  const moving = shown !== target;
   return (
     <span className={`num ${className}`}>
-      <AnimatePresence mode="popLayout" initial={false}>
-        <motion.span key={s} initial={{ opacity: 0.4 }} animate={{ opacity: 1 }} transition={{ duration: 0.25 }}>
-          {s}
-        </motion.span>
-      </AnimatePresence>
+      <span className={`transition-colors duration-300 ${moving ? "text-agent-ink" : ""}`}>{fmt(shown)}</span>
       {unit && <span className="ml-1 text-[0.8em] text-ink-3">USDC</span>}
     </span>
   );

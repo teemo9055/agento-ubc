@@ -62,13 +62,25 @@ export function Cards({ run, onEdit, focused }: { run: Run; onEdit?: (k: Card["k
               aria-expanded={on}
               aria-label={onEdit ? `${CARD_LABEL[c.kind]}: ${c.title}. Edit in chat` : undefined}
               data-testid={`card-${c.kind}`}
-              className={`pressable flex w-full flex-col rounded-2xl p-4 text-left sm:h-full transition-[border-color,box-shadow,transform] duration-200 disabled:cursor-default ${
+              className={`pressable relative flex w-full flex-col overflow-hidden rounded-2xl p-4 text-left sm:h-full transition-[border-color,box-shadow,transform] duration-200 disabled:cursor-default ${
                 on
                   ? "border-[1.5px] border-ink shadow-[3px_3px_0_0_var(--agent)]"
                   : `border ${onEdit ? "enabled:hover:-translate-y-0.5 enabled:hover:border-ink enabled:hover:shadow-[3px_3px_0_0_var(--agent)]" : ""}`
               } ${price ? "border-agent/30 bg-agent-soft" : "border-line bg-panel"} ${on ? "!border-ink" : ""}`}
             >
-              <span className="flex items-start justify-between gap-2">
+              {/* A short wash of the agent colour when the card's content changes (an applied edit). */}
+              <AnimatePresence initial={false}>
+                <motion.span
+                  key={`${c.title}|${c.points.join("|")}`}
+                  aria-hidden
+                  className="pointer-events-none absolute inset-0 rounded-2xl bg-agent/25"
+                  initial={{ opacity: 1 }}
+                  animate={{ opacity: 0 }}
+                  exit={{ opacity: 0 }}
+                  transition={{ duration: 0.9, ease: "easeOut" }}
+                />
+              </AnimatePresence>
+              <span className="relative flex items-start justify-between gap-2">
                 <span className={`text-[12px] font-semibold ${price ? "text-agent-ink" : "text-ink-3"}`}>{CARD_LABEL[c.kind]}</span>
                 {onEdit &&
                   (on ? (
