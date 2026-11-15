@@ -10,13 +10,12 @@ test("explore is free, then the approved move runs with no popup", async ({ page
   await page.fill("#task", "What are BTC odds right now?");
   await page.getByRole("button", { name: /Ask/ }).click();
   await expect(page.getByTestId("msg-agent")).toBeVisible({ timeout: 30_000 });
-  await expect(page.getByText("Exploring is free", { exact: true })).toBeVisible();
+  await expect(page.getByTestId("free-note")).toBeVisible();
   await page.getByTestId("adopt-move").click();
   await expect(page.getByTestId("review-cost")).toContainText("order");
   // The graph and cost lines are there, but only when asked for.
   await expect(page.getByTestId("card-price")).toHaveCount(0);
   await page.getByTestId("open-approve").click();
-  await page.getByTestId("approve").click();
   await receipt(page);
   await expect(page.getByRole("dialog")).toHaveCount(0);
   // One line says what happened to the order.
@@ -182,8 +181,7 @@ test("a plan across agents runs step by step and says what it can't do", async (
   await page.goto("/new");
   await page.fill("#task", "What are BTC odds right now, then plan a drive from Vancouver to Seattle, and book a hotel in Seattle");
   await page.getByRole("button", { name: /Ask/ }).click();
-  // The plan is shown as a map in the main area.
-  const card = page.getByTestId("plan-map").getByTestId("plan-card");
+  const card = page.getByTestId("plan-card");
   await expect(card).toBeVisible({ timeout: 30_000 });
   await expect(card.getByTestId("plan-step")).toHaveCount(2);
   await expect(card.getByTestId("plan-unavailable")).toContainText("hotel");
@@ -221,4 +219,26 @@ test("a finished job can be saved and run again at today's prices", async ({ pag
   expect(page.url()).not.toBe(first);
   await page.goto("/?status=saved");
   await expect(page.getByText("BTC odds rerun check").first()).toBeVisible();
+});
+
+test("starting from a goal: the agent asks one question, then proposes", async ({ page }) => {
+  await prefs(page);
+  await page.goto("/new");
+  await page.getByTestId("goals").getByRole("button", { name: /Protect against a cost/ }).click();
+  // No guessing: one question with answers to tap.
+  await expect(page.getByTestId("msg-agent").last()).toContainText("What would cost you money");
+  const answers = page.getByTestId("answer-options").getByRole("button");
+  await expect(answers).toHaveCount(3);
+  await answers.first().click();
+  await expect(page.getByTestId("move-card")).toBeVisible({ timeout: 30_000 });
+  // The card's own button is the one next step.
+  await expect(page.getByTestId("adopt-move")).toHaveText(/Review and approve/);
+});
+
+test("a job has one thing in focus: the conversation is there when asked for", async ({ page }) => {
+  await start(page, [], "BTC odds focus check");
+  await finished(page);
+  await expect(page.getByTestId("chat-input")).toHaveCount(0);
+  await page.getByTestId("toggle-chat").click();
+  await expect(page.getByTestId("msg-agent").first()).toBeVisible();
 });

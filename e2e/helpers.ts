@@ -31,9 +31,10 @@ export async function draft(page: Page, faults: string[] = [], task = "How have 
 
 export async function start(page: Page, faults: string[] = [], task = "How have BTC odds moved today?", agent = "Inso") {
   await draft(page, faults, task, agent);
-  const approved = (await page.getByTestId("big-number").innerText()).replace(/USDC|\s/g, "");
+  // "0.12 USDC for data + $2.65 order" -> "0.12"
+  const approved = (await page.getByTestId("review-cost").innerText()).trim().split(" ")[0];
+  // One click: the review is the confirmation.
   await page.getByTestId("open-approve").click();
-  await page.getByTestId("approve").click();
   return approved;
 }
 

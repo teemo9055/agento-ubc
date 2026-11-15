@@ -46,6 +46,11 @@ function StepRow({ p, run, n }: { p: Phase; run: Run; n: number }) {
       <span className="mt-0.5 inline-flex h-5 w-5 shrink-0 items-center justify-center rounded-md border border-line bg-surface">{mark}</span>
       <span className="min-w-0 flex-1">
         <span className={`text-[14px] ${p.status === "skipped" ? "text-ink-3 line-through" : "font-medium"}`}>{p.label}</span>
+        {line?.bigSpend && paid && (run.status === "draft" || run.status === "funding") && (
+          <span className="ml-2 rounded-md bg-warn/20 px-1.5 py-0.5 text-[10.5px] font-medium text-warn-ink" title="Above your big-purchase threshold in Settings; approving covers it">
+            Big purchase
+          </span>
+        )}
         <span className="block truncate text-[12.5px] text-ink-3">{p.status === "planned" || !p.note ? p.sub : p.note}</span>
       </span>
       {line && (
@@ -68,8 +73,7 @@ export function ReviewCard({ run }: { run: Run }) {
       <div className="flex flex-wrap items-start justify-between gap-2 border-b border-[#f1f0ec] px-4 py-3.5">
         <div className="min-w-0">
           <div className="font-pixel text-[12px] text-agent-ink">Review</div>
-          <h2 className="mt-0.5 text-[17px] font-semibold leading-snug">{p?.title ?? run.task}</h2>
-          {p && <p className="mt-0.5 text-[13.5px] text-ink-2">{p.ask}</p>}
+          <h2 className="mt-0.5 text-[16px] font-semibold leading-snug">{p?.ask ?? run.task}</h2>
         </div>
         {trade && <VenueBadge venue={p?.venue ?? "paper"} />}
       </div>
@@ -80,7 +84,9 @@ export function ReviewCard({ run }: { run: Run }) {
       </ol>
       {p?.hedge && (
         <p className="mx-4 mb-3 rounded-lg bg-agent-soft px-3 py-2 text-[13px] text-ink" data-testid="hedge-line">
-          <b className="font-semibold">Insurance for {p.hedge.protects}:</b> costs up to ${p.hedge.cost.toFixed(2)}. If it happens you get ${p.hedge.payout} back{p.hedge.covered < p.hedge.lossUsd - 0.5 ? `, which covers about $${Math.round(p.hedge.covered)} of your $${p.hedge.lossUsd}` : ""}; if not, the ${p.hedge.cost.toFixed(2)} is the price of cover.
+          This is insurance for {p.hedge.protects}.{" "}
+          {p.hedge.covered < p.hedge.lossUsd - 0.5 ? `It covers about $${Math.round(p.hedge.covered)} of your $${p.hedge.lossUsd}. ` : ""}
+          If it doesn&apos;t happen, the ${p.hedge.cost.toFixed(2)} is what the cover cost you.
         </p>
       )}
       {p?.condition && (
@@ -91,10 +97,15 @@ export function ReviewCard({ run }: { run: Run }) {
       <div className="flex flex-wrap items-baseline justify-between gap-x-6 gap-y-1 border-t border-[#f1f0ec] px-4 py-3 text-[13.5px]">
         <span className="text-ink-2">Most this can cost</span>
         <span className="num text-right font-semibold" data-testid="review-cost">
-          {fmt(data)} USDC for data{order > 0 ? ` + $${order.toFixed(2)} order` : ""}
+          {data > 0n || order === 0 ? `${fmt(data)} USDC for data` : ""}
+          {data > 0n && order > 0 ? " + " : ""}
+          {order > 0 ? `$${order.toFixed(2)} order` : ""}
         </span>
       </div>
-      <p className="px-4 pb-3.5 text-[12.5px] text-ink-3">Data money sits in a vault that can only pay these steps; what isn&apos;t used comes back. {order > 0 ? (p?.venue === "paper" ? "The order is practice only." : "The order is paid on the exchange.") : ""}</p>
+      <p className="px-4 pb-3.5 text-[12.5px] text-ink-3">
+        {data > 0n ? "The data money sits in a vault that can only pay these steps; what isn't used comes back. " : ""}
+        {order > 0 ? (p?.venue === "paper" ? "No exchange is connected, so the order is practice only." : "The order is paid on the exchange.") : ""}
+      </p>
     </section>
   );
 }
@@ -181,9 +192,6 @@ export function StatusCard({ run, onNeedsYou, onCancel }: { run: Run; onNeedsYou
               <Button variant="ghost" className="h-9" disabled={!!busy} onClick={() => act("save")} aria-pressed={Boolean(run.saved)} data-testid="save-job">
                 {run.saved ? "Saved ✓" : "Save"}
               </Button>
-              <Link href={`/runs/${run.id}/receipt`} className="pressable inline-flex h-9 items-center gap-1.5 rounded-lg border border-line bg-panel px-3 text-[13px] font-medium" data-testid="open-receipt">
-                <Icon name="receipt" size={15} /> Receipt
-              </Link>
             </>
           )}
           {!finished && onCancel && (

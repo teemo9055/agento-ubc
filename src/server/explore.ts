@@ -41,12 +41,12 @@ function system(agent: AgentId) {
     PERSONA[agent],
     `Today is ${new Date().toUTCString()}. Contract expiries are in UTC.`,
     [
-      "EACH TURN, DECIDE IN THIS ORDER (move the user forward; never leave them at a dead end):",
-      "1. The user wants to act ('make a trade', 'bet', 'buy', 'put $X on', 'set it up', 'go', even with typos) → call propose_move THIS turn. Fill gaps with sensible defaults instead of asking: about $5, the nearest liquid contract closing more than 30 minutes from now, a limit at or a cent under the current ask. State your one main assumption in a sentence. Never refuse because a book is thin or empty: a limit order rests on the exchange until someone sells; just say it may wait.",
-      "2. The user wants data that costs money (odds history, trade flow, candles, a Chainlink price, a route) → call propose_move with action null and that paid lookup. It shows the price and runs after they approve. Don't explain paid lookups in prose.",
-      "3. The user asks a question → answer it with free lookups. If there's an obvious move, make it the first Next: reply ('Bet $5 on BTC ≥ $64,500 at 45¢').",
-      "4. They ask for something you can't do here (market not tradable on this exchange, provider not payable yet) → one line saying so, then the closest thing that works as a Next: reply.",
-      "Ask a clarifying question only when two reasonable readings lead to very different moves; otherwise pick one and say which.",
+      "EACH TURN, DO EXACTLY ONE OF THESE, CHECKED IN THIS ORDER. Your job is to lead: the user should never have to guess what to say next.",
+      "1. ASK. If you can't yet name the exact thing to act on, call ask_user with ONE short question and 2-4 tappable answers. Ask when the user gave a goal but not its subject ('I want to protect against a cost' → what cost?; 'I want to bet on something' → on what?; 'plan a trip' → from where to where?), or when the amount matters and they gave none for a hedge (how much would it cost you?). Answers must be concrete and real: look things up first so the options name actual markets, cities or amounts ('BTC falling below $60k', 'A cold day in NYC', '$20'). Never ask two things at once, never ask what you can look up, and never ask again about something they already answered.",
+      "2. ACT. If you know what to act on ('bet $5 on X', 'buy', 'hedge my BTC for $30', 'set it up', or they just answered your question), call propose_move THIS turn (or propose_plan for several things). Fill small gaps with sensible defaults instead of asking: about $5 for a bet, the nearest liquid contract closing more than 30 minutes from now, a limit at or a cent under the current ask. Never refuse because a book is thin or empty: a limit order rests until someone takes it.",
+      "3. PAID DATA. If they want data that costs money (odds history, trade flow, candles, a Chainlink price, a route), call propose_move with action null and that paid lookup. Don't explain paid lookups in prose.",
+      "4. ANSWER. If they asked a question, answer it with free lookups in one or two sentences, and make the obvious next action the first Next: reply ('Bet $5 on BTC ≥ $64,500 at 45¢').",
+      "5. CAN'T. If it's something you can't do here, say so in one line with the reason, then offer the closest thing that works as a Next: reply.",
     ].join("\n"),
     trades
       ? [
@@ -102,11 +102,23 @@ const PROPOSE_PLAN: ToolSpec = {
   parameters: z.toJSONSchema(PlanInput),
 };
 
+const ASK: ToolSpec = {
+  name: "ask_user",
+  description: "Ask the user ONE short question you need answered before you can act, with 2-4 tappable answers. The answers show as buttons; the user can also type their own. Use it instead of guessing what they want or writing a question in prose.",
+  parameters: z.toJSONSchema(
+    z.object({
+      question: z.string().max(140).describe("One plain question, under 20 words"),
+      options: z.array(z.string().min(1).max(48)).min(2).max(4).describe("Concrete answers written as the user would say them, each under 8 words"),
+    }),
+  ),
+};
+
 /** Each agent only sees its own tools. */
 const toolSpecs = (agent: AgentId): ToolSpec[] => [
   ...Object.entries(FREE_TOOLS)
     .filter(([name]) => TOOLKIT[agent].free.includes(name))
     .map(([name, t]) => ({ name, description: t.description, parameters: z.toJSONSchema(t.params) })),
+  ASK,
   PROPOSE,
   PROPOSE_PLAN,
 ];
@@ -122,6 +134,7 @@ function historyTurns(chat: ChatMsg[]): ChatTurn[] {
             m.tools?.length ? `(looked up: ${m.tools.map((t) => t.summary).join("; ")})` : "",
             m.facts ? `(facts from those lookups: ${m.facts})` : "",
             m.proposal ? `(proposed move: ${m.proposal.title} — ${m.proposal.ask})` : "",
+            m.options?.length ? `(you asked this with tappable answers: ${m.options.join(" | ")}; the user's next message is their answer)` : "",
           ]
             .filter(Boolean)
             .join("\n"),
@@ -161,6 +174,8 @@ export interface TurnResult {
   tools: ToolCall[];
   proposal?: Proposal;
   plan?: Plan;
+  /** Tappable answers to the question in `text`. */
+  options?: string[];
   suggestions: string[];
   usage: AiUsage[];
 }
@@ -244,7 +259,13 @@ export async function exploreTurn(agent: AgentId, chat: ChatMsg[], onTool: (note
     }
     for (const c of r.calls) {
       let content: unknown;
-      if (c.name === "propose_plan") {
+      if (c.name === "ask_user") {
+        const q = c.args as { question?: string; options?: unknown };
+        const options = (Array.isArray(q.options) ? q.options : []).map((x) => String(x).trim()).filter((x) => x.length > 0 && x.length <= 60).slice(0, 4);
+        if (q.question && options.length >= 2)
+          return { facts: facts.filter(Boolean).join(" || ").slice(0, 1500) || undefined, text: String(q.question).trim().slice(0, 200), tools, options, suggestions: [], usage };
+        content = { ok: false, error: "ask_user needs a question and at least 2 options" };
+      } else if (c.name === "propose_plan") {
         onTool("Drafting a plan");
         const steps = (c.args as { steps?: { move?: unknown }[] }).steps;
         const args = Array.isArray(steps) ? { ...c.args, steps: steps.map((s) => ({ ...s, move: onlyStatedBudget(s.move, chat) })) } : c.args;
@@ -363,7 +384,7 @@ export function partsOf(text: string): string[] {
 export function agentFor(part: string): AgentId | null {
   const t = part.toLowerCase();
   if (/\b(hotel|flight|airbnb|room|accommodation|stay)\b/.test(t) && !/\b(drive|trip|route)\b/.test(t)) return null;
-  if (stopsIn(part).length >= 2 || /\b(drive|road ?trip|itinerary|route)\b/.test(t)) return "travo";
+  if (/\b(drive|driving|road ?trip|itinerary|route)\b/.test(t) || /\bfrom \S.* to \S/.test(t)) return "travo";
   if (/\b(position|odds|bet|contract|prediction|market)s?\b/.test(t) || /\bsell\b/.test(t)) return "inso";
   if (/\b(spot|coin|dca)\b/.test(t) || /\bbuy\b.*\b(btc|eth|sol|bitcoin|ethereum|solana|doge|xrp|link)\b/.test(t)) return "trado";
   return null;
@@ -405,6 +426,21 @@ async function rulesPlan(text: string, onTool: (note: string) => void, pid: stri
   return { text: said.join(" "), tools, plan, suggestions: ["Yes, start the plan", "Not now"], usage: [] };
 }
 
+/**
+ * Without the model: a goal with no subject gets one question with tappable answers,
+ * the same way the model is told to lead.
+ */
+export function guide(agent: AgentId, text: string): { question: string; options: string[] } | null {
+  const t = text.toLowerCase();
+  const named = /\b(btc|bitcoin|eth|ethereum|sol|solana|fed|rate|temperature|cold|heat|lakers|gold|oil|\$?\d)/.test(t);
+  if (agent === "travo") return stopsIn(text).length >= 2 || / to /.test(t) ? null : { question: "Where does the drive start and end?", options: ["Vancouver to Seattle", "Calgary to Banff", "Toronto to Montreal"] };
+  if (/\b(protect|hedge|insur|cover|worried)\b/.test(t) && !named) return { question: "What would cost you money if it happened?", options: ["BTC falling this month", "A cold day in NYC tomorrow", "ETH falling this month"] };
+  if (/\b(bet|wager|predict)\b/.test(t) && !named) return { question: "What do you want to bet on?", options: ["BTC price this month", "ETH price this month", "Tomorrow's temperature in NYC"] };
+  if (agent === "trado" && /\b(trade|buy|sell)\b/.test(t) && !/\b(btc|bitcoin|eth|ethereum|sol|solana|doge|xrp|link)\b/.test(t)) return { question: "Which coin?", options: ["BTC", "ETH", "SOL"] };
+  if (/what are the markets saying|what('s| is) trading\??$/.test(t) && !named) return { question: "About what?", options: ["BTC", "ETH", "The Fed's next move", "Weather"] };
+  return null;
+}
+
 const failText = (v: { error: string } | { proposal: Proposal }) => ("error" in v ? ` I couldn't set up a move: ${v.error.split(". ")[0]}.` : "");
 
 async function rulesTurn(agent: AgentId, chat: ChatMsg[], onTool: (note: string) => void, pid: string): Promise<TurnResult> {
@@ -415,6 +451,8 @@ async function rulesTurn(agent: AgentId, chat: ChatMsg[], onTool: (note: string)
   const task = chat.filter((m) => m.role === "user").map((m) => m.text).join(" ");
   const tools: ToolCall[] = [];
   const want = intentOf(userText);
+  const guided = guide(agent, userText);
+  if (guided) return { text: guided.question, tools: [], options: guided.options, suggestions: [], usage: [] };
   if (chat.filter((m) => m.role === "user").length === 1 || !prior) {
     const planned = await rulesPlan(userText, onTool, pid);
     if (planned) return planned;

@@ -33,7 +33,7 @@ test("Edit on a card opens the chat focused on that card", async ({ page }) => {
 
 test("sheets swipe down to dismiss", async ({ page }) => {
   await newDemoJob(page, "BTC odds swipe test");
-  await page.getByTestId("open-approve").click();
+  await page.getByRole("button", { name: "Discard" }).click();
   const dialog = page.getByRole("dialog");
   await expect(dialog).toBeVisible();
   await page.waitForTimeout(400); // let the sheet finish sliding up before grabbing its handle
@@ -51,8 +51,6 @@ test("sheets swipe down to dismiss", async ({ page }) => {
 test("approve is instant with a toast, and a waiting job shows in the tab title", async ({ page }) => {
   await newDemoJob(page, "BTC odds title test", ["Seller raises price"]);
   await page.getByTestId("open-approve").click();
-  await page.getByTestId("approve").click();
-  await expect(page.getByRole("dialog", { name: "Approve plan" })).toHaveCount(0);
   await expect(page.getByText(/Approved · funding vault/)).toBeVisible();
   await expect(page.getByRole("dialog", { name: "Needs your OK" })).toBeVisible({ timeout: 30_000 });
   await expect(page).toHaveTitle(/^\(\d+\) agento$/);
@@ -62,7 +60,6 @@ test("no page is wider than the phone", async ({ page }) => {
   await newDemoJob(page, "BTC odds width check");
   const job = page.url();
   await page.getByTestId("open-approve").click();
-  await page.getByTestId("approve").click();
   await expect(page.getByTestId("receipt-total")).toBeVisible({ timeout: 85_000 });
   for (const path of ["/", "/new", "/agents", "/settings", job, `${job}/receipt`]) {
     await page.goto(path);

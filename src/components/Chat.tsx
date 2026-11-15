@@ -74,56 +74,42 @@ function notes(p: Proposal) {
 export function MoveCard({ p, run, chosen, onChoose, busy }: { p: Proposal; run: Run; chosen?: boolean; onChoose?: () => void; busy?: boolean }) {
   const research = p.research.reduce((s, r) => s + (RESEARCH_PRICE[r.tool] ?? 0), 0);
   const total = research + maxCost(p.action);
-  const steps = [
-    ...p.research.map((r) => ({ key: r.id, text: (STEP_LABEL[r.tool] ?? (() => r.label))(r), price: RESEARCH_PRICE[r.tool], title: r.why })),
-    ...(p.condition ? [{ key: "check", text: `Only if ${conditionLabel(p.condition)}`, price: undefined, title: "Checked on fresh data right before acting" }] : []),
-    ...(p.action ? [{ key: "act", text: p.action.kind === "itinerary" ? "Day-by-day plan" : "Order", price: maxCost(p.action) || undefined, title: actionText(p.action) }] : []),
-  ];
-  const n = notes(p);
+  const trade = p.action && p.action.kind !== "itinerary";
+  // One line of facts: the most it costs, then the one or two notes that change the decision.
+  const facts = [
+    `Up to $${total < 0.01 ? usdc(total) : total.toFixed(2)}`,
+    p.research.length ? `${p.research.length} paid lookup${p.research.length > 1 ? "s" : ""} first` : "",
+    p.condition ? `only if ${conditionLabel(p.condition)}` : "",
+    ...notes(p)
+      .filter((x) => !/^Sized to|^Hedge|^Fee/.test(x))
+      .slice(0, 2),
+  ].filter(Boolean);
   return (
     <div className={`mt-2 rounded-xl border-[1.5px] bg-panel p-3.5 ${chosen ? "border-line" : "border-ink shadow-[3px_3px_0_0_var(--agent)]"}`} data-testid="move-card">
       <div className="flex items-start justify-between gap-2">
         <div className="text-[15px] font-semibold leading-snug">{p.title}</div>
         {chosen ? (
           <span className="inline-flex shrink-0 items-center gap-1 text-[12px] font-semibold text-good">
-            <Icon name="check" size={13} stroke={2.6} /> In the plan
+            <Icon name="check" size={13} stroke={2.6} /> Chosen
           </span>
         ) : (
-          p.action && p.action.kind !== "itinerary" && <VenueBadge venue={p.venue ?? "paper"} />
+          trade && p.venue !== "paper" && <VenueBadge venue={p.venue ?? "paper"} />
         )}
       </div>
       <p className="mt-1 text-[13.5px] leading-snug text-ink-2">{p.ask}</p>
-      <ol className="mt-2.5 flex flex-wrap items-center gap-1 text-[12.5px]" aria-label="Steps">
-        {steps.map((st, i) => (
-          <li key={st.key} className="flex items-center gap-1" title={st.title}>
-            {i > 0 && <span className="text-ink-3" aria-hidden>→</span>}
-            <span className="num inline-flex items-center gap-1 rounded-md bg-[#f1f0ec] px-2 py-0.5 text-ink">
-              {st.text}
-              {st.price != null && <span className="text-ink-3">{st.key === "act" ? `≤ $${st.price.toFixed(2)}` : `$${usdc(st.price)}`}</span>}
-            </span>
-          </li>
-        ))}
-      </ol>
-      {p.hedge && (
-        <p className="mt-2 rounded-lg bg-agent-soft px-2.5 py-1.5 text-[12.5px] text-ink" data-testid="move-hedge">
-          Insurance: pay up to <b className="font-semibold">${p.hedge.cost.toFixed(2)}</b>, get <b className="font-semibold">${p.hedge.payout}</b> back if it happens.
-        </p>
-      )}
       {p.changes && p.changes.length > 0 && (
         <p className="mt-2 text-[12px] font-medium text-agent-ink" data-testid="move-changes">
           Changed: {p.changes.join(" · ")}
         </p>
       )}
-      {n.length > 0 && <p className="mt-2 text-[12px] text-ink-3">{n.join(" · ")}</p>}
+      <p className="num mt-2 text-[12.5px] text-ink-3" data-testid="move-facts">
+        {facts.join(" · ")}
+        {p.venue === "paper" && trade ? " · practice order" : ""}
+      </p>
       {onChoose && !chosen && (
-        <div className="mt-3 flex items-center justify-between gap-2 border-t border-[#f1f0ec] pt-2.5">
-          <span className="num text-[12.5px] text-ink-2">
-            ≤ ${total < 0.01 ? usdc(total) : total.toFixed(2)} total{p.venue === "paper" && maxCost(p.action) > 0 ? " · simulated" : ""}
-          </span>
-          <Button onClick={onChoose} disabled={busy || run.status !== "exploring"} variant="agent" className="h-9" data-testid="adopt-move">
-            {busy ? <Spinner /> : null} Set it up
-          </Button>
-        </div>
+        <Button onClick={onChoose} disabled={busy || run.status !== "exploring"} variant="agent" className="mt-3 h-10 w-full" data-testid="adopt-move">
+          {busy ? <Spinner /> : null} Review and approve <Icon name="arrow" size={15} stroke={2.2} />
+        </Button>
       )}
     </div>
   );
@@ -277,18 +263,19 @@ function Bubble({ m, run, onChoose, busy }: { m: ChatMsg; run: Run; onChoose: (i
       </span>
       <div className="min-w-0 flex-1">
         {m.tools && m.tools.length > 0 && (
-          <div className="mb-1.5 flex flex-wrap gap-1">
-            {m.tools.map((t, i) => (
-              <span
-                key={i}
-                className={`inline-flex items-center gap-1 rounded-md border px-1.5 py-0.5 text-[11.5px] ${t.ok ? "border-line bg-surface text-ink-3" : "border-bad/30 text-bad"}`}
-                title={JSON.stringify(t.args)}
-              >
-                <Icon name="search" size={11} />
-                {t.summary}
-              </span>
-            ))}
-          </div>
+          <details className="group mb-1 text-[11.5px] text-ink-3" data-testid="lookups">
+            <summary className="inline-flex cursor-pointer list-none items-center gap-1 hover:text-ink-2">
+              <Icon name="search" size={11} /> Checked {m.tools.length} {m.tools.length === 1 ? "source" : "sources"}
+              <Icon name="chevron" size={10} className="transition-transform group-open:rotate-90" />
+            </summary>
+            <ul className="mt-1 space-y-0.5 pl-4">
+              {m.tools.map((t, i) => (
+                <li key={i} className={t.ok ? "" : "text-warn-ink"}>
+                  {t.summary}
+                </li>
+              ))}
+            </ul>
+          </details>
         )}
         <div className={bubble}>
           <Rich text={m.text} />
@@ -298,14 +285,7 @@ function Bubble({ m, run, onChoose, busy }: { m: ChatMsg; run: Run; onChoose: (i
             Couldn't check {m.unverified.join(", ")} against live data; treat as approximate.
           </p>
         )}
-        {m.plan &&
-          (run.plan?.id === m.plan.id && run.plan.status !== "proposed" ? (
-            <p className="mt-2 rounded-lg border border-line bg-panel px-3 py-2 text-[13px] text-ink-2" data-testid="plan-started">
-              Plan {run.plan.status === "running" ? "running" : run.plan.status === "done" ? "finished" : "stopped"}: {run.plan.steps.filter((s) => s.status === "done").length} of {run.plan.steps.length} steps done.
-            </p>
-          ) : (
-            <PlanCard plan={m.plan} run={run} />
-          ))}
+        {m.plan && <PlanCard plan={m.plan} run={run} />}
         {m.proposal && <MoveCard p={m.proposal} run={run} chosen={run.proposal?.id === m.proposal.id} onChoose={() => onChoose(m.proposal!.id)} busy={busy} />}
       </div>
     </motion.li>
@@ -524,9 +504,8 @@ export function Chat({ run, focus, onFocusClear, onAdopted }: { run: Run; focus?
     }
   }
 
-  const accept = (s: string) => /^(yes|set it up|build|do it|ok)/i.test(s);
-  const latestMove = [...chat].reverse().find((m) => m.proposal)?.proposal;
-  const placeholder = editing && focus ? (focus.kind === "card" ? CARD_HINT[focus.card] : focus.hint) : run.status === "draft" ? "Ask for something different" : `Ask ${THEMES[run.agent].name} anything`;
+  const accept = (s: string) => /^(yes|set it up|build|do it|ok|start)/i.test(s);
+  const placeholder = editing && focus ? (focus.kind === "card" ? CARD_HINT[focus.card] : focus.hint) : run.status === "draft" ? "Ask for something different" : last?.options?.length ? "Or type your own answer" : chat.length > 1 ? "Reply or ask something else" : `Ask ${THEMES[run.agent].name} anything`;
 
   return (
     <section className="flex h-full min-h-0 flex-col" aria-label="Chat with the agent">
@@ -565,19 +544,44 @@ export function Chat({ run, focus, onFocusClear, onAdopted }: { run: Run; focus?
 
       {open ? (
         <div className="border-t border-line bg-panel px-3 pb-3 pt-2.5">
-          {!busy && run.status === "exploring" && last?.role === "agent" && last.suggestions && last.suggestions.length > 0 && (
-            <div className="mb-2.5 flex flex-wrap gap-1.5">
-              {/* "Yes, set it up" only makes sense when there is a move to accept. */}
-              {last.suggestions.filter((s) => latestMove || !accept(s)).map((s) => (
-                <button
-                  key={s}
-                  type="button"
-                  onClick={() => (accept(s) && latestMove && run.status === "exploring" ? choose(latestMove.id) : send(s))}
-                  className="pressable rounded-lg border border-agent/40 bg-agent-soft px-3 py-1.5 text-[13px] font-medium text-agent-ink hover:border-agent"
-                >
+          {!busy && run.status === "exploring" && last?.role === "agent" && last.options && last.options.length > 0 && (
+            <div className="mb-2.5 grid gap-1.5 sm:grid-cols-2" data-testid="answer-options">
+              {last.options.map((s) => (
+                <button key={s} type="button" onClick={() => send(s)} className="pressable rounded-lg border-[1.5px] border-ink bg-panel px-3 py-2.5 text-left text-[14px] font-medium hover:bg-agent-soft">
                   {s}
                 </button>
               ))}
+            </div>
+          )}
+          {!busy && run.status === "exploring" && last?.role === "agent" && !last.options?.length && !last.proposal && !last.plan && last.suggestions && last.suggestions.length > 0 && (
+            <div className="mb-2.5 flex flex-wrap gap-1.5" data-testid="next-steps">
+              {last.suggestions
+                .filter((s) => !accept(s))
+                .slice(0, 3)
+                .map((s, i) => (
+                  <button
+                    key={s}
+                    type="button"
+                    onClick={() => send(s)}
+                    className={`pressable rounded-lg border px-3 py-1.5 text-[13px] font-medium ${i === 0 ? "border-ink bg-ink text-white" : "border-line bg-panel text-ink-2 hover:border-ink/40"}`}
+                  >
+                    {s}
+                  </button>
+                ))}
+            </div>
+          )}
+          {/* With a card on screen its button is the next step; the chips are only ways to change it. */}
+          {!busy && run.status === "exploring" && last?.role === "agent" && (last.proposal || last.plan) && last.suggestions && last.suggestions.filter((s) => !accept(s)).length > 0 && (
+            <div className="mb-2.5 flex flex-wrap items-center gap-1.5" data-testid="tweaks">
+              <span className="text-[12px] text-ink-3">Or change it:</span>
+              {last.suggestions
+                .filter((s) => !accept(s) && !/^not now$/i.test(s))
+                .slice(0, 2)
+                .map((s) => (
+                  <button key={s} type="button" onClick={() => send(s)} className="pressable rounded-lg border border-line bg-panel px-2.5 py-1 text-[12.5px] text-ink-2 hover:border-ink/40">
+                    {s}
+                  </button>
+                ))}
             </div>
           )}
           <AnimatePresence initial={false}>
@@ -627,7 +631,7 @@ export function Chat({ run, focus, onFocusClear, onAdopted }: { run: Run; focus?
               {busy ? <Spinner /> : <Icon name="send" size={17} stroke={2.2} />}
             </button>
           </form>
-          <p className="mt-2 px-1 text-[12px] text-ink-3">{editing ? "You'll see the new price before anything changes." : run.status === "exploring" ? "Exploring is free. Nothing is paid or placed until you approve." : "Ask for a change here, or open the details to edit one step."}</p>
+          {editing && <p className="mt-2 px-1 text-[12px] text-ink-3">You&apos;ll see the new price before anything changes.</p>}
         </div>
       ) : (
         <div className="flex flex-wrap items-center justify-between gap-2 border-t border-line px-4 py-3 text-[12.5px] text-ink-3">

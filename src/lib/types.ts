@@ -155,6 +155,8 @@ export interface ChatMsg {
   /** Compact notes from the lookups (symbols, prices), so later turns remember them. */
   facts?: string;
   proposal?: Proposal;
+  /** The agent needs one thing from the user before it can go on: tappable answers to its question. */
+  options?: string[];
   /** Quick replies the user can tap. */
   suggestions?: string[];
   /** A plan of several moves, possibly for different agents, run one after another. */

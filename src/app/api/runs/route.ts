@@ -3,13 +3,15 @@ import { timingSafeEqual } from "node:crypto";
 import { z } from "zod";
 import { createRun, listRuns } from "@/server/orchestrator";
 import { summarize } from "@/lib/summary";
+import { routeAgent } from "@/server/route";
 
 export const dynamic = "force-dynamic";
 
 const FAULTS = ["seller_402_timeout", "payment_rejected", "settle_fails", "insufficient_balance", "policy_block", "price_increase", "model_error", "approval_timeout"] as const;
 
 const Body = z.object({
-  agent: z.enum(["inso", "trado", "travo"]),
+  // "auto": the server picks the agent that fits the request.
+  agent: z.enum(["auto", "inso", "trado", "travo"]),
   task: z.string().min(3).max(280),
   mode: z.enum(["demo", "live"]).default("demo"),
   faults: z.array(z.enum(FAULTS)).default([]),
@@ -39,7 +41,8 @@ export async function POST(req: NextRequest) {
   // Jobs paid by the user's own passkey wallet spend their money, not the app's, so they need no code.
   if (body.mode === "live" && !body.payerAddress && !liveAllowed(body.accessCode)) return NextResponse.json({ error: "Arc testnet jobs need the access code. Use the demo rail, or ask the owner for the code." }, { status: 403 });
   try {
-    return NextResponse.json(await createRun({ ...body, payerAddress: body.payerAddress as `0x${string}` | undefined }, { wait: false }));
+    const agent = body.agent === "auto" ? await routeAgent(body.task) : body.agent;
+    return NextResponse.json(await createRun({ ...body, agent, payerAddress: body.payerAddress as `0x${string}` | undefined }, { wait: false }));
   } catch (e) {
     return NextResponse.json({ error: (e as Error).message }, { status: 400 });
   }

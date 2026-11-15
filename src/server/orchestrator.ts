@@ -318,7 +318,7 @@ async function agentReply(ctl: Ctl) {
     const r = await exploreTurn(ctl.run.agent, ctl.run.chat ?? [], (note) => emit(ctl, { type: "chat.thinking", note }), id());
     for (const u of r.usage) trackAi(ctl, "chat", u);
     if (r.usage.length) ctl.run = { ...ctl.run, planner: "ai" };
-    emit(ctl, { type: "chat.message", message: { id: id(), role: "agent", text: r.text, at: now(), tools: r.tools, facts: r.facts, unverified: r.unverified, proposal: r.proposal, plan: r.plan, suggestions: suggestionsFor(ctl.run.agent, r.suggestions, { proposal: r.proposal, plan: Boolean(r.plan) }) } });
+    emit(ctl, { type: "chat.message", message: { id: id(), role: "agent", text: r.text, at: now(), tools: r.tools, facts: r.facts, unverified: r.unverified, proposal: r.proposal, plan: r.plan, options: r.options, suggestions: r.options ? [] : suggestionsFor(ctl.run.agent, r.suggestions, { proposal: r.proposal, plan: Boolean(r.plan) }) } });
   } catch (e) {
     console.warn("chat failed", e);
     emit(ctl, { type: "chat.message", message: { id: id(), role: "agent", text: "Something went wrong on my side before I could answer. Nothing was spent.", at: now(), suggestions: ["Try again"] } });

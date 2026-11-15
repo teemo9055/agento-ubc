@@ -47,9 +47,12 @@ const norm = (s: string) => s.toLowerCase().replace(/[^a-z0-9]+/g, " ").trim();
 
 export function suggestionsFor(agent: AgentId, fromModel: string[], opts: { proposal?: Proposal; plan?: boolean } = {}): string[] {
   const seen = new Set<string>();
+  // Two chips are the same idea if they share a topic word, however they're phrased.
+  const TOPICS = ["chainlink", "history", "trend", "candles", "flow", "tape", "contracts", "hours", "stop", "drops", "cheaper", "smaller", "half"];
   const add = (list: string[], out: string[], max: number) => {
     for (const s of list) {
-      const k = norm(s).split(" ").slice(0, 3).join(" ");
+      const n = norm(s);
+      const k = TOPICS.find((t) => n.includes(t)) ?? n.split(" ").slice(0, 3).join(" ");
       if (out.length >= max || !s || seen.has(k)) continue;
       seen.add(k);
       out.push(s);
