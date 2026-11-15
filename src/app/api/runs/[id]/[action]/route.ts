@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { z } from "zod";
 import type { SeqEvent } from "@/lib/events";
-import { adopt, approve, backToChat, cancel, sendChat, decideReapproval, editCard, fundingInfo, previewEdit, reapprovalPlan, resolveFailure, setMethod, subscribe } from "@/server/orchestrator";
+import { adopt, approve, backToChat, cancel, cancelRunOrder, refreshRunOrder, sendChat, decideReapproval, editCard, fundingInfo, previewEdit, reapprovalPlan, resolveFailure, setMethod, subscribe } from "@/server/orchestrator";
 
 export const dynamic = "force-dynamic";
 
@@ -32,6 +32,10 @@ export async function POST(req: NextRequest, ctx: Ctx) {
       }
       case "back":
         return NextResponse.json(backToChat(id));
+      case "order-refresh":
+        return NextResponse.json(await refreshRunOrder(id));
+      case "order-cancel":
+        return NextResponse.json(await cancelRunOrder(id));
       case "edit": {
         const b = Edit.parse(await req.json());
         return NextResponse.json(await editCard(id, b.card, b.prompt));

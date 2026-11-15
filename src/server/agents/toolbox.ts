@@ -3,7 +3,7 @@ import { SELLERS } from "../sellers";
 import { PRODUCTS } from "../x402";
 import * as gemini from "../gemini";
 import * as geo from "../geo";
-import { describeAction, notionalOf, placeOrder, tradingVenue, VENUE_NAME } from "../exchange";
+import { describeAction, ExchangeError, marketBase, notionalOf, placeOrder, VENUE_NAME, VENUE_NOTE } from "../exchange";
 import { RESEARCH } from "../tools";
 import type { AgentCtx, AgentDef, EditResult, LineDraft, PhaseDraft, PlanDraft } from "./types";
 import { PhaseFailure } from "./types";
@@ -75,11 +75,12 @@ async function geocodeAll(names: string[]) {
 }
 
 /** Fresh price for the condition, read right before acting. */
-async function observe(c: MoveCondition, action?: MoveAction): Promise<number | undefined> {
+async function observe(c: MoveCondition, action: MoveAction | undefined, venue: Proposal["venue"]): Promise<number | undefined> {
   if (c.metric === "spot_price") return (await gemini.spotTicker(c.symbol)).last;
   const ticker = action?.kind === "prediction_order" ? action.eventTicker : undefined;
   if (!ticker) return undefined;
-  const ev = await gemini.getEvent(ticker);
+  // Read the book the order would trade on.
+  const ev = await gemini.getEvent(ticker, marketBase(venue));
   const k = ev.contracts.find((x) => x.symbol === c.symbol);
   if (!k) return undefined;
   const yes = k.ask ?? k.last;
@@ -111,7 +112,7 @@ export function planFromProposal(p: Proposal): PlanDraft {
   phases.push({ id: "check", label: p.condition ? "Check the condition" : "Read the data", sub: p.condition ? conditionText(p.condition) : "on fresh prices", dependsOn: research, optional: false });
   const a = p.action;
   if (a && a.kind !== "itinerary") {
-    const venue = tradingVenue();
+    const venue = p.venue;
     lines.push({ id: "order", phaseId: "act", purpose: describeAction(a), service: a.kind === "prediction_order" ? "prediction order" : "spot order", payeeName: VENUE_NAME[venue], payee: EXCHANGE_PAYEE, rail: "exchange", approved: usd(notionalOf(a)) });
     phases.push({ id: "act", label: a.kind === "prediction_order" ? "Place the order" : "Place the trade", sub: describeAction(a), dependsOn: ["check"], optional: false, lineId: "order" });
   } else if (a?.kind === "itinerary") {
@@ -126,11 +127,11 @@ export function planFromProposal(p: Proposal): PlanDraft {
       title: a && a.kind !== "itinerary" ? "Limits" : "Read-only",
       points: [
         ...(p.condition ? [`Skips the move unless ${conditionText(p.condition)}`] : []),
-        ...(a && a.kind !== "itinerary" ? [`Order capped at $${notionalOf(a).toFixed(2)}`, `${VENUE_NAME[tradingVenue()]}: ${tradingVenue() === "gemini" ? "real money" : "no real money"}`] : ["Nothing is booked or bought"]),
+        ...(a && a.kind !== "itinerary" ? [`Order capped at $${notionalOf(a).toFixed(2)}`, VENUE_NOTE[p.venue]] : ["Nothing is booked or bought"]),
         "Prices can move after the check",
       ].slice(0, 3),
     },
-    { kind: "method", title: "Pay per request", points: [p.research.length ? `${p.research.length} paid lookups via x402 on Arc` : "No paid lookups", "Paid from your vault only", a && a.kind !== "itinerary" ? `Order on ${VENUE_NAME[tradingVenue()]}` : "Built-in analysis"] },
+    { kind: "method", title: "Pay per request", points: [p.research.length ? `${p.research.length} paid lookups via x402 on Arc` : "No paid lookups", "Paid from your vault only", a && a.kind !== "itinerary" ? (p.venue === "paper" ? "Order simulated, not sent" : `Order on ${VENUE_NAME[p.venue]}`) : "Built-in analysis"] },
   ];
   return { cards, lines, phases };
 }
@@ -215,7 +216,7 @@ export function toolboxAgent(id: AgentId): AgentDef {
         if (!p.condition) {
           mem.check = { met: true, text: "No condition: proceeding", stats };
         } else {
-          const v = await observe(p.condition, p.action).catch(() => undefined);
+          const v = await observe(p.condition, p.action, p.venue).catch(() => undefined);
           const met = v != null && (p.condition.op === "<=" ? v <= p.condition.value : v >= p.condition.value);
           mem.check = { met, observed: v, stats, text: v == null ? "Couldn't read a fresh price, so the move is skipped" : `${conditionText(p.condition)} → now ${fmtVal(p.condition.metric, v)} · ${met ? "met" : "not met"}` };
         }
@@ -232,16 +233,22 @@ export function toolboxAgent(id: AgentId): AgentDef {
           return;
         }
         if (!mem.check?.met) {
-          mem.order = { venue: tradingVenue(), status: "skipped", detail: `Not placed: ${mem.check?.text ?? "condition not met"}`, notional: 0 };
+          mem.order = { venue: p.venue, status: "skipped", detail: `Not placed: ${mem.check?.text ?? "condition not met"}`, notional: 0 };
           ctx.order?.(mem.order);
           ctx.progress(1, "Skipped: condition not met");
           return;
         }
         ctx.progress(0.3, "Sending order");
-        mem.order = await placeOrder(a);
+        try {
+          mem.order = await placeOrder(a);
+        } catch (e) {
+          const err = e as ExchangeError;
+          ctx.order?.({ venue: p.venue, status: "rejected", detail: err.message, notional: 0 });
+          // Retryable: the user can accept terms or fund the account, then retry.
+          throw new PhaseFailure("exchange_rejected", `${VENUE_NAME[p.venue]}: ${err.message}`);
+        }
         ctx.order?.(mem.order);
-        if (mem.order.status === "rejected") throw new PhaseFailure("unknown", `Exchange rejected the order: ${mem.order.detail}`);
-        ctx.progress(1, mem.order.status === "filled" ? "Filled" : "Order placed");
+        ctx.progress(1, mem.order.status === "filled" ? "Filled" : mem.order.status === "simulated" ? "Simulated, not sent" : "Order resting on the exchange");
         return;
       }
       ctx.progress(1);
@@ -254,7 +261,9 @@ export function toolboxAgent(id: AgentId): AgentDef {
       const summary = o
         ? o.status === "skipped"
           ? `Held off: ${mem.check?.text ?? "condition not met"}`
-          : `${o.status === "filled" ? "Filled" : "Placed"} on ${VENUE_NAME[o.venue]}: ${o.detail}`
+          : o.status === "simulated"
+            ? `Simulated (no exchange connected): ${o.detail}`
+            : `${o.status === "filled" ? "Filled" : "Order open"} on ${VENUE_NAME[o.venue]}: ${o.detail}`
         : mem.days
           ? `${mem.days.length} driving days · ${Math.round(mem.route?.distanceKm ?? 0)} km`
           : (mem.check?.text ?? p.title);

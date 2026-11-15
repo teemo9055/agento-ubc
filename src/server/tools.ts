@@ -5,6 +5,7 @@ import * as geo from "./geo";
 import { searchServices, networkName, CATEGORIES } from "./marketplace";
 import { spotSymbols } from "./agents/ai-planning";
 import { PRODUCTS } from "./x402";
+import { marketBase, tradingVenue, VENUE_NAME } from "./exchange";
 
 /**
  * Two kinds of tools.
@@ -24,25 +25,33 @@ const pctOf = (p: number | null) => (p == null ? "—" : `${Math.round(p * 100)}
 
 export const FREE_TOOLS: Record<string, FreeTool> = {
   search_markets: {
-    description: "Search active prediction markets on Gemini by keyword (e.g. 'BTC', 'Fed', 'Lakers'). Returns events with their contracts and current YES prices (0-1).",
+    description:
+      "Search active prediction markets on Gemini by keyword (e.g. 'BTC', 'Fed', 'Lakers'). Returns live markets with YES prices (0-1). When a test exchange is connected, `tradable` lists the markets you can actually place orders on there, with that exchange's own prices; orders must use those.",
     params: z.object({ query: z.string().describe("Keyword, asset ticker or team"), limit: z.number().int().min(1).max(10).optional() }),
     async run(a) {
+      const shape = (events: gemini.MarketEvent[]) =>
+        events.map((e) => ({
+          ticker: e.ticker,
+          title: e.title,
+          category: e.category,
+          volume: Math.round(e.volume),
+          contracts: e.contracts.filter((c) => c.open !== false).slice(0, 8).map((c) => ({ symbol: c.symbol, label: c.label, last: c.last, bid: c.bid, ask: c.ask, expiry: c.expiry })),
+        }));
+      const venue = tradingVenue();
       const events = await gemini.searchEvents(String(a.query ?? ""), Number(a.limit ?? 6));
-      const data = events.map((e) => ({
-        ticker: e.ticker,
-        title: e.title,
-        category: e.category,
-        volume: Math.round(e.volume),
-        contracts: e.contracts.slice(0, 8).map((c) => ({ symbol: c.symbol, label: c.label, last: c.last, bid: c.bid, ask: c.ask, expiry: c.expiry })),
-      }));
-      return { data, summary: `${events.length} markets for “${a.query}”` };
+      if (venue !== "gemini-sandbox") return { data: { venue: VENUE_NAME[venue], markets: shape(events) }, summary: `${events.length} markets for “${a.query}”` };
+      const tradable = await gemini.searchEvents(String(a.query ?? ""), Number(a.limit ?? 6), marketBase(venue)).catch(() => []);
+      return {
+        data: { venue: VENUE_NAME[venue], markets: shape(events), tradable: tradable.length ? shape(tradable) : "None. The test exchange lists crypto and commodity markets only; try BTC, ETH, SOL, XRP or Brent." },
+        summary: `${events.length} markets for “${a.query}” · ${tradable.length} tradable on ${VENUE_NAME[venue]}`,
+      };
     },
   },
   get_market: {
-    description: "Full detail of one prediction-market event by ticker: every contract with last, bid and ask.",
-    params: z.object({ ticker: z.string() }),
+    description: "Full detail of one prediction-market event by ticker: every contract with last, bid and ask. Set tradable=true to read it from the connected exchange (its own prices).",
+    params: z.object({ ticker: z.string(), tradable: z.boolean().optional() }),
     async run(a) {
-      const e = await gemini.getEvent(String(a.ticker));
+      const e = await gemini.getEvent(String(a.ticker), a.tradable ? marketBase() : undefined);
       return { data: e, summary: `${e.title} · ${e.contracts.length} contracts` };
     },
   },
@@ -159,7 +168,19 @@ export const ProposalInput = z.object({
     .describe("Paid lookups to run before acting. Empty if the free data already settles it."),
   action: z
     .discriminatedUnion("kind", [
-      z.object({ kind: z.literal("prediction_order"), eventTicker: z.string(), symbol: z.string(), label: z.string().max(60), side: z.enum(["yes", "no"]), maxPrice: z.number().min(0.01).max(0.99), quantity: z.number().int().min(1).max(100) }),
+      z.object({
+        kind: z.literal("prediction_order"),
+        eventTicker: z.string(),
+        symbol: z.string().describe("Exact contract symbol from the tradable list"),
+        label: z.string().max(60),
+        side: z.enum(["yes", "no"]),
+        orderType: z
+          .enum(["limit", "stop-limit"])
+          .describe("limit: rests on the book and buys at maxPrice or cheaper, so it covers 'buy if it drops to X'. stop-limit: waits until the price rises to stopPrice, then buys at up to maxPrice, for 'buy once it breaks out to X'."),
+        maxPrice: z.number().min(0.01).max(0.99).describe("Highest price per contract (0-1)"),
+        stopPrice: z.number().min(0.01).max(0.99).nullable().describe("stop-limit only: trigger price, at or above the last trade and at or below maxPrice"),
+        quantity: z.number().int().min(1).max(500),
+      }),
       z.object({ kind: z.literal("spot_order"), symbol: z.string(), side: z.enum(["buy", "sell"]), limitPrice: z.number().positive(), amountUsd: z.number().min(1).max(100) }),
       z.object({ kind: z.literal("itinerary"), stops: z.array(z.string().min(2).max(60)).min(2).max(6), hoursPerDay: z.number().int().min(2).max(12) }),
     ])
@@ -168,41 +189,86 @@ export const ProposalInput = z.object({
   condition: z
     .object({ metric: z.enum(["yes_price", "no_price", "spot_price"]), symbol: z.string(), op: z.enum(["<=", ">="]), value: z.number() })
     .nullable()
-    .describe("Checked on fresh data right before acting; the action is skipped if false. null for no condition."),
+    .describe("A check on a DIFFERENT number than the order's own price, read right before placing (e.g. only buy the BTC-above-66k contract if BTC spot ≥ 64k). The order's own price target goes in orderType/maxPrice/stopPrice, not here. null for none."),
+  budgetUsd: z.number().positive().nullable().describe("The most the user said they'd spend on this order in USD, if they said; enforced."),
 });
 export type ProposalInput = z.infer<typeof ProposalInput>;
 
 const MAX_NOTIONAL = Number(process.env.MAX_ORDER_USD ?? 50);
+const round2 = (x: number) => Math.round(x * 100) / 100;
 
-/** Checks a proposal against live data and the agent's limits. Returns a proposal or a reason. */
+/**
+ * Checks a move against the exchange it would trade on and the user's limits.
+ * Fixes what's safe to fix (rounding, budget) and says so; refuses the rest with a reason the model can act on.
+ */
 export async function validateProposal(agent: AgentId, input: unknown, id: string): Promise<{ proposal: Proposal } | { error: string }> {
   const parsed = ProposalInput.safeParse(input);
   if (!parsed.success) return { error: `Invalid move: ${parsed.error.issues.map((i) => `${i.path.join(".")} ${i.message}`).join("; ")}` };
   const p = parsed.data;
-  const action = p.action ?? undefined;
-  if (action && !ACTIONS[agent].includes(action.kind)) return { error: `This agent can't do ${action.kind}. Allowed: ${ACTIONS[agent].join(", ")}` };
-  if (!action && p.research.length === 0) return { error: "A move needs an action or at least one paid lookup" };
+  const venue = tradingVenue();
+  const adjustments: string[] = [];
+  const budget = p.budgetUsd ?? undefined;
+  let action: MoveAction | undefined;
+  const raw = p.action ?? undefined;
+  if (raw && !ACTIONS[agent].includes(raw.kind)) return { error: `This agent can't do ${raw.kind}. Allowed: ${ACTIONS[agent].join(", ")}` };
+  if (!raw && p.research.length === 0) return { error: "A move needs an action or at least one paid lookup" };
 
-  if (action?.kind === "prediction_order") {
-    const ev = await gemini.getEvent(action.eventTicker).catch(() => null);
-    const c = ev?.contracts.find((x) => x.symbol === action.symbol);
-    if (!ev || !c) return { error: `Contract ${action.symbol} not found in event ${action.eventTicker}` };
-    if (action.maxPrice * action.quantity > MAX_NOTIONAL) return { error: `Order over the ${MAX_NOTIONAL} USD limit` };
-  }
-  if (action?.kind === "spot_order") {
+  if (raw?.kind === "prediction_order") {
+    const ev = await gemini.getEvent(raw.eventTicker, marketBase(venue)).catch(() => null);
+    const c = ev?.contracts.find((x) => x.symbol === raw.symbol);
+    if (!ev || !c)
+      return {
+        error:
+          venue === "gemini-sandbox"
+            ? `${raw.symbol} isn't listed on ${VENUE_NAME[venue]}. Only markets in search_markets' "tradable" list can be ordered; pick one of those or explain to the user that this market can't be traded here.`
+            : `Contract ${raw.symbol} not found in event ${raw.eventTicker}`,
+      };
+    if (c.open === false) return { error: `${c.label} isn't open for trading right now` };
+    const maxPrice = round2(raw.maxPrice);
+    let quantity = raw.quantity;
+    let stopPrice = raw.stopPrice != null ? round2(raw.stopPrice) : undefined;
+    if (raw.orderType === "stop-limit") {
+      if (stopPrice == null) return { error: "stop-limit needs stopPrice" };
+      if (c.last != null && stopPrice < c.last) return { error: `stopPrice ${stopPrice} is below the last trade ${c.last}; a buy stop must trigger at or above it. For 'buy if it drops to X' use a plain limit order at X.` };
+      if (stopPrice > maxPrice) return { error: "stopPrice must be at or below maxPrice" };
+    } else stopPrice = undefined;
+    if (budget != null && maxPrice * quantity > budget + 1e-9) {
+      quantity = Math.floor(budget / maxPrice + 1e-9);
+      if (quantity < 1) return { error: `Budget $${budget} can't buy one contract at ${Math.round(maxPrice * 100)}¢` };
+      adjustments.push(`Quantity cut to ${quantity} to stay within your $${budget}`);
+    }
+    if (maxPrice * quantity > MAX_NOTIONAL) return { error: `Order over the ${MAX_NOTIONAL} USD limit` };
+    if (maxPrice !== raw.maxPrice) adjustments.push(`Price rounded to ${Math.round(maxPrice * 100)}¢`);
+    action = { kind: "prediction_order", eventTicker: raw.eventTicker, symbol: raw.symbol, label: raw.label, side: raw.side, orderType: raw.orderType, maxPrice, stopPrice, quantity };
+  } else if (raw?.kind === "spot_order") {
+    const symbol = raw.symbol.toLowerCase();
     const list = await spotSymbols().catch(() => [] as string[]);
-    if (list.length && !list.includes(action.symbol.toLowerCase())) return { error: `Unknown symbol ${action.symbol}` };
-    if (action.amountUsd > MAX_NOTIONAL) return { error: `Order over the ${MAX_NOTIONAL} USD limit` };
-  }
+    if (list.length && !list.includes(symbol)) return { error: `Unknown symbol ${raw.symbol}` };
+    let amountUsd = raw.amountUsd;
+    if (budget != null && amountUsd > budget) {
+      amountUsd = budget;
+      adjustments.push(`Amount cut to $${budget}, your budget`);
+    }
+    if (amountUsd > MAX_NOTIONAL) return { error: `Order over the ${MAX_NOTIONAL} USD limit` };
+    action = { ...raw, symbol, amountUsd };
+  } else if (raw) action = raw;
+
   for (const r of p.research) {
     const t = RESEARCH[r.tool];
-    const missing = t.args.filter((a) => a !== "tf" && !r.args[a]);
+    const missing = t.args.filter((x) => x !== "tf" && !r.args[x]);
     if (missing.length) return { error: `${r.tool} needs ${missing.join(", ")}` };
   }
-  // An order's own limit is the real ceiling: a looser price condition would only confuse.
+
+  // A condition on the order's own price adds nothing: the exchange enforces the limit, and it keeps resting.
   let condition = (p.condition ?? undefined) as MoveCondition | undefined;
-  if (condition && action?.kind === "prediction_order" && condition.metric === `${action.side}_price` && condition.op === "<=" && condition.value > action.maxPrice) condition = { ...condition, value: action.maxPrice };
-  if (condition && action?.kind === "spot_order" && condition.metric === "spot_price" && action.side === "buy" && condition.op === "<=" && condition.value > action.limitPrice) condition = { ...condition, value: action.limitPrice };
+  if (condition && action?.kind === "prediction_order" && condition.symbol === action.symbol && condition.metric !== "spot_price") {
+    condition = undefined;
+    adjustments.push("Price check folded into the order: it rests on the exchange until the price is right");
+  }
+  if (condition && action?.kind === "spot_order" && condition.metric === "spot_price" && condition.symbol === action.symbol) {
+    condition = undefined;
+    adjustments.push("Price check folded into the limit order");
+  }
   const research: ResearchStep[] = p.research.map((r, i) => ({ id: `r${i + 1}`, tool: r.tool, args: r.args, label: r.label, why: r.why }));
   return {
     proposal: {
@@ -211,8 +277,11 @@ export async function validateProposal(agent: AgentId, input: unknown, id: strin
       why: p.why,
       ask: p.ask,
       research,
-      action: action && action.kind === "spot_order" ? { ...action, symbol: action.symbol.toLowerCase() } : action,
+      action,
       condition,
+      venue: action && action.kind !== "itinerary" ? venue : "paper",
+      budgetUsd: budget,
+      adjustments: adjustments.length ? adjustments : undefined,
     },
   };
 }

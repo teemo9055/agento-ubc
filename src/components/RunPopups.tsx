@@ -136,6 +136,7 @@ const TITLE: Record<string, string> = {
   policy_block: "Change denied",
   price_increase: "Price went up",
   model_error: "Analysis crashed",
+  exchange_rejected: "Exchange refused the order",
   approval_timeout: "Approval timed out",
   unknown: "Step failed",
 };

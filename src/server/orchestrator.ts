@@ -23,6 +23,7 @@ import { AGENTS } from "./agents";
 import { aiSummary } from "./agents/ai-planning";
 import { aiEnabled, type AiUsage } from "./ai";
 import { exploreTurn } from "./explore";
+import { cancelOrder, refreshOrder } from "./exchange";
 import { offVault, type ChatMsg, type Proposal } from "@/lib/types";
 import { PhaseFailure, type AgentCtx, type PlanDraft } from "./agents/types";
 import { FACTORY, USDC, addresses, factoryAbi, liveReady, publicClient, vaultAbi } from "./chain";
@@ -940,3 +941,28 @@ async function recover(ctl: Ctl) {
 }
 
 if (process.env.NEXT_PHASE !== "phase-production-build") restore();
+
+// ---------- the order after the job ----------
+
+/** Re-reads the move's order from the exchange: open, partly filled, filled or cancelled. */
+export async function refreshRunOrder(runId: string) {
+  const ctl = ctlOf(runId);
+  const o = ctl.run.order;
+  const kind = ctl.run.proposal?.action?.kind;
+  if (!o || !kind || !["open", "filled"].includes(o.status)) return ctl.run;
+  const next = await refreshOrder(o, kind);
+  if (JSON.stringify(next) !== JSON.stringify(o)) emit(ctl, { type: "order.updated", order: next });
+  return ctl.run;
+}
+
+/** Cancels the move's resting order. Fills that already happened stay. */
+export async function cancelRunOrder(runId: string) {
+  const ctl = ctlOf(runId);
+  const o = ctl.run.order;
+  const kind = ctl.run.proposal?.action?.kind;
+  if (!o || !kind || o.status !== "open") throw new Error("no open order to cancel");
+  const next = await cancelOrder(o, kind);
+  emit(ctl, { type: "order.updated", order: next });
+  log(ctl, { kind: "failure", what: `Order cancelled: ${o.detail}`, why: "Cancelled by you", outcome: "cancelled", by: "user" });
+  return ctl.run;
+}

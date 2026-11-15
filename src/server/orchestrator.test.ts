@@ -86,8 +86,10 @@ describe("orchestrator (demo rail)", () => {
     for (const l of run.lines) expect(BigInt(l.actual)).toBeLessThanOrEqual(BigInt(l.approved));
     expect(BigInt(run.refunded!)).toBe(BigInt(run.cap) - total(run));
     expect(run.decisions.some((d) => d.kind === "plan_approval")).toBe(true);
-    expect(run.order).toMatchObject({ venue: "paper", status: "placed" });
-    expect(run.deliverable?.summary).toMatch(/Placed/);
+    // No exchange keys in tests: the order is honestly a simulation, never presented as placed.
+    expect(run.order).toMatchObject({ venue: "paper", status: "simulated" });
+    expect(run.proposal?.venue).toBe("paper");
+    expect(run.deliverable?.summary).toMatch(/Simulated/);
   });
 
   it("price_increase asks for re-approval, then pays the new price", async () => {
@@ -206,8 +208,10 @@ describe("explore, then act", () => {
         why: "test",
         ask: "Buy 5 YES at 20¢ or less?",
         research: [{ id: "r1", tool: "odds_history", args: { symbol: "GEMI-BTC-A", tf: "15m" }, label: "Odds history", why: "trend" }],
-        action: { kind: "prediction_order", eventTicker: "BTC-1", symbol: "GEMI-BTC-A", label: "A", side: "yes", maxPrice: 0.2, quantity: 5 },
-        condition: { metric: "yes_price", symbol: "GEMI-BTC-A", op: "<=", value: 0.2 },
+        action: { kind: "prediction_order", eventTicker: "BTC-1", symbol: "GEMI-BTC-A", label: "A", side: "yes", orderType: "limit", maxPrice: 0.2, quantity: 5 },
+        // A check on a different number: BTC spot must be at or below 50k (it's 60k in the mock).
+        condition: { metric: "spot_price", symbol: "btcusd", op: "<=", value: 50000 },
+        venue: "paper",
       },
     });
     expect(created.status).toBe("draft");

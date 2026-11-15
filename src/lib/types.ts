@@ -17,6 +17,7 @@ export type FailureCode =
   | "policy_block"
   | "price_increase"
   | "model_error"
+  | "exchange_rejected"
   | "approval_timeout"
   | "unknown";
 
@@ -157,7 +158,18 @@ export interface ResearchStep {
 }
 
 export type MoveAction =
-  | { kind: "prediction_order"; eventTicker: string; symbol: string; label: string; side: "yes" | "no"; maxPrice: number; quantity: number }
+  | {
+      kind: "prediction_order";
+      eventTicker: string;
+      symbol: string;
+      label: string;
+      side: "yes" | "no";
+      /** limit: rests on the book and fills at maxPrice or better. stop-limit: goes on the book once the price rises to stopPrice. */
+      orderType: "limit" | "stop-limit";
+      maxPrice: number;
+      stopPrice?: number;
+      quantity: number;
+    }
   | { kind: "spot_order"; symbol: string; side: "buy" | "sell"; limitPrice: number; amountUsd: number }
   | { kind: "itinerary"; stops: string[]; hoursPerDay: number };
 
@@ -179,14 +191,29 @@ export interface Proposal {
   condition?: MoveCondition;
   /** The plain question shown to the user, e.g. "Buy 10 YES at 55¢ or less if odds are still under 60%?" */
   ask: string;
+  /** Where the order would go, fixed when the move is proposed. */
+  venue: Venue;
+  /** The most the user said they'd spend on the order, enforced. */
+  budgetUsd?: number;
+  /** Changes code made to the model's move (rounding, budget), shown to the user. */
+  adjustments?: string[];
 }
 
+/** gemini: real money · gemini-sandbox: Gemini's test exchange · paper: simulation, nothing is sent. */
+export type Venue = "gemini-sandbox" | "gemini" | "paper";
+
 export interface OrderResult {
-  venue: "gemini-sandbox" | "gemini" | "paper";
-  status: "placed" | "filled" | "skipped" | "rejected";
+  venue: Venue;
+  /** open: resting on the exchange · simulated: paper only, never sent */
+  status: "open" | "filled" | "cancelled" | "skipped" | "rejected" | "simulated";
   detail: string;
   orderId?: string;
   notional?: number;
+  symbol?: string;
+  quantity?: number;
+  filledQuantity?: number;
+  avgPrice?: number;
+  updatedAt?: string;
 }
 
 export interface Run {

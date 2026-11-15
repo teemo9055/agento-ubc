@@ -48,7 +48,7 @@ export interface AgentDef {
 
 export class PhaseFailure extends Error {
   constructor(
-    public code: "model_error" | "policy_block" | "approval_timeout" | "unknown",
+    public code: "model_error" | "policy_block" | "approval_timeout" | "exchange_rejected" | "unknown",
     message: string,
   ) {
     super(message);

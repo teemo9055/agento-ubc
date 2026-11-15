@@ -1,7 +1,7 @@
 "use client";
 import { useEffect, useRef, useState } from "react";
 import { AnimatePresence, motion } from "framer-motion";
-import type { ChatMsg, MoveAction, MoveCondition, Proposal, Run } from "@/lib/types";
+import type { ChatMsg, MoveAction, MoveCondition, Proposal, Run, Venue } from "@/lib/types";
 import { THEMES } from "@/lib/themes";
 import { AgentIcon } from "./AgentIcon";
 import { Button, Spinner } from "./ui";
@@ -13,7 +13,10 @@ const RESEARCH_PRICE: Record<string, number> = { odds_history: 0.02, trade_tape:
 const cents = (x: number) => `${Math.round(x * 100)}¢`;
 
 export function actionText(a: MoveAction) {
-  if (a.kind === "prediction_order") return `${a.quantity} × ${a.side.toUpperCase()} “${a.label}” at ≤ ${cents(a.maxPrice)}`;
+  if (a.kind === "prediction_order")
+    return a.orderType === "stop-limit"
+      ? `${a.quantity} × ${a.side.toUpperCase()} “${a.label}” once it rises to ${cents(a.stopPrice ?? a.maxPrice)}, paying ≤ ${cents(a.maxPrice)}`
+      : `${a.quantity} × ${a.side.toUpperCase()} “${a.label}” at ≤ ${cents(a.maxPrice)}, resting until filled`;
   if (a.kind === "spot_order") return `${a.side === "buy" ? "Buy" : "Sell"} $${a.amountUsd} of ${a.symbol.replace(/usd$/, "").toUpperCase()} at ${a.side === "buy" ? "≤" : "≥"} $${a.limitPrice.toLocaleString()}`;
   return `Plan ${a.stops.join(" → ")} · ≤ ${a.hoursPerDay} h/day`;
 }
@@ -23,13 +26,31 @@ export function conditionLabel(c: MoveCondition) {
 }
 const maxCost = (a?: MoveAction) => (!a ? 0 : a.kind === "prediction_order" ? a.maxPrice * a.quantity : a.kind === "spot_order" ? a.amountUsd : 0);
 
+const VENUE_BADGE: Record<Venue, { label: string; title: string; cls: string }> = {
+  gemini: { label: "Live · real money", title: "Orders go to your Gemini account with real money", cls: "border-bad/50 bg-bad/10 text-bad" },
+  "gemini-sandbox": { label: "Gemini sandbox · test money", title: "Real orders on Gemini's test exchange, with test funds", cls: "border-agent/40 bg-agent-soft text-agent" },
+  paper: { label: "Simulation · not sent", title: "No exchange is connected, so the order is only simulated", cls: "border-warn bg-warn/15 text-[#7a5000]" },
+};
+
+export function VenueBadge({ venue }: { venue: Venue }) {
+  const b = VENUE_BADGE[venue];
+  return (
+    <span className={`rounded-md border px-1.5 py-0.5 text-[10.5px] font-medium ${b.cls}`} title={b.title} data-testid="venue-badge">
+      {b.label}
+    </span>
+  );
+}
+
 export function MoveCard({ p, run, chosen, onChoose, busy }: { p: Proposal; run: Run; chosen?: boolean; onChoose?: () => void; busy?: boolean }) {
   const research = p.research.reduce((s, r) => s + (RESEARCH_PRICE[r.tool] ?? 0), 0);
   return (
     <div className={`mt-2 rounded-xl border-2 bg-panel p-3.5 ${chosen ? "border-good/60" : "border-agent/50"}`} data-testid="move-card">
       <div className="flex items-center justify-between gap-2">
         <span className="font-pixel text-[12px] uppercase tracking-wide text-agent">Proposed move</span>
-        {chosen && <span className="text-[11px] font-medium text-good">✓ In the work order</span>}
+        <span className="flex items-center gap-1.5">
+          {p.action && p.action.kind !== "itinerary" && <VenueBadge venue={p.venue ?? "paper"} />}
+          {chosen && <span className="text-[11px] font-medium text-good">✓ In the work order</span>}
+        </span>
       </div>
       <div className="mt-1 text-[15px] font-semibold leading-snug">{p.title}</div>
       <p className="mt-1 text-[13.5px] font-medium text-ink">{p.ask}</p>
@@ -59,9 +80,16 @@ export function MoveCard({ p, run, chosen, onChoose, busy }: { p: Proposal; run:
           </li>
         )}
       </ol>
+      {p.adjustments && p.adjustments.length > 0 && (
+        <ul className="mt-2 space-y-0.5 text-[11.5px] text-ink-3">
+          {p.adjustments.map((x) => (
+            <li key={x}>↳ {x}</li>
+          ))}
+        </ul>
+      )}
       <div className="mt-3 flex flex-wrap items-center justify-between gap-2 border-t border-line pt-2.5">
         <span className="num text-[12px] text-ink-3">
-          Research {research.toFixed(2)} USDC from your vault{maxCost(p.action) > 0 ? ` · order ≤ $${maxCost(p.action).toFixed(2)} on the exchange` : ""}
+          Research {research.toFixed(2)} USDC from your vault{maxCost(p.action) > 0 ? ` · order ≤ $${maxCost(p.action).toFixed(2)} ${p.venue === "paper" ? "simulated" : "on the exchange"}` : ""}
         </span>
         {onChoose && !chosen && (
           <Button onClick={onChoose} disabled={busy || run.status !== "exploring"} className="bg-agent hover:opacity-90" data-testid="adopt-move">

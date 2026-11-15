@@ -39,7 +39,8 @@ test("explore is free, then the approved move runs with no popup", async ({ page
   await page.getByTestId("approve").click();
   await receipt(page);
   await expect(page.getByRole("dialog")).toHaveCount(0);
-  await expect(page.getByTestId("order-result")).toContainText(/Placed|Held off/);
+  await expect(page.getByTestId("order-result")).toContainText(/Simulated/);
+  await expect(page.getByTestId("venue-badge").first()).toContainText("Simulation");
 });
 
 test("back to chat from the work order keeps the conversation", async ({ page }) => {

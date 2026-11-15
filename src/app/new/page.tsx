@@ -9,6 +9,7 @@ import { THEMES } from "@/lib/themes";
 import type { AgentId, FailureCode, Run } from "@/lib/types";
 import { OUTFIT_LABEL, outfitFor } from "@/lib/outfit";
 import { WalletPanel } from "@/components/passkey/WalletPanel";
+import { ExchangePanel } from "@/components/ExchangePanel";
 import { usePasskeyWallet } from "@/components/passkey/usePasskey";
 
 const FAULTS: { code: FailureCode; label: string }[] = [
@@ -250,6 +251,7 @@ export default function Home() {
             className="mt-3 h-9 w-full rounded-xl border border-line bg-surface px-3 text-sm outline-none focus:border-ink/40"
           />
         )}
+        {(agent === "inso" || agent === "trado") && <ExchangePanel />}
         {err && <p className="mt-3 text-sm text-bad">{err}</p>}
         {cfg?.setup && cfg.setup.length > 0 && (
           <div className="mt-3 rounded-lg border border-warn bg-warn/10 px-3 py-2 text-[12.5px] text-[#7a5000]" data-testid="setup-problems">

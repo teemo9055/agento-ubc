@@ -78,7 +78,8 @@ Measured network fee per `authorize` call, paid by the agent: about 0.0026 USDC.
    2. Check the policy against the approved line.
    3. Authorize from the vault.
    4. The seller settles onchain and returns the data.
-6. **Check, then act.** The condition is read on a fresh price right before acting. If it fails, the order is skipped and the report says why. Orders go to the Gemini sandbox when trading keys are set, otherwise they are recorded as paper trades.
+6. **Check, then act.** An optional check on a different number (e.g. BTC spot before buying a BTC contract) is read fresh right before acting. The order then goes to Gemini as a real resting order: a **limit** order covers "buy if it drops to X", a **stop-limit** order covers "buy once it rises to X". The app tracks it (open, filled, cancelled), refreshes it, and can cancel it.
+   - Every move is labelled where it goes: **Live** (real money), **Gemini sandbox** (real orders, test money) or **Simulation** (no exchange connected, nothing sent). The agent can only trade markets listed on the connected exchange.
 7. **Change → ask.** If the policy blocks a spend, that step pauses and you get a re-approval popup. Other steps keep going.
 8. **Fail → choose.** A failed step offers retry, skip (optional steps only), switch provider, top up, or cancel. Purchases are cached per request key, so a retry never pays twice.
 9. **Close.** The vault closes, unspent USDC returns to you, and you get the receipt.
@@ -98,7 +99,8 @@ Measured network fee per `authorize` call, paid by the agent: about 0.0026 USDC.
 | Big spends listed and approved up front | Work order (default threshold 0.25 USDC, editable on the price card) |
 | Cancel anytime, funds returned | `vault.close()` by client or agent |
 | Orders only as approved | The order line (side, contract, max price, size) is part of the approved work order; the condition is re-checked on fresh data |
-| Order size | `MAX_ORDER_USD` (default 50); the order is paid on the exchange, never from the vault |
+| Order size | Your stated budget (quantity cut to fit, shown on the card) and `MAX_ORDER_USD` (default 50); the order is paid on the exchange, never from the vault |
+| Exchange terms | Gemini's prediction-market terms are shown and accepted only by your click, never by the agent |
 | Model output is untrusted | Every move is validated against live data before it is shown; tool results are marked as third-party data |
 
 The policy engine runs before any signature. The vault enforces the same rules onchain, so a bug in the app fails closed.
@@ -154,7 +156,7 @@ cd contracts && forge script script/Deploy.s.sol --rpc-url https://rpc.testnet.a
 
 4. Put the factory address in `FACTORY_ADDRESS`, then run `npm run dev`.
 
-To place sandbox orders, create an API key at https://exchange.sandbox.gemini.com (Settings → API, trading scope) and set `GEMINI_TRADING_KEY` and `GEMINI_TRADING_SECRET`. Without them, orders are recorded as paper trades. `GEMINI_TRADING_ENV=production` switches to the real exchange.
+To place sandbox orders, register at https://exchange.sandbox.gemini.com, create an account-scoped API key with the Trader role, and set `GEMINI_TRADING_KEY` and `GEMINI_TRADING_SECRET`. The sandbox sends no emails; at the 2FA prompt run `document.cookie = "GEMINI-SANDBOX-2FA=true; path=/"` in the browser console and enter `9999999`. New sandbox accounts get test funds. The sandbox lists crypto and commodity markets. Without keys, orders are labelled simulations. `GEMINI_TRADING_ENV=production` switches to the real exchange.
 
 For passkey wallets, create a Circle client key bound to your domain (`localhost` locally) and set the same domain under Console → Modular Wallets → Configurator → Passkey. Put the key in `NEXT_PUBLIC_CIRCLE_CLIENT_KEY`.
 

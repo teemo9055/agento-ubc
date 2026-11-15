@@ -7,6 +7,8 @@ export interface MarketContract {
   bid: number | null;
   ask: number | null;
   expiry?: string;
+  /** Contract is active and its book is open for trading. */
+  open?: boolean;
 }
 
 export interface MarketEvent {
@@ -39,8 +41,11 @@ const ALIASES: Record<string, string> = {
 
 const STOP = new Set(["the", "and", "for", "how", "what", "will", "odds", "market", "markets", "track", "price", "today", "this", "week", "with", "moved", "move", "show", "find", "give", "about", "have", "been", "does", "doing", "into", "from", "they", "that", "whats", "going", "moving", "trend", "trending", "latest", "right", "now"]);
 
-async function get<T>(path: string, empty?: T): Promise<T> {
-  const res = await fetch(`${BASE}${path}`, { headers: { accept: "application/json" }, cache: "no-store" });
+export const SANDBOX_BASE = "https://api.sandbox.gemini.com";
+export const PROD_BASE = BASE;
+
+async function get<T>(path: string, empty?: T, base = BASE): Promise<T> {
+  const res = await fetch(`${base}${path}`, { headers: { accept: "application/json" }, cache: "no-store" });
   if (!res.ok) {
     if (empty !== undefined && res.status === 400) {
       const body = (await res.json().catch(() => ({}))) as { reason?: string };
@@ -75,19 +80,20 @@ const toEvent = (e: any): MarketEvent => ({
     bid: num(c.prices?.bestBid),
     ask: num(c.prices?.bestAsk),
     expiry: c.expiryDate,
+    open: (c.status ?? "active") === "active" && (c.marketState ?? "open") === "open",
   })),
 });
 
-export async function searchEvents(query: string, limit = 5): Promise<MarketEvent[]> {
+export async function searchEvents(query: string, limit = 5, base = BASE): Promise<MarketEvent[]> {
   const q = new URLSearchParams({ status: "active", limit: String(limit) });
   if (query) q.set("search", query);
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  const r = await get<{ data: any[] }>(`/v1/prediction-markets/events?${q}`);
+  const r = await get<{ data: any[] }>(`/v1/prediction-markets/events?${q}`, undefined, base);
   return r.data.map(toEvent);
 }
 
-export async function getEvent(ticker: string): Promise<MarketEvent> {
-  return toEvent(await get(`/v1/prediction-markets/events/${encodeURIComponent(ticker)}`));
+export async function getEvent(ticker: string, base = BASE): Promise<MarketEvent> {
+  return toEvent(await get(`/v1/prediction-markets/events/${encodeURIComponent(ticker)}`, undefined, base));
 }
 
 type Candle = [number, number, number, number, number, number];
@@ -125,8 +131,8 @@ export interface SpotQuote {
 }
 
 /** Latest spot price and 24h range. */
-export async function spotTicker(symbol: string): Promise<SpotQuote> {
-  const t = await get<{ close: string; open: string; high: string; low: string; bid?: string; ask?: string }>(`/v2/ticker/${encodeURIComponent(symbol)}`);
+export async function spotTicker(symbol: string, base = BASE): Promise<SpotQuote> {
+  const t = await get<{ close: string; open: string; high: string; low: string; bid?: string; ask?: string }>(`/v2/ticker/${encodeURIComponent(symbol)}`, undefined, base);
   const last = Number(t.close);
   const open = Number(t.open);
   return { symbol, last, bid: num(t.bid), ask: num(t.ask), change24h: open ? last / open - 1 : null, high24h: num(t.high), low24h: num(t.low) };
