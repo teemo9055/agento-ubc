@@ -3,62 +3,127 @@ import { useState } from "react";
 import { AnimatePresence, motion } from "framer-motion";
 import { fmt, fmtFee, sum } from "@/lib/money";
 import { short, addrUrl } from "@/lib/format";
-import { offVault, type Card, type CostLine, type Run } from "@/lib/types";
+import { offVault, paidInUsdc, type Card, type CostLine, type Run } from "@/lib/types";
 import { Modal } from "./Modal";
 import { Amount, Button, Spinner } from "./ui";
 import { post } from "./useRun";
 import { toast } from "./Toaster";
 import { AgentIcon } from "./AgentIcon";
+import { Icon } from "./Icon";
 import { WalletPanel } from "./passkey/WalletPanel";
 import { usePasskeyWallet } from "./passkey/usePasskey";
 import { fundCalls, sendCalls } from "./passkey/wallet";
 import type { Hex } from "viem";
 
-const CARD_ORDER: Card["kind"][] = ["price", "deliverable", "method", "risk"];
+// Read left to right like the job itself: what you get, how it's done, its limits, what it costs.
+const CARD_ORDER: Card["kind"][] = ["deliverable", "method", "risk", "price"];
 const CARD_LABEL: Record<Card["kind"], string> = { price: "Price", deliverable: "Deliverable", method: "Method", risk: "Risk" };
-const CARD_ICON: Record<Card["kind"], string> = { price: "◎", deliverable: "◇", method: "↯", risk: "△" };
+const CARD_STEP: Record<Card["kind"], string> = { deliverable: "What you get", method: "How", risk: "Limits", price: "Cost" };
 
-export function Cards({ run, onEdit }: { run: Run; onEdit?: (k: Card["kind"]) => void }) {
+/**
+ * The plan's four cards as a step-by-step row. Hover (or keyboard focus) widens a card and shows all its points;
+ * clicking hands it to the chat and keeps it open. Phones stack the row and expand the tapped card.
+ */
+export function Cards({ run, onEdit, focused }: { run: Run; onEdit?: (k: Card["kind"]) => void; focused?: Card["kind"] | null }) {
   const cards = CARD_ORDER.map((k) => run.cards.find((c) => c.kind === k)).filter(Boolean) as Card[];
   return (
-    <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-4">
-      {cards.map((c, i) => (
-        <motion.button
-          key={c.kind}
-          initial={{ opacity: 0, y: 10 }}
-          animate={{ opacity: 1, y: 0 }}
-          transition={{ delay: i * 0.05, duration: 0.3, ease: [0.2, 0.8, 0.2, 1] }}
-          whileHover={onEdit ? { y: -2 } : undefined}
-          disabled={!onEdit}
-          onClick={() => onEdit?.(c.kind)}
-          data-testid={`card-${c.kind}`}
-          className={`pressable group relative overflow-hidden rounded-2xl border p-4 text-left transition-colors disabled:cursor-default ${
-            c.kind === "price" ? "border-agent/30 bg-agent-soft/60" : "border-line bg-panel enabled:hover:border-ink/25"
-          }`}
-        >
-          <div className="flex items-center justify-between text-[11px] font-medium uppercase tracking-wide text-ink-3">
-            <span>
-              <span className="mr-1 text-agent">{CARD_ICON[c.kind]}</span>
-              {CARD_LABEL[c.kind]}
-            </span>
-            {onEdit && <span className="rounded-full bg-ink/5 px-2 py-0.5 reveal normal-case tracking-normal opacity-0 transition-opacity group-hover:opacity-100 group-focus-visible:opacity-100">Edit ✎</span>}
-          </div>
-          <AnimatePresence mode="popLayout" initial={false}>
-            <motion.div key={c.title} initial={{ opacity: 0, y: 4 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0, y: -4 }} className="num mt-1.5 text-[16px] font-semibold">
-              {c.title}
-            </motion.div>
-          </AnimatePresence>
-          <ul className="mt-2 space-y-1 text-[12.5px] text-ink-2">
-            {c.points.map((p) => (
-              <li key={p} className="flex gap-1.5">
-                <span className="text-ink-3">·</span>
-                {p}
-              </li>
-            ))}
-          </ul>
-        </motion.button>
-      ))}
-    </div>
+    <ol className="flex flex-col gap-3 sm:flex-row sm:gap-2.5" aria-label="Plan cards">
+      {cards.map((c, i) => {
+        const on = focused === c.kind;
+        const dim = Boolean(focused) && !on;
+        const price = c.kind === "price";
+        return (
+          <motion.li
+            key={c.kind}
+            initial={{ opacity: 0, y: 10 }}
+            animate={{ opacity: 1, y: 0 }}
+            transition={{ delay: i * 0.05, duration: 0.3, ease: [0.2, 0.8, 0.2, 1] }}
+            className={`group/card relative min-w-0 transition-[flex-grow,opacity] sm:basis-0 duration-300 ease-[cubic-bezier(0.2,0.8,0.2,1)] sm:flex-1 ${
+              on ? "sm:grow-[2.2]" : "sm:hover:grow-[1.7] sm:focus-within:grow-[1.7]"
+            } ${dim ? "opacity-60 hover:opacity-100" : ""}`}
+          >
+            {/* Step marker and the rail that joins the cards. */}
+            <div className="mb-2 flex items-center gap-2" aria-hidden>
+              <span
+                className={`num inline-flex h-[22px] w-[22px] shrink-0 items-center justify-center rounded-[5px] text-[11px] font-semibold ${
+                  on ? "border-[1.5px] border-ink bg-agent text-agent-on" : price ? "bg-agent text-agent-on" : "border-[1.5px] border-[#d5d4ce] bg-panel text-ink-2"
+                }`}
+              >
+                {i + 1}
+              </span>
+              <span className="whitespace-nowrap text-[12px] font-semibold uppercase tracking-wide text-ink-3">{CARD_STEP[c.kind]}</span>
+              {i < cards.length - 1 && <span className="hidden h-px flex-1 border-t border-dashed border-[#c9c8c2] sm:block" />}
+            </div>
+            <button
+              type="button"
+              disabled={!onEdit}
+              onClick={() => onEdit?.(c.kind)}
+              aria-pressed={onEdit ? on : undefined}
+              aria-expanded={on}
+              aria-label={onEdit ? `${CARD_LABEL[c.kind]}: ${c.title}. Edit in chat` : undefined}
+              data-testid={`card-${c.kind}`}
+              className={`pressable flex w-full flex-col rounded-2xl p-4 text-left sm:h-full transition-[border-color,box-shadow,transform] duration-200 disabled:cursor-default ${
+                on
+                  ? "border-[1.5px] border-ink shadow-[3px_3px_0_0_var(--agent)]"
+                  : `border ${onEdit ? "enabled:hover:-translate-y-0.5 enabled:hover:border-ink enabled:hover:shadow-[3px_3px_0_0_var(--agent)]" : ""}`
+              } ${price ? "border-agent/30 bg-agent-soft" : "border-line bg-panel"} ${on ? "!border-ink" : ""}`}
+            >
+              <span className="flex items-start justify-between gap-2">
+                <span className={`text-[12px] font-semibold ${price ? "text-agent-ink" : "text-ink-3"}`}>{CARD_LABEL[c.kind]}</span>
+                {onEdit &&
+                  (on ? (
+                    <span className="inline-flex shrink-0 items-center gap-1 rounded-md bg-ink px-1.5 py-0.5 text-[11px] font-semibold text-white">
+                      <Icon name="chat" size={11} /> In chat
+                    </span>
+                  ) : (
+                    <span className="reveal inline-flex shrink-0 items-center gap-1 text-[12px] font-medium text-ink-2 opacity-0 transition-opacity group-hover/card:opacity-100 group-focus-within/card:opacity-100">
+                      <Icon name="edit" size={12} /> Edit
+                    </span>
+                  ))}
+              </span>
+              <AnimatePresence mode="popLayout" initial={false}>
+                <motion.span
+                  key={c.title}
+                  initial={{ opacity: 0, y: 4 }}
+                  animate={{ opacity: 1, y: 0 }}
+                  exit={{ opacity: 0, y: -4 }}
+                  className={`num mt-1 block font-semibold leading-snug ${price ? "text-[20px]" : "text-[16px]"} ${on ? "" : "line-clamp-2"}`}
+                >
+                  {c.title}
+                </motion.span>
+              </AnimatePresence>
+              {/* The first point always shows; the rest open on hover, focus or click. */}
+              {c.points[0] && <span className={`mt-1.5 block text-[13px] leading-snug text-ink-2 ${on ? "" : "line-clamp-2"}`}>{c.points[0]}</span>}
+              {c.points.length > 1 && (
+                <span
+                  className={`grid transition-[grid-template-rows,opacity] duration-300 ease-[cubic-bezier(0.2,0.8,0.2,1)] ${
+                    on ? "grid-rows-[1fr] opacity-100" : "grid-rows-[1fr] opacity-100 sm:grid-rows-[0fr] sm:opacity-0 group-hover/card:grid-rows-[1fr] group-hover/card:opacity-100 group-focus-within/card:grid-rows-[1fr] group-focus-within/card:opacity-100"
+                  }`}
+                >
+                  <span className="min-h-0 overflow-hidden">
+                    <span className="mt-2 block space-y-1 border-t border-black/5 pt-2 text-[13px] leading-snug text-ink-2">
+                      {c.points.slice(1).map((p) => (
+                        <span key={p} className="flex gap-1.5">
+                          <span aria-hidden className="text-ink-3">
+                            ·
+                          </span>
+                          {p}
+                        </span>
+                      ))}
+                    </span>
+                  </span>
+                </span>
+              )}
+              {c.points.length > 1 && !on && (
+                <span className="mt-auto hidden pt-2 text-[12px] text-ink-3 transition-opacity sm:block group-hover/card:opacity-0 group-focus-within/card:opacity-0" aria-hidden>
+                  +{c.points.length - 1} more
+                </span>
+              )}
+            </button>
+          </motion.li>
+        );
+      })}
+    </ol>
   );
 }
 
@@ -71,8 +136,8 @@ function rowState(run: Run, l: CostLine) {
 }
 
 export function CostTable({ run, compact = false }: { run: Run; compact?: boolean }) {
-  const approved = sum(run.lines.filter((l) => !offVault(l.rail)).map((l) => l.approved));
-  const actual = sum(run.lines.filter((l) => !offVault(l.rail)).map((l) => l.actual));
+  const approved = sum(run.lines.filter((l) => paidInUsdc(l.rail)).map((l) => l.approved));
+  const actual = sum(run.lines.filter((l) => paidInUsdc(l.rail)).map((l) => l.actual));
   const live = run.status !== "draft" && run.status !== "funding";
   const pct = approved > 0n ? Number((actual * 1000n) / approved) / 10 : 0;
   return (
@@ -85,14 +150,14 @@ export function CostTable({ run, compact = false }: { run: Run; compact?: boolea
               <span className="font-semibold text-ink">{fmt(actual)}</span> / {fmt(approved)} USDC
             </span>
           </div>
-          <div className="mt-2 h-1.5 pix-bar overflow-hidden bg-line">
-            <motion.div className="h-full rounded-full bg-agent" animate={{ width: `${Math.min(100, pct)}%` }} transition={{ duration: 0.5 }} />
+          <div className="mt-2 h-2 overflow-hidden rounded-[2px] bg-[#f1f0ec]">
+            <motion.div className="h-full rounded-[2px] bg-agent" animate={{ width: `${Math.min(100, pct)}%` }} transition={{ duration: 0.5 }} />
           </div>
         </div>
       )}
       <div className="overflow-x-auto">
       <table className="w-full min-w-[340px] text-[13px]">
-        <thead className="border-b border-line text-left text-[11px] uppercase tracking-wide text-ink-3">
+        <thead className="border-b border-line text-left text-[12px] text-ink-3">
           <tr>
             <th className="px-4 py-2.5 font-medium">Step</th>
             <th className="px-2 py-2.5 font-medium">Payee</th>
@@ -119,7 +184,7 @@ export function CostTable({ run, compact = false }: { run: Run; compact?: boolea
                   <td className="px-4 py-2.5">
                     <div className="font-medium">{l.purpose}</div>
                     {l.rail === "exchange" && <span className="mt-0.5 block text-[11px] text-ink-3">Order limit · paid on the exchange, not from your vault</span>}
-                    {l.bigSpend && l.rail !== "exchange" && <span className="mt-0.5 inline-block rounded-md bg-warn/20 px-1.5 py-px text-[10.5px] font-medium text-[#7a5000]">Big spend · approved up front</span>}
+                    {l.bigSpend && l.rail !== "exchange" && <span className="mt-0.5 inline-block rounded-md bg-warn/20 px-1.5 py-px text-[10.5px] font-medium text-warn-ink">Big spend · approved up front</span>}
                   </td>
                   <td className="px-2 py-2.5 text-ink-2">
                     {l.payeeName}
@@ -187,140 +252,6 @@ export function CostTable({ run, compact = false }: { run: Run; compact?: boolea
   );
 }
 
-interface Preview {
-  ok: boolean;
-  message: string;
-  alternatives?: string[];
-  before?: { total: string; lines: { purpose: string; approved: string }[] };
-  after?: { total: string; lines: { purpose: string; approved: string }[] };
-}
-
-export function EditCardModal({ run, kind, onClose }: { run: Run; kind: Card["kind"] | null; onClose: () => void }) {
-  const [prompt, setPrompt] = useState("");
-  const [busy, setBusy] = useState(false);
-  const [preview, setPreview] = useState<(Preview & { prompt: string }) | null>(null);
-  const card = run.cards.find((c) => c.kind === kind);
-
-  async function check(text = prompt) {
-    if (!kind || !text.trim()) return;
-    setBusy(true);
-    try {
-      const p = await post<Preview>(`/api/runs/${run.id}/preview`, { card: kind, prompt: text });
-      setPreview({ ...p, prompt: text });
-      setPrompt(text);
-    } finally {
-      setBusy(false);
-    }
-  }
-  async function apply() {
-    if (!kind || !preview?.ok) return;
-    setBusy(true);
-    try {
-      await post<Run>(`/api/runs/${run.id}/edit`, { card: kind, prompt: preview.prompt });
-      toast(preview.message, "good");
-      onClose();
-    } finally {
-      setBusy(false);
-    }
-  }
-
-  const delta = preview?.ok && preview.before && preview.after ? BigInt(preview.after.total) - BigInt(preview.before.total) : 0n;
-  return (
-    <Modal open={!!kind} onClose={onClose} title={kind ? `Edit ${CARD_LABEL[kind].toLowerCase()}` : ""}>
-      {card && (
-        <div className="mb-4 rounded-xl border border-line bg-surface p-3 text-[13px]">
-          <div className="font-semibold">{card.title}</div>
-          <div className="text-ink-2">{card.points.join(" · ")}</div>
-        </div>
-      )}
-      <form
-        onSubmit={(e) => {
-          e.preventDefault();
-          if (preview?.ok && preview.prompt === prompt) apply();
-          else check();
-        }}
-      >
-        <div className="ring-agent flex items-center gap-2 rounded-xl border border-line bg-panel px-3">
-          <span className="text-agent">✎</span>
-          <input
-            autoFocus
-            value={prompt}
-            onChange={(e) => {
-              setPrompt(e.target.value);
-              if (preview && e.target.value !== preview.prompt) setPreview(null);
-            }}
-            maxLength={200}
-            placeholder={kind === "price" ? "e.g. big-spend threshold 0.5" : "Say what to change"}
-            className="h-11 w-full bg-transparent text-sm outline-none"
-          />
-        </div>
-
-        {busy && !preview && (
-          <motion.div initial={{ opacity: 0, y: 4 }} animate={{ opacity: 1, y: 0 }} className="mt-4 flex items-center gap-3 rounded-xl border border-line bg-surface p-3 text-[13px]" aria-live="polite">
-            <AgentIcon agent={run.agent} size={34} mood="working" />
-            <div className="min-w-0">
-              <div className="truncate font-medium">“{prompt}”</div>
-              <div className="text-ink-3">{run.planner === "ai" ? "Thinking it through and re-pricing…" : "Re-pricing…"}</div>
-            </div>
-          </motion.div>
-        )}
-        <AnimatePresence mode="wait">
-          {preview && !preview.ok && (
-            <motion.div key="no" role="alert" initial={{ opacity: 0, y: 4 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0 }} className="mt-4 rounded-xl border border-bad/30 bg-bad/5 p-3 text-[13px]">
-              <div className="font-medium text-bad">Can&apos;t do that</div>
-              <div className="mt-0.5 text-ink-2">{preview.message}</div>
-              {preview.alternatives && (
-                <div className="mt-2 flex flex-wrap gap-1.5">
-                  <span className="text-[12px] text-ink-3">Try:</span>
-                  {preview.alternatives.map((a) => (
-                    <button key={a} type="button" onClick={() => check(a)} className="pressable tap rounded-full border border-line bg-panel px-2.5 py-1 text-xs transition-colors hover:border-agent">
-                      {a}
-                    </button>
-                  ))}
-                </div>
-              )}
-            </motion.div>
-          )}
-          {preview?.ok && preview.before && preview.after && (
-            <motion.div key="yes" initial={{ opacity: 0, y: 4 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0 }} className="mt-4 rounded-xl border border-line p-3 text-[13px]" data-testid="edit-preview">
-              <div className="flex items-baseline justify-between">
-                <span className="font-medium">{preview.message}</span>
-                <span className="num">
-                  {fmt(preview.before.total)} → <b>{fmt(preview.after.total)}</b>
-                  {delta !== 0n && <span className={`ml-1.5 text-[11.5px] ${delta < 0n ? "text-good" : "text-ink-3"}`}>{delta < 0n ? `−${fmt(-delta)}` : `+${fmt(delta)}`}</span>}
-                </span>
-              </div>
-              <ul className="mt-2 space-y-0.5 text-[12px] text-ink-2">
-                {preview.after.lines.map((l) => (
-                  <li key={l.purpose} className="flex justify-between">
-                    <span>{l.purpose}</span>
-                    <span className="num">{fmt(l.approved)}</span>
-                  </li>
-                ))}
-              </ul>
-            </motion.div>
-          )}
-        </AnimatePresence>
-
-        <div className="mt-5 flex justify-end gap-2">
-          <Button type="button" variant="ghost" onClick={onClose}>
-            Cancel
-          </Button>
-          {preview?.ok && preview.prompt === prompt ? (
-            <Button type="button" onClick={apply} disabled={busy} className="bg-agent hover:opacity-90" data-testid="apply-edit">
-              {busy ? "Applying…" : "Apply change"}
-            </Button>
-          ) : (
-            <Button type="submit" disabled={busy || !prompt.trim()}>
-              {busy ? "Checking…" : "Preview"}
-            </Button>
-          )}
-        </div>
-      </form>
-    </Modal>
-  );
-}
-
 export function ApproveModal({ run, open, onClose }: { run: Run; open: boolean; onClose: () => void }) {
   const [busy, setBusy] = useState<"" | "sign" | "fund">("");
   const passkey = run.payer === "passkey" && run.mode === "live";
@@ -377,7 +308,7 @@ export function ApproveModal({ run, open, onClose }: { run: Run; open: boolean; 
             <span>
               {l.purpose}
               <span className="text-ink-3"> · {l.payeeName}</span>
-              {l.bigSpend && <span className="ml-2 rounded-md bg-warn/20 px-1.5 py-0.5 text-[10.5px] font-medium text-[#7a5000]">Big spend</span>}
+              {l.bigSpend && <span className="ml-2 rounded-md bg-warn/20 px-1.5 py-0.5 text-[10.5px] font-medium text-warn-ink">Big spend</span>}
             </span>
             <span className="num">{fmt(l.approved)}</span>
           </motion.li>
@@ -385,18 +316,18 @@ export function ApproveModal({ run, open, onClose }: { run: Run; open: boolean; 
       </ul>
 
       <div className="mt-4 grid gap-2 text-[12.5px] text-ink-2">
-        <div className="flex gap-2 rounded-xl bg-surface p-3">
-          <span className="text-agent">✓</span>
+        <div className="flex gap-2.5 rounded-xl bg-surface p-3">
+          <Icon name="check" size={16} className="mt-px text-agent-ink" />
           <span>
             {big.length ? `${big.length} big spend${big.length > 1 ? "s" : ""} over ${fmt(run.threshold)} USDC approved now. No pause mid-run.` : `No spend over the ${fmt(run.threshold)} USDC threshold.`}
           </span>
         </div>
-        <div className="flex gap-2 rounded-xl bg-surface p-3">
-          <span className="text-agent">↺</span>
+        <div className="flex gap-2.5 rounded-xl bg-surface p-3">
+          <Icon name="refund" size={16} className="mt-px text-agent-ink" />
           <span>You&apos;re asked again only if a price, payee or step changes.</span>
         </div>
-        <div className="flex gap-2 rounded-xl bg-surface p-3">
-          <span className="text-agent">⛨</span>
+        <div className="flex gap-2.5 rounded-xl bg-surface p-3">
+          <Icon name="shield" size={16} className="mt-px text-agent-ink" />
           <span>
             Vault rule: up to <b className="num">{fmt(total)}</b> across {run.lines.filter((l) => !offVault(l.rail)).length} lines, only to{" "}
             {[...new Set(run.lines.filter((l) => !offVault(l.rail)).map((l) => l.payeeName))].join(", ")}. Enforced onchain.
@@ -424,7 +355,7 @@ export function ApproveModal({ run, open, onClose }: { run: Run; open: boolean; 
           onClick={approve}
           disabled={!!busy || (passkey && (!pk.wallet || (pk.balance != null && pk.balance < BigInt(run.cap))))}
           data-testid="approve"
-          className="bg-agent hover:opacity-90"
+          variant="agent"
         >
           {busy === "sign" ? (
             <>

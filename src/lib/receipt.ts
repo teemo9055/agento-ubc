@@ -1,6 +1,6 @@
 import { fmt, fmtFee, sum } from "./money";
 import { THEMES } from "./themes";
-import type { Decision, Hex, Run } from "./types";
+import { paidInUsdc, type Decision, type Hex, type Run } from "./types";
 
 export interface ReceiptLine {
   step: string;
@@ -83,7 +83,7 @@ export function buildReceipt(run: Run): Receipt {
     networkFees: fees.toString(),
     total: subtotal.toString(),
     budget: {
-      approved: sum(run.lines.map((l) => l.approved)).toString(),
+      approved: sum(run.lines.filter((l) => paidInUsdc(l.rail)).map((l) => l.approved)).toString(),
       cap: run.cap,
       spent: subtotal.toString(),
       returned: run.refunded ?? "0",

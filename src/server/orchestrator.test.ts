@@ -281,6 +281,61 @@ describe("edit alternatives", () => {
   });
 });
 
+describe("step edits", () => {
+  const P = {
+    id: "p1",
+    title: "Buy YES if cheap",
+    why: "test",
+    ask: "Buy 5 YES at 40¢ or less?",
+    research: [
+      { id: "r1", tool: "odds_history", args: { symbol: "GEMI-BTC-A", tf: "15m" }, label: "Odds history", why: "trend" },
+      { id: "r2", tool: "trade_tape", args: { symbol: "GEMI-BTC-A" }, label: "Trade tape", why: "flow" },
+    ],
+    action: { kind: "prediction_order", eventTicker: "BTC-1", symbol: "GEMI-BTC-A", label: "A", side: "yes", orderType: "limit", maxPrice: 0.4, quantity: 5 },
+    condition: { metric: "yes_price", symbol: "GEMI-BTC-A", op: "<=", value: 0.45 },
+    venue: "paper",
+  } as const;
+  const opts = () => ({ proposal: JSON.parse(JSON.stringify(P)) });
+
+  it("drops exactly the step it is aimed at, and changes its timeframe", async () => {
+    const { AGENTS } = await import("@/server/agents");
+    const drop = AGENTS.inso.edit("method", "drop this step", opts(), "r2");
+    expect(drop.ok).toBe(true);
+    expect((drop.options!.proposal as typeof P).research.map((r) => r.id)).toEqual(["r1"]);
+    const tf = AGENTS.inso.edit("method", "use hourly data", opts(), "r1");
+    expect((tf.options!.proposal as typeof P).research[0].args.tf).toBe("1hr");
+  });
+
+  it("changes or drops the condition, and resizes or drops the order", async () => {
+    const { AGENTS } = await import("@/server/agents");
+    const c = AGENTS.inso.edit("method", "only if below 38¢", opts(), "check");
+    expect((c.options!.proposal as typeof P).condition).toMatchObject({ op: "<=", value: 0.38 });
+    expect(AGENTS.inso.edit("method", "drop the check", opts(), "check").options!.proposal).toMatchObject({ condition: undefined });
+    expect((AGENTS.inso.edit("method", "8 contracts", opts(), "act").options!.proposal as typeof P).action.quantity).toBe(8);
+    expect(AGENTS.inso.edit("method", "don't place the order", opts(), "act").options!.proposal).toMatchObject({ action: undefined });
+  });
+
+  it("every suggested alternative for a step is itself a valid edit", async () => {
+    const { AGENTS } = await import("@/server/agents");
+    for (const step of ["r1", "r2", "check", "act"])
+      for (const p of ["make it better", "hmm", "book a hotel"]) {
+        const r = AGENTS.inso.edit("method", p, opts(), step);
+        for (const alt of r.alternatives ?? []) expect(AGENTS.inso.edit("method", alt, opts(), step).ok, `${step}: "${p}" -> "${alt}"`).toBe(true);
+      }
+  });
+
+  it("previews and applies a step edit on a draft, re-pricing the plan", async () => {
+    const d = await draft("BTC odds");
+    const step = d.phases.find((p) => p.lineId && p.id.startsWith("r"))!;
+    const before = d.lines.length;
+    const pv = await orch.previewEdit(d.id, "method", "drop this step", step.id);
+    expect(pv.ok).toBe(true);
+    const after = await orch.editCard(d.id, "method", "drop this step", step.id);
+    expect(after.lines.length).toBe(before - 1);
+    expect(after.phases.find((p) => p.id === step.id)).toBeUndefined();
+  });
+});
+
 describe("method, preview and edited re-approval", () => {
   it("preview shows the new total without changing the work order", async () => {
     const r = await draft("BTC odds");

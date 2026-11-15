@@ -7,6 +7,7 @@ import { useState } from "react";
 import { motion } from "framer-motion";
 import { Button } from "./ui";
 import { AgentIcon } from "./AgentIcon";
+import { Icon } from "./Icon";
 import { runOutfit } from "@/lib/summary";
 
 function download(name: string, body: string, type: string) {
@@ -35,7 +36,7 @@ function Hash({ h }: { h?: string }) {
         className="reveal hit no-print shrink-0 rounded px-1 text-[10px] text-ink-3 opacity-0 transition-opacity hover:bg-ink/5 hover:text-ink focus-visible:opacity-100 group-hover:opacity-100"
         aria-label="Copy transaction hash"
       >
-        {copied ? "✓" : "copy"}
+        {copied ? "Copied" : "Copy"}
       </button>
     </span>
   );
@@ -68,7 +69,7 @@ export function ReceiptView({ run }: { run: Run }) {
             {fmt(r.total)}
             <span className="ml-2 text-lg font-normal text-ink-3">USDC</span>
           </motion.div>
-          {r.mode === "demo" && <div className="mt-1 text-[12px] text-[#7a5000]">Demo rail: settlement simulated, no onchain transactions.</div>}
+          {r.mode === "demo" && <div className="mt-1 text-[12px] text-warn-ink">Demo rail: settlement simulated, no onchain transactions.</div>}
         </div>
         <div className="text-right text-[12px] text-ink-3">
           <div className="font-mono">{r.receiptId}</div>
@@ -95,7 +96,7 @@ export function ReceiptView({ run }: { run: Run }) {
             <ul className="mt-1.5 space-y-0.5 text-[12.5px] text-ink-2">
               {run.deliverable.notes.map((n) => (
                 <li key={n} className="flex gap-1.5">
-                  <span className="text-agent">•</span>
+                  <span aria-hidden className="text-agent-ink">•</span>
                   {n}
                 </li>
               ))}
@@ -107,9 +108,9 @@ export function ReceiptView({ run }: { run: Run }) {
         </div>
       </div>
 
-      <h3 className="mt-7 text-[11px] font-medium uppercase tracking-wide text-ink-3">Where your money went</h3>
+      <h3 className="mt-7 text-[12px] font-semibold uppercase tracking-wide text-ink-3">Where your money went</h3>
       <table className="mt-2 w-full text-[12.5px]">
-        <thead className="text-left text-[10.5px] uppercase tracking-wide text-ink-3">
+        <thead className="text-left text-[12px] text-ink-3">
           <tr className="border-b border-line">
             <th className="py-2 font-medium">Step · purpose</th>
             <th className="py-2 font-medium">Payee</th>
@@ -134,7 +135,7 @@ export function ReceiptView({ run }: { run: Run }) {
                   {l.payee}
                 </a>
               </td>
-              <td className="hidden py-2 sm:table-cell">{l.rail}</td>
+              <td className="hidden py-2 sm:table-cell">{l.rail === "gateway" ? "Gateway nanopayment" : l.rail === "x402" ? "x402 from vault" : l.rail}</td>
               <td className="num py-2 text-right text-ink-2">{fmt(l.approved)}</td>
               <td className="num py-2 text-right font-medium">{fmt(l.amount)}</td>
             </tr>
@@ -165,7 +166,7 @@ export function ReceiptView({ run }: { run: Run }) {
           ["Returned to you", r.budget.returned],
         ].map(([k, v]) => (
           <div key={k} className="rounded-lg border border-line p-3">
-            <div className="text-[11px] uppercase tracking-wide text-ink-3">{k}</div>
+            <div className="text-[12px] text-ink-3">{k}</div>
             <div className="num text-lg font-semibold">{fmt(v)}</div>
           </div>
         ))}
@@ -183,7 +184,7 @@ export function ReceiptView({ run }: { run: Run }) {
         )}
       </div>
 
-      <h3 className="mt-7 text-[11px] font-medium uppercase tracking-wide text-ink-3">Approvals and decisions</h3>
+      <h3 className="mt-7 text-[12px] font-semibold uppercase tracking-wide text-ink-3">Approvals and decisions</h3>
       <ol className="mt-2 space-y-1.5 text-[12.5px]">
         {r.decisions.map((d) => (
           <li key={d.id} className="row flex flex-wrap gap-x-2">

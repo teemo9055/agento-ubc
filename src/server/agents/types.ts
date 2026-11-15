@@ -41,7 +41,8 @@ export interface AgentDef {
   /** Phase where payment faults are injected. */
   faultPhase: string;
   plan(task: string, options: Record<string, unknown>): Promise<PlanDraft>;
-  edit(card: Card["kind"], prompt: string, options: Record<string, unknown>): EditResult;
+  /** Change the agreed move by a request about one card, or about one step of the graph when `step` is a phase id. */
+  edit(card: Card["kind"], prompt: string, options: Record<string, unknown>, step?: string): EditResult;
   runPhase(phaseId: string, ctx: AgentCtx): Promise<void>;
   deliver(ctx: AgentCtx): Deliverable;
 }

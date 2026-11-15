@@ -7,7 +7,8 @@ export const dynamic = "force-dynamic";
 
 type Ctx = { params: Promise<{ id: string; action: string }> };
 
-const Edit = z.object({ card: z.enum(["deliverable", "risk", "method", "price"]), prompt: z.string().min(1).max(200) });
+// A card edit, or a step edit when `step` names a phase of the graph (card is then only a fallback label).
+const Edit = z.object({ card: z.enum(["deliverable", "risk", "method", "price"]).default("method"), step: z.string().regex(/^[a-z0-9_-]{1,24}$/).optional(), prompt: z.string().min(1).max(200) });
 const Hash = z.string().regex(/^0x[0-9a-fA-F]{64}$/);
 const Reapproval = z.object({ requestId: z.string(), outcome: z.enum(["approved", "denied"]), amount: z.string().regex(/^\d+$/).optional(), txHash: Hash.optional() });
 const Failure = z.object({ failureId: z.string(), action: z.enum(["retry", "skip", "edit", "cancel", "topup"]), txHash: Hash.optional() });
@@ -37,11 +38,11 @@ export async function POST(req: NextRequest, ctx: Ctx) {
         return NextResponse.json(await cancelRunOrder(id));
       case "edit": {
         const b = Edit.parse(await req.json());
-        return NextResponse.json(await editCard(id, b.card, b.prompt));
+        return NextResponse.json(await editCard(id, b.card, b.prompt, b.step));
       }
       case "preview": {
         const b = Edit.parse(await req.json());
-        return NextResponse.json(await previewEdit(id, b.card, b.prompt));
+        return NextResponse.json(await previewEdit(id, b.card, b.prompt, b.step));
       }
       case "approve": {
         const b = Approve.parse(await req.json().catch(() => ({})));

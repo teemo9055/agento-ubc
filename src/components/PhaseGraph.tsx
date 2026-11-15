@@ -1,69 +1,119 @@
 "use client";
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { ReactFlow, Handle, Position, BaseEdge, getSmoothStepPath, useReactFlow, type Edge, type EdgeProps, type Node, type NodeProps } from "@xyflow/react";
 import { useReducedMotion } from "framer-motion";
 import "@xyflow/react/dist/style.css";
 import { fmt } from "@/lib/money";
 import type { CostLine, Phase } from "@/lib/types";
-import { Spinner, StatusTag, TxChip } from "./ui";
+import { txUrl } from "@/lib/format";
+import { Icon } from "./Icon";
 
-type PhaseNodeData = { phase: Phase; line?: CostLine; step: number; vertical: boolean; simulated: boolean };
+type PhaseNodeData = { phase: Phase; line?: CostLine; step: number; vertical: boolean; simulated: boolean; onEdit?: () => void; focused?: boolean; dim?: boolean };
+
+const NODE_W = 188;
+const NODE_H = 92;
+
+/** One quiet mark per state: outline (planned), filled square (running), check (done), "!" (needs you). */
+function StateMark({ p, step }: { p: Phase; step: number }) {
+  const base = "inline-flex h-[22px] w-[22px] shrink-0 items-center justify-center rounded-[5px] text-[11px] font-semibold";
+  if (p.status === "done") return <span className={`${base} bg-good text-white`}><Icon name="check" size={13} stroke={3} /></span>;
+  if (p.status === "active") return <span className={`${base} border-[1.5px] border-ink bg-agent`}><span className="mascot-spark h-1.5 w-1.5 bg-white" /></span>;
+  if (p.status === "awaiting_reapproval") return <span className={`${base} border-[1.5px] border-ink bg-warn font-pixel text-ink`}>!</span>;
+  if (p.status === "failed_waiting" || p.status === "failed") return <span className={`${base} bg-bad font-pixel text-white`}>!</span>;
+  if (p.status === "skipped") return <span className={`${base} border border-dashed border-ink-3 text-ink-3`}>–</span>;
+  return <span className={`${base} num border-[1.5px] border-[#d5d4ce] text-ink-3`}>{step}</span>;
+}
+
+const STATE_TEXT: Partial<Record<Phase["status"], string>> = {
+  active: "Running",
+  awaiting_reapproval: "Needs you",
+  failed_waiting: "Needs you",
+  failed: "Failed",
+  skipped: "Skipped",
+};
 
 function PhaseNode({ data }: NodeProps<Node<PhaseNodeData>>) {
-  const { phase: p, line, step, vertical, simulated } = data;
+  const { phase: p, line, step, vertical, simulated, onEdit, focused, dim } = data;
   const active = p.status === "active";
+  const needs = p.status === "awaiting_reapproval" || p.status === "failed_waiting";
   const last = p.payments[p.payments.length - 1];
   const paid = p.payments.filter((x) => x.txState === "settled").length;
+  const frame = focused || active
+    ? "border-[1.5px] border-ink shadow-[3px_3px_0_0_var(--agent)]"
+    : needs
+      ? "border-[1.5px] border-ink shadow-[3px_3px_0_0_var(--color-warn)]"
+      : p.status === "failed"
+        ? "border border-bad/50"
+        : p.status === "skipped"
+          ? "border border-dashed border-line opacity-60"
+          : "border border-line";
+  const sub = p.error && (p.status === "failed_waiting" || p.status === "failed") ? p.error.message : p.note && active ? p.note : p.sub;
+  // Editable steps are real buttons; the whole box hands this step to the chat.
+  const Box = onEdit ? "button" : "div";
   return (
-    <div
-      className={`w-[208px] rounded-xl border bg-panel px-3.5 py-3 text-left transition-[transform,opacity] duration-300 ${
-        active ? "glow -translate-y-0.5 border-agent/50" : p.status === "skipped" ? "border-line opacity-50" : "border-line"
-      } ${p.status === "awaiting_reapproval" ? "border-warn" : ""} ${p.status === "failed_waiting" || p.status === "failed" ? "border-bad/50" : ""}`}
+    <Box
+      type={onEdit ? "button" : undefined}
+      onClick={onEdit}
+      aria-pressed={onEdit ? Boolean(focused) : undefined}
+      aria-label={onEdit ? `Step ${step}: ${p.label}. Edit in chat` : undefined}
+      className={`nodrag group relative flex flex-col overflow-hidden rounded-xl bg-panel px-3.5 pb-2.5 pt-3 text-left transition-[box-shadow,border-color,opacity,transform] duration-200 ${frame} ${
+        onEdit && !focused ? "cursor-pointer hover:-translate-y-0.5 hover:border-ink hover:shadow-[3px_3px_0_0_var(--agent)]" : ""
+      } ${dim ? "opacity-55" : ""}`}
+      style={{ width: NODE_W, height: NODE_H }}
       data-testid={`phase-${p.id}`}
       data-status={p.status}
     >
-      <Handle type="target" position={vertical ? Position.Top : Position.Left} className="!h-1.5 !w-1.5 !border-0 !bg-line" />
-      <div className="flex items-center justify-between gap-2">
-        <span className="flex items-center gap-1.5 font-mono text-[10.5px] text-ink-3">
-          {active ? <span className="text-agent"><Spinner /></span> : p.status === "done" ? <span className="text-good">✓</span> : <span>{String(step).padStart(2, "0")}</span>}
-        </span>
-        <StatusTag status={p.status} />
+
+      <Handle type="target" position={vertical ? Position.Top : Position.Left} className="!h-1 !w-1 !min-h-0 !min-w-0 !border-0 !bg-transparent" />
+      <div className="flex items-start gap-2.5">
+        <StateMark p={p} step={step} />
+        <div className="min-w-0 flex-1">
+          <div className="truncate text-[13.5px] font-semibold leading-tight">{p.label}</div>
+          <div className={`truncate text-[12px] leading-snug ${p.error ? "text-bad" : "text-ink-3"}`} title={sub}>
+            {STATE_TEXT[p.status] && p.status !== "active" ? <b className="font-semibold">{STATE_TEXT[p.status]} · </b> : null}
+            {sub}
+          </div>
+        </div>
       </div>
-      <div className="mt-1.5 text-[13.5px] font-semibold leading-tight">{p.label}</div>
-      <div className="truncate text-[11.5px] text-ink-3">{p.note && active ? p.note : p.sub}</div>
-
+      <div className="mt-auto flex items-center justify-between gap-2 text-[12px]">
+        {line ? (
+          <span className="num truncate text-ink-3">
+            {p.status === "planned" || p.status === "skipped" ? (
+              <>{fmt(line.approved)} USDC</>
+            ) : (
+              <>
+                <b className="font-semibold text-ink">{fmt(line.actual)}</b> / {fmt(line.approved)}
+              </>
+            )}
+            {line.calls && paid > 0 && p.status === "active" ? ` · ${paid}/${line.calls.max}` : ""}
+          </span>
+        ) : (
+          <span className="text-ink-3">Free</span>
+        )}
+        {onEdit ? (
+          <span
+            className={`inline-flex shrink-0 items-center gap-1 rounded-md px-1.5 py-0.5 text-[11px] font-semibold transition-opacity ${
+              focused ? "bg-ink text-white opacity-100" : "reveal bg-[#f1f0ec] text-ink-2 opacity-0 group-hover:opacity-100 group-focus-visible:opacity-100"
+            }`}
+            aria-hidden
+          >
+            <Icon name={focused ? "chat" : "edit"} size={11} /> {focused ? "In chat" : "Edit"}
+          </span>
+        ) : last?.txHash ? (
+          <a href={txUrl(last.txHash)} target="_blank" rel="noreferrer" className="nodrag inline-flex shrink-0 items-center gap-0.5 text-ink-3 hover:text-ink" aria-label={`Transaction for ${p.label}`}>
+            tx <Icon name="external" size={11} />
+          </a>
+        ) : last?.txState === "settled" && simulated ? (
+          <span className="shrink-0 text-ink-3">demo</span>
+        ) : null}
+      </div>
       {active && (
-        <div className="mt-2 h-1 pix-bar overflow-hidden bg-line">
-          <div className="h-full rounded-full bg-agent transition-[width] duration-500" style={{ width: `${Math.round((p.progress ?? 0) * 100)}%` }} />
+        <div className="absolute inset-x-0 bottom-0 h-[3px] bg-agent-soft">
+          <div className="h-full bg-agent transition-[width] duration-500" style={{ width: `${Math.max(6, Math.round((p.progress ?? 0) * 100))}%` }} />
         </div>
       )}
-
-      {p.error && (p.status === "failed_waiting" || p.status === "failed") && <div className="mt-1.5 text-[11.5px] text-bad">{p.error.message}</div>}
-
-      {line && (
-        <div className="mt-2 flex flex-wrap items-center gap-1.5 border-t border-line pt-2 text-[11px]">
-          {p.status === "skipped" ? (
-            <span className="text-ink-3">Skipped · cost released</span>
-          ) : (
-            <>
-              <span className="num text-ink-2">
-                {fmt(line.actual)}
-                <span className="text-ink-3">/{fmt(line.approved)}</span>
-              </span>
-              <span className="text-ink-3">→ {line.payeeName}</span>
-              {line.bigSpend && <span className="rounded border border-ink/20 px-1 text-[10px] text-ink-2">Approved</span>}
-              {last && <TxChip state={last.txState} hash={last.txHash} simulated={simulated} />}
-              {line.calls && paid > 0 && (
-                <span className="num text-ink-3">
-                  {paid}/{line.calls.max} calls
-                </span>
-              )}
-            </>
-          )}
-        </div>
-      )}
-      <Handle type="source" position={vertical ? Position.Bottom : Position.Right} className="!h-1.5 !w-1.5 !border-0 !bg-line" />
-    </div>
+      <Handle type="source" position={vertical ? Position.Bottom : Position.Right} className="!h-1 !w-1 !min-h-0 !min-w-0 !border-0 !bg-transparent" />
+    </Box>
   );
 }
 
@@ -74,20 +124,15 @@ type FlowEdgeData = { flowing: boolean; filled: boolean };
 /** Edge that fills when the source finishes; a dot travels only while money or data is moving. */
 function FlowEdge(props: EdgeProps<Edge<FlowEdgeData>>) {
   const reduce = useReducedMotion();
-  const [path] = getSmoothStepPath({ ...props, borderRadius: 14 });
+  const [path] = getSmoothStepPath({ ...props, borderRadius: 18, offset: 16 });
   const { flowing, filled } = props.data ?? { flowing: false, filled: false };
   return (
     <>
-      <BaseEdge path={path} style={{ stroke: filled ? "var(--color-good)" : "var(--color-line)", strokeWidth: 1.75, transition: "stroke 400ms" }} />
+      <BaseEdge path={path} style={{ stroke: filled ? "var(--color-good)" : flowing ? "var(--agent)" : "#d5d4ce", strokeWidth: 1.5, strokeDasharray: filled || flowing ? undefined : "3 4", transition: "stroke 400ms" }} />
       {flowing && !reduce && (
-        <>
-          <circle r="3.5" fill="var(--agent)">
-            <animateMotion dur="1.1s" repeatCount="indefinite" path={path} />
-          </circle>
-          <circle r="3.5" fill="var(--agent)" opacity="0.45">
-            <animateMotion dur="1.1s" begin="0.55s" repeatCount="indefinite" path={path} />
-          </circle>
-        </>
+        <rect width="6" height="6" x="-3" y="-3" fill="var(--agent)" stroke="var(--color-ink)" strokeWidth="1">
+          <animateMotion dur="1.2s" repeatCount="indefinite" path={path} />
+        </rect>
       )}
     </>
   );
@@ -99,26 +144,53 @@ const edgeTypes = { flow: FlowEdge };
 function FitOnChange({ signature }: { signature: string }) {
   const { fitView } = useReactFlow();
   useEffect(() => {
-    const t = setTimeout(() => fitView({ padding: 0.1, maxZoom: 1, duration: 180 }), 80);
+    const t = setTimeout(() => fitView({ padding: 0.04, maxZoom: 1, minZoom: 0.85, duration: 220 }), 80);
     return () => clearTimeout(t);
   }, [signature, fitView]);
   return null;
 }
 
-function useNarrow() {
-  const [narrow, set] = useState(false);
+/** Width of the box the graph sits in (it shares the row with the chat). */
+function useWidth() {
+  const ref = useRef<HTMLDivElement>(null);
+  const [w, setW] = useState(0);
   useEffect(() => {
-    const m = window.matchMedia("(max-width: 720px)");
-    const f = () => set(m.matches);
-    f();
-    m.addEventListener("change", f);
-    return () => m.removeEventListener("change", f);
+    const el = ref.current;
+    if (!el) return;
+    const ro = new ResizeObserver(([e]) => setW(e.contentRect.width));
+    ro.observe(el);
+    return () => ro.disconnect();
   }, []);
-  return narrow;
+  return [ref, w] as const;
 }
 
-export function PhaseGraph({ phases, lines, simulated }: { phases: Phase[]; lines: CostLine[]; simulated: boolean }) {
-  const vertical = useNarrow();
+/** Columns in the dependency order, i.e. how wide the left-to-right layout needs to be. */
+function depthCount(phases: Phase[]) {
+  const depth: Record<string, number> = {};
+  const d = (p: Phase): number => (depth[p.id] ??= p.dependsOn.length ? 1 + Math.max(...p.dependsOn.map((x) => d(phases.find((q) => q.id === x)!))) : 0);
+  phases.forEach(d);
+  return Math.max(0, ...Object.values(depth)) + 1;
+}
+
+export function PhaseGraph({
+  phases,
+  lines,
+  simulated,
+  editable,
+  focusedId,
+  onEditStep,
+}: {
+  phases: Phase[];
+  lines: CostLine[];
+  simulated: boolean;
+  /** Step ids that can be edited (draft only). */
+  editable?: string[];
+  focusedId?: string | null;
+  onEditStep?: (id: string) => void;
+}) {
+  const [box, width] = useWidth();
+  // Left to right whenever it fits at 85% size or more (it reads like a timeline); top to bottom only on narrow screens.
+  const vertical = width > 0 && (depthCount(phases) * (NODE_W + 44) - 44 + 16) * 0.85 > width;
 
   const { nodes, edges, size } = useMemo(() => {
     const depth: Record<string, number> = {};
@@ -127,8 +199,9 @@ export function PhaseGraph({ phases, lines, simulated }: { phases: Phase[]; line
     const cols: Record<number, string[]> = {};
     phases.forEach((p) => (cols[depth[p.id]] ??= []).push(p.id));
     const maxRows = Math.max(...Object.values(cols).map((c) => c.length));
-    const GAP_MAIN = vertical ? 225 : 250;
-    const GAP_CROSS = vertical ? 230 : 170;
+    // Even rhythm: a fixed node size and fixed gaps, so rows and columns line up.
+    const GAP_MAIN = vertical ? NODE_H + 44 : NODE_W + 44;
+    const GAP_CROSS = vertical ? NODE_W + 20 : NODE_H + 24;
 
     const nodes: Node<PhaseNodeData>[] = phases.map((p, i) => {
       const col = depth[p.id];
@@ -140,9 +213,20 @@ export function PhaseGraph({ phases, lines, simulated }: { phases: Phase[]; line
         id: p.id,
         type: "phase",
         position: vertical ? { x: cross, y: main } : { x: main, y: cross },
-        data: { phase: p, line: lines.find((l) => l.id === p.lineId), step: i + 1, vertical, simulated },
+        data: {
+          phase: p,
+          line: lines.find((l) => l.id === p.lineId),
+          step: i + 1,
+          vertical,
+          simulated,
+          onEdit: editable?.includes(p.id) && onEditStep ? () => onEditStep(p.id) : undefined,
+          focused: focusedId === p.id,
+          dim: Boolean(focusedId) && focusedId !== p.id,
+        },
         draggable: false,
         selectable: false,
+        // React Flow makes non-selectable nodes click-through; editable steps must take clicks.
+        style: editable?.includes(p.id) ? { pointerEvents: "all" as const } : undefined,
       };
     });
 
@@ -155,19 +239,19 @@ export function PhaseGraph({ phases, lines, simulated }: { phases: Phase[]; line
       }),
     );
     const cols_n = Object.keys(cols).length;
-    const size = vertical ? { h: cols_n * GAP_MAIN + 70 } : { h: maxRows * GAP_CROSS + 40 };
+    const size = vertical ? { h: cols_n * GAP_MAIN + 24 } : { h: maxRows * GAP_CROSS + 24 };
     return { nodes, edges, size };
-  }, [phases, lines, vertical, simulated]);
+  }, [phases, lines, vertical, simulated, editable, focusedId, onEditStep]);
 
   return (
-    <div className="w-full" style={{ height: size.h }} aria-label="Phase graph">
+    <div ref={box} className="w-full" style={{ height: size.h }} aria-label="Phase graph">
       <ReactFlow
         nodes={nodes}
         edges={edges}
         nodeTypes={nodeTypes}
         edgeTypes={edgeTypes}
         fitView
-        fitViewOptions={{ padding: 0.08, maxZoom: 1 }}
+        fitViewOptions={{ padding: 0.04, maxZoom: 1, minZoom: 0.85 }}
         nodesDraggable={false}
         nodesConnectable={false}
         elementsSelectable={false}

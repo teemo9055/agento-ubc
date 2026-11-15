@@ -19,7 +19,7 @@ export function WalletPanel({ need }: { need?: bigint }) {
   if (!wallet)
     return (
       <div className="space-y-2" data-testid="wallet-panel">
-        <div className="text-[13px] font-medium">Your passkey wallet</div>
+        <div className="text-[14px] font-semibold">Your passkey wallet</div>
         <p className="text-[12.5px] text-ink-2">A Circle smart wallet you unlock with Face ID, Touch ID or a security key. You approve and fund jobs from it; nobody else can.</p>
         <div className="flex flex-wrap gap-2">
           <input
@@ -28,7 +28,7 @@ export function WalletPanel({ need }: { need?: bigint }) {
             placeholder="Wallet name (e.g. your name)"
             aria-label="Wallet name"
             maxLength={40}
-            className="tap h-9 min-w-0 flex-1 rounded-xl border border-line bg-panel px-3 text-sm outline-none focus:border-ink/40"
+            className="tap h-10 min-w-0 flex-1 rounded-lg border border-line bg-panel px-3 text-sm outline-none focus:border-ink/40"
           />
           <Button
             type="button"
@@ -80,11 +80,11 @@ export function WalletPanel({ need }: { need?: bigint }) {
   return (
     <div className="flex flex-wrap items-center justify-between gap-2" data-testid="wallet-panel">
       <div className="text-[12.5px]">
-        <div className="font-medium">Your passkey wallet</div>
+        <div className="text-[12px] text-ink-3">Your passkey wallet</div>
         <a href={addrUrl(wallet.address)} target="_blank" rel="noreferrer" className="font-mono text-[11.5px] text-ink-3 hover:text-ink" data-testid="wallet-address">
           {short(wallet.address, 8)}
         </a>
-        <span className={`num ml-2 ${low ? "text-bad" : "text-ink-2"}`} data-testid="wallet-balance">
+        <span className={`num block text-[18px] font-semibold ${low ? "text-bad" : "text-ink"}`} data-testid="wallet-balance">
           {balance == null ? "…" : `${fmt(balance)} USDC`}
         </span>
       </div>

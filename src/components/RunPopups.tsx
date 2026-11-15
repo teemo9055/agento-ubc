@@ -60,17 +60,17 @@ export function ReapprovalModal({ run, req, onClose }: { run: Run; req: Reapprov
       </p>
       <div className="mt-4 grid grid-cols-2 gap-3 text-[13px]">
         <div className="rounded-lg border border-line p-3">
-          <div className="text-[11px] uppercase tracking-wide text-ink-3">Approved</div>
+          <div className="text-[12px] text-ink-3">Approved</div>
           <div className="num mt-1 text-lg font-semibold">{fmt(req.from.amount)}</div>
           <div className="text-ink-2">{req.from.payeeName}</div>
           <div className="font-mono text-[10.5px] text-ink-3">{short(req.from.payee)}</div>
         </div>
         <div className="rounded-lg border border-warn bg-warn/10 p-3">
-          <div className="text-[11px] uppercase tracking-wide text-[#7a5000]">Requested</div>
+          <div className="text-[12px] text-warn-ink">Requested</div>
           <div className="num mt-1 text-lg font-semibold">{fmt(req.to.amount)}</div>
           <div className={newPayee ? "font-medium" : "text-ink-2"}>
             {req.to.payeeName}
-            {newPayee && <span className="ml-1 text-[11px] text-[#7a5000]">new payee</span>}
+            {newPayee && <span className="ml-1 text-[11px] text-warn-ink">new payee</span>}
           </div>
           <div className="font-mono text-[10.5px] text-ink-3">{short(req.to.payee)}</div>
         </div>
@@ -101,7 +101,7 @@ export function ReapprovalModal({ run, req, onClose }: { run: Run; req: Reapprov
           Deny
         </Button>
         {editing ? (
-          <Button onClick={() => custom != null && decide("approved", custom)} disabled={busy || custom == null || tooLow} data-testid="reapprove-edited" className="bg-agent hover:opacity-90">
+          <Button onClick={() => custom != null && decide("approved", custom)} disabled={busy || custom == null || tooLow} data-testid="reapprove-edited" variant="agent">
             Approve {custom != null ? fmt(custom) : "…"}
           </Button>
         ) : (
@@ -109,7 +109,7 @@ export function ReapprovalModal({ run, req, onClose }: { run: Run; req: Reapprov
             <Button variant="ghost" onClick={() => setEditing(true)} disabled={busy} data-testid="reapprove-edit">
               Edit amount
             </Button>
-            <Button onClick={() => decide("approved")} disabled={busy} data-testid="reapprove" className="bg-agent hover:opacity-90">
+            <Button onClick={() => decide("approved")} disabled={busy} data-testid="reapprove" variant="agent">
               Approve {fmt(req.to.amount)}
             </Button>
           </>
@@ -167,11 +167,11 @@ export function FailureModal({ run, failure, onClose }: { run: Run; failure: Fai
       </p>
       <div className="mt-4 grid grid-cols-2 gap-3 text-[13px]">
         <div className="rounded-lg border border-line p-3">
-          <div className="text-[11px] uppercase tracking-wide text-ink-3">Charged this attempt</div>
+          <div className="text-[12px] text-ink-3">Charged this attempt</div>
           <Amount value={failure.charged} className="mt-1 block text-lg font-semibold" />
         </div>
         <div className="rounded-lg border border-line p-3">
-          <div className="text-[11px] uppercase tracking-wide text-ink-3">Not charged</div>
+          <div className="text-[12px] text-ink-3">Not charged</div>
           <Amount value={failure.notCharged} className="mt-1 block text-lg font-semibold" />
         </div>
       </div>
@@ -187,7 +187,7 @@ export function FailureModal({ run, failure, onClose }: { run: Run; failure: Fai
             disabled={!!busy}
             onClick={() => act(a)}
             data-testid={`failure-${a}`}
-            className={`pressable tap flex w-full items-center justify-between rounded-lg border px-3.5 py-2.5 text-left text-sm transition-colors ${
+            className={`pressable tap flex min-h-11 w-full items-center justify-between gap-3 rounded-lg border px-3.5 py-2.5 text-left text-sm transition-colors ${
               a === "cancel" ? "border-bad/30 text-bad hover:bg-bad/5" : "border-line hover:bg-surface"
             }`}
           >
@@ -207,11 +207,11 @@ export function CancelModal({ run, open, onClose }: { run: Run; open: boolean; o
     <Modal open={open} onClose={onClose} title="Cancel job?" tone="bad">
       <div className="grid grid-cols-2 gap-3 text-[13px]">
         <div className="rounded-lg border border-line p-3">
-          <div className="text-[11px] uppercase tracking-wide text-ink-3">Charged</div>
+          <div className="text-[12px] text-ink-3">Charged</div>
           <Amount value={spent} className="mt-1 block text-lg font-semibold" />
         </div>
         <div className="rounded-lg border border-line p-3">
-          <div className="text-[11px] uppercase tracking-wide text-ink-3">Returned to you</div>
+          <div className="text-[12px] text-ink-3">Returned to you</div>
           <Amount value={run.status === "draft" ? 0n : BigInt(run.cap) - spent} className="mt-1 block text-lg font-semibold" />
         </div>
       </div>

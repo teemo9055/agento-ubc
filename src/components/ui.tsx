@@ -3,19 +3,21 @@ import { motion, AnimatePresence } from "framer-motion";
 import { fmt } from "@/lib/money";
 import { short, txUrl } from "@/lib/format";
 import type { PhaseStatus, TxState } from "@/lib/types";
+import { Icon } from "./Icon";
 
 export function Button({
   variant = "primary",
   className = "",
   ...p
-}: React.ButtonHTMLAttributes<HTMLButtonElement> & { variant?: "primary" | "ghost" | "danger" | "quiet" }) {
+}: React.ButtonHTMLAttributes<HTMLButtonElement> & { variant?: "primary" | "agent" | "ghost" | "danger" | "quiet" }) {
   const v = {
-    primary: "pix-press border border-ink bg-ink text-white disabled:bg-ink/40 disabled:shadow-none",
-    ghost: "pix-press border border-ink bg-panel text-ink disabled:text-ink-3 disabled:shadow-none",
-    danger: "border border-bad/40 text-bad hover:bg-bad/5",
-    quiet: "text-ink-2 hover:text-ink hover:bg-ink/5",
+    primary: "pix-press border-[1.5px] border-ink bg-ink font-semibold text-white disabled:bg-ink/40 disabled:shadow-none",
+    agent: "pix-press border-[1.5px] border-ink bg-agent font-semibold text-agent-on disabled:opacity-50 disabled:shadow-none",
+    ghost: "border border-line bg-panel font-medium text-ink hover:border-[#c9c8c2] disabled:text-ink-3",
+    danger: "border border-bad/40 font-medium text-bad hover:bg-bad/5",
+    quiet: "font-medium text-ink-2 hover:bg-ink/5 hover:text-ink",
   }[variant];
-  return <button {...p} className={`inline-flex h-9 items-center justify-center gap-2 rounded-lg px-3.5 text-sm font-medium transition-colors disabled:cursor-not-allowed ${v} ${className}`} />;
+  return <button {...p} className={`tap inline-flex h-10 items-center justify-center gap-2 rounded-lg px-4 text-sm transition-colors disabled:cursor-not-allowed ${v} ${className}`} />;
 }
 
 /** Number that changes in place. */
@@ -33,21 +35,22 @@ export function Amount({ value, className = "", unit = true }: { value?: string 
   );
 }
 
-const statusMeta: Record<PhaseStatus, { label: string; cls: string; icon: string }> = {
-  planned: { label: "Planned", cls: "text-ink-3 border-line", icon: "○" },
-  active: { label: "Running", cls: "text-agent border-agent/40 bg-agent-soft", icon: "●" },
-  awaiting_reapproval: { label: "Needs you", cls: "text-[#8a5a00] border-warn bg-warn/15", icon: "!" },
-  failed_waiting: { label: "Needs you", cls: "text-bad border-bad/40 bg-bad/5", icon: "!" },
-  done: { label: "Done", cls: "text-good border-good/40 bg-good/5", icon: "✓" },
-  failed: { label: "Failed", cls: "text-bad border-bad/40 bg-bad/5", icon: "✕" },
-  skipped: { label: "Skipped", cls: "text-ink-3 border-line", icon: "–" },
+const statusMeta: Record<PhaseStatus, { label: string; cls: string; dot: string }> = {
+  planned: { label: "Planned", cls: "text-ink-2 bg-[#f1f0ec]", dot: "border border-ink-3" },
+  active: { label: "Running", cls: "text-agent-ink bg-agent-soft", dot: "bg-agent" },
+  awaiting_reapproval: { label: "Needs you", cls: "text-warn-ink border border-warn bg-warn/15", dot: "bg-warn border border-warn-ink" },
+  failed_waiting: { label: "Needs you", cls: "text-bad bg-bad/5 border border-bad/40", dot: "bg-bad" },
+  done: { label: "Done", cls: "text-good bg-good/10", dot: "" },
+  failed: { label: "Failed", cls: "text-bad bg-bad/5", dot: "bg-bad" },
+  skipped: { label: "Skipped", cls: "text-ink-2 bg-[#f1f0ec]", dot: "bg-ink-3" },
 };
 
+/** Small status tag: a pixel dot (or a check when done) and a label. */
 export function StatusTag({ status }: { status: PhaseStatus }) {
   const m = statusMeta[status];
   return (
-    <span className={`inline-flex items-center gap-1 rounded-full border px-2 py-0.5 text-[11px] font-medium ${m.cls}`}>
-      <span aria-hidden>{m.icon}</span>
+    <span className={`inline-flex h-6 items-center gap-1.5 rounded-md px-2 text-[12px] font-semibold ${m.cls}`}>
+      {status === "done" ? <Icon name="check" size={12} stroke={2.6} /> : <span aria-hidden className={`h-1.5 w-1.5 ${m.dot}`} />}
       {m.label}
     </span>
   );
@@ -74,5 +77,5 @@ export function TxChip({ state, hash, simulated }: { state: TxState; hash?: stri
 }
 
 export function Spinner() {
-  return <span aria-hidden className="inline-block h-3 w-3 animate-spin rounded-full border-[1.5px] border-current border-t-transparent motion-reduce:animate-none" />;
+  return <span aria-hidden className="inline-block h-3 w-3 animate-spin rounded-[50%] border-[1.5px] border-current border-t-transparent motion-reduce:animate-none" />;
 }

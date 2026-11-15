@@ -1,5 +1,5 @@
 import { sum } from "./money";
-import { offVault, type AgentId, type Run, type RunStatus } from "./types";
+import { paidInUsdc, type AgentId, type Run, type RunStatus } from "./types";
 import { outfitFor, type Outfit } from "./outfit";
 
 /** Light view of a run for lists; no data feeds or event payloads. */
@@ -41,7 +41,7 @@ export function summarize(r: Run): RunSummary {
     planner: r.planner ?? "rules",
     createdAt: r.createdAt,
     finishedAt: r.finishedAt,
-    approved: sum(r.lines.filter((l) => !offVault(l.rail)).map((l) => l.approved)).toString(),
+    approved: sum(r.lines.filter((l) => paidInUsdc(l.rail)).map((l) => l.approved)).toString(),
     spent: sum(r.lines.map((l) => l.actual)).toString(),
     refunded: r.refunded,
     needsYou: r.pendingReapprovals.length + r.pendingFailures.length,

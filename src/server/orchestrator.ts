@@ -315,6 +315,8 @@ export async function adopt(runId: string, proposalId: string) {
 /** Back to chat from the work order, keeping the conversation. */
 export function backToChat(runId: string) {
   const ctl = ctlOf(runId);
+  // Already back in chat (e.g. a second click, or a message sent right after): nothing to do.
+  if (ctl.run.status === "exploring") return ctl.run;
   if (ctl.run.status !== "draft") throw new Error("only before approval");
   emit(ctl, { type: "workorder.updated", run: { ...ctl.run, status: "exploring", cards: [], lines: [], phases: [], proposal: undefined, editNote: undefined } });
   return ctl.run;
@@ -326,12 +328,12 @@ const ctlOf = (runId: string) => {
   return ctl;
 };
 
-export async function editCard(runId: string, card: Card["kind"], prompt: string) {
+export async function editCard(runId: string, card: Card["kind"], prompt: string, step?: string) {
   const ctl = ctlOf(runId);
   if (ctl.run.status !== "draft") throw new Error("work order already approved");
   const agent = AGENTS[ctl.run.agent];
 
-  if (card === "price") {
+  if (card === "price" && !step) {
     const m = prompt.match(/(\d+(?:\.\d+)?)/);
     if (/threshold|big spend/i.test(prompt) && m) {
       ctl.run.threshold = BigInt(Math.round(Number(m[1]) * 1e6)).toString();
@@ -341,7 +343,8 @@ export async function editCard(runId: string, card: Card["kind"], prompt: string
     }
   }
 
-  const res = ctl.previews.get(`${card}:${prompt}`) ?? (await editOptions(ctl, card, prompt));
+  const key = `${step ? `step:${step}` : card}:${prompt}`;
+  const res = ctl.previews.get(key) ?? (await editOptions(ctl, card, prompt, step));
   ctl.previews.clear();
   if (res.ok && res.options) {
     const before = ctl.run.cards.find((c) => c.kind === "price")?.title;
@@ -355,7 +358,7 @@ export async function editCard(runId: string, card: Card["kind"], prompt: string
   } else {
     emit(ctl, { type: "workorder.updated", run: { ...ctl.run, editNote: { ok: false, message: res.message, alternatives: res.alternatives } } });
   }
-  log(ctl, { kind: "card_edit", what: `${card}: ${prompt}`, why: res.message, outcome: res.ok ? "edited" : "rejected", by: "user" });
+  log(ctl, { kind: "card_edit", what: `${step ? `step “${ctl.run.phases.find((p) => p.id === step)?.label ?? step}”` : card}: ${prompt}`, why: res.message, outcome: res.ok ? "edited" : "rejected", by: "user" });
   return ctl.run;
 }
 
@@ -364,8 +367,8 @@ function trackAi(ctl: Ctl, purpose: string, usage: AiUsage) {
 }
 
 /** AI edit first (keeps the model's card copy in sync), rule-based edit as fallback. */
-async function editOptions(ctl: Ctl, card: Card["kind"], prompt: string) {
-  const r = AGENTS[ctl.run.agent].edit(card, prompt, ctl.options);
+async function editOptions(ctl: Ctl, card: Card["kind"], prompt: string, step?: string) {
+  const r = AGENTS[ctl.run.agent].edit(card, prompt, ctl.options, step);
   return r.ok && r.options ? { ...r, options: { ...ctl.options, ...r.options } } : r;
 }
 
@@ -847,14 +850,14 @@ export function decideReapproval(runId: string, requestId: string, outcome: "app
 }
 
 /** Dry run of a card edit: what would change, without changing anything. */
-export async function previewEdit(runId: string, card: Card["kind"], prompt: string) {
+export async function previewEdit(runId: string, card: Card["kind"], prompt: string, step?: string) {
   const ctl = ctlOf(runId);
   const agent = AGENTS[ctl.run.agent];
   const before = { total: sum(ctl.run.lines.map((l) => l.approved)).toString(), lines: ctl.run.lines.map((l) => ({ purpose: l.purpose, approved: l.approved })) };
   const m = prompt.match(/(\d+(?:\.\d+)?)/);
-  if (card === "price" && /threshold|big spend/i.test(prompt) && m) return { ok: true, message: `Big-spend threshold → ${m[1]} USDC`, before, after: before };
-  const res = await editOptions(ctl, card, prompt);
-  ctl.previews.set(`${card}:${prompt}`, res);
+  if (card === "price" && !step && /threshold|big spend/i.test(prompt) && m) return { ok: true, message: `Big-spend threshold → ${m[1]} USDC`, before, after: before };
+  const res = await editOptions(ctl, card, prompt, step);
+  ctl.previews.set(`${step ? `step:${step}` : card}:${prompt}`, res);
   if (!res.ok || !res.options) return { ok: false, message: res.message, alternatives: res.alternatives };
   const plan = materialize(ctl, await agent.plan(ctl.run.task, res.options));
   return {

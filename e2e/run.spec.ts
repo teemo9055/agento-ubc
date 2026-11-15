@@ -52,10 +52,12 @@ test("back to chat from the work order keeps the conversation", async ({ page })
   await expect(page.getByTestId("msg-agent")).toHaveCount(2, { timeout: 30_000 });
 });
 
-test("impossible card edit explains why and offers alternatives", async ({ page }) => {
+test("card edit happens in the chat: explains why it can't, offers alternatives, applies one", async ({ page }) => {
   await draft(page, [], "BTC odds");
   await page.getByTestId("card-deliverable").click();
-  await page.getByRole("dialog").locator("input").fill("place a real bet on yes");
+  await expect(page.getByTestId("chat-focus")).toContainText("Deliverable");
+  await expect(page.getByTestId("card-deliverable")).toHaveAttribute("aria-pressed", "true");
+  await page.getByTestId("chat-input").fill("place a real bet on yes");
   await page.keyboard.press("Enter");
   await expect(page.getByText("Can't do that")).toBeVisible();
   await page.getByRole("button", { name: "Drop the trade tape" }).click();
@@ -63,6 +65,23 @@ test("impossible card edit explains why and offers alternatives", async ({ page 
   await page.getByTestId("apply-edit").click();
   await expect(page.getByRole("dialog")).toHaveCount(0);
   await expect(page.getByTestId("card-deliverable")).not.toContainText("Trade tape");
+  await expect(page.getByTestId("chat-focus")).toHaveCount(0);
+});
+
+test("graph steps are editable in the chat: focus a step, preview, apply", async ({ page }) => {
+  await draft(page, [], "BTC odds step edit");
+  const step = page.getByTestId("phase-r1");
+  // Centre it so the sticky approve bar isn't on top.
+  await step.evaluate((e) => e.scrollIntoView({ block: "center" }));
+  await step.click();
+  await expect(step).toHaveAttribute("aria-pressed", "true");
+  await expect(page.getByTestId("chat-focus")).toContainText("step");
+  await page.getByTestId("chat-input").fill("drop it");
+  await page.keyboard.press("Enter");
+  await expect(page.getByTestId("edit-preview")).toBeVisible();
+  await page.getByTestId("apply-edit").click();
+  await expect(page.getByTestId("phase-r1")).toHaveCount(0);
+  await expect(page.getByTestId("chat-focus")).toHaveCount(0);
 });
 
 test("re-approval can be edited to a smaller amount", async ({ page }) => {

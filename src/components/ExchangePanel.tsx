@@ -4,6 +4,7 @@ import type { Venue } from "@/lib/types";
 import { VenueBadge } from "./Chat";
 import { Button, Spinner } from "./ui";
 import { toast } from "./Toaster";
+import { Icon } from "./Icon";
 
 interface Status {
   venue: Venue;
@@ -43,7 +44,7 @@ export function ExchangePanel() {
   }
 
   return (
-    <div className="mt-3 rounded-xl border border-line bg-surface/60 px-3 py-2.5 text-[12.5px]" data-testid="exchange-panel">
+    <div className="mt-3 rounded-xl border border-line bg-panel px-3.5 py-3 text-[13px]" data-testid="exchange-panel">
       <div className="flex flex-wrap items-center justify-between gap-2">
         <span className="font-medium">Orders go to</span>
         <VenueBadge venue={s.venue} />
@@ -60,7 +61,9 @@ export function ExchangePanel() {
         <div className="mt-1.5 flex flex-wrap items-center justify-between gap-2">
           <span className="num text-ink-2">{s.usdAvailable != null ? `$${s.usdAvailable.toLocaleString()} available` : "Balance unavailable"}</span>
           {s.termsAccepted ? (
-            <span className="text-good">✓ Prediction-market terms accepted</span>
+            <span className="inline-flex items-center gap-1 font-semibold text-good">
+              <Icon name="check" size={13} stroke={2.6} /> Prediction-market terms accepted
+            </span>
           ) : (
             <span className="flex items-center gap-2">
               <button
@@ -74,7 +77,7 @@ export function ExchangePanel() {
               >
                 Read Gemini&apos;s terms
               </button>
-              <Button variant="ghost" className="h-7 text-[12px]" disabled={busy} onClick={accept} data-testid="accept-terms">
+              <Button variant="ghost" className="h-8 text-[12.5px]" disabled={busy} onClick={accept} data-testid="accept-terms">
                 {busy ? <Spinner /> : "I accept"}
               </Button>
             </span>
