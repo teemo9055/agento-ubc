@@ -139,21 +139,21 @@ export interface ResearchTool {
 export const RESEARCH: Record<string, ResearchTool> = {
   odds_history: {
     product: "markets.history",
-    description: "YES-price history for one contract (args: symbol, tf 5m|15m|1hr)",
+    description: "YES-price history for one contract (args: symbol, tf 5m|15m|1hr). Gemini's public data, sold by Agento's own x402 feed; the agent turns it into a trend reading",
     args: ["symbol", "tf"],
     key: (a) => `history:${a.symbol}`,
     params: (a) => ({ symbol: a.symbol, tf: ["5m", "15m", "1hr"].includes(a.tf) ? a.tf : "15m" }),
   },
   trade_tape: {
     product: "markets.tape",
-    description: "Last 100 trades for one contract, shows buyer vs seller flow (args: symbol)",
+    description: "Last 100 trades for one contract, shows buyer vs seller flow (args: symbol). Gemini's public data, sold by Agento's own x402 feed; the agent turns it into a flow reading",
     args: ["symbol"],
     key: (a) => `tape:${a.symbol}`,
     params: (a) => ({ symbol: a.symbol }),
   },
   spot_candles: {
     product: "spot.candles",
-    description: "Spot price candles for a coin (args: symbol like btcusd, tf 1hr|1day)",
+    description: "Spot price candles for a coin (args: symbol like btcusd, tf 1hr|1day). Gemini's public data, sold by Agento's own x402 feed; the agent turns it into a trend reading",
     args: ["symbol", "tf"],
     key: (a) => `candles:${a.symbol}:${a.tf === "1day" ? "1day" : "1hr"}`,
     params: (a) => ({ symbol: a.symbol, tf: a.tf === "1day" ? "1day" : "1hr" }),
