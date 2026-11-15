@@ -26,6 +26,8 @@ export interface AgentCtx {
   buy<T>(lineId: string, product: string, params: Record<string, string>, key: string): Promise<T>;
   /** Returns true once if this fault switch is on for the run. */
   fault(code: "model_error" | "policy_block"): boolean;
+  /** Buys from an outside marketplace seller with a Gateway nanopayment, through the same spend policy. */
+  buyMarketplace?<T>(lineId: string, key: string, product: string, fetcher: () => Promise<T & { paid: { amountUsdc: number; payTo: string; via: string } }>): Promise<T>;
   /** Reports the exchange order placed for this move. */
   order?(o: OrderResult): void;
 }

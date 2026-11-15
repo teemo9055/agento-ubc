@@ -3,7 +3,7 @@ import type { AgentId, ChatMsg, Proposal, ToolCall } from "@/lib/types";
 import { aiChat, aiEnabled, type AiUsage, type ChatTurn, type ToolSpec } from "./ai";
 import * as gemini from "./gemini";
 import { describeAction, tradingVenue, VENUE_NAME, VENUE_NOTE } from "./exchange";
-import { ACTIONS, FREE_TOOLS, ProposalInput, researchMenu, runFreeTool, validateProposal } from "./tools";
+import { ACTIONS, FREE_TOOLS, ProposalInput, researchMenu, runFreeTool, TOOLKIT, validateProposal } from "./tools";
 import { conditionText } from "./agents/toolbox";
 
 /**
@@ -32,13 +32,16 @@ function system(agent: AgentId) {
           `ORDERS. Orders go to ${VENUE_NAME[v]} (${VENUE_NOTE[v]}); say this plainly when you propose. Moves you may make: ${ACTIONS[agent].join(", ")}. Default to small orders (about $5) unless the user names an amount; when they do, set budgetUsd to it.`,
           "Prediction contracts: buying YES at p costs p per contract and pays $1 if the event happens, so p is the market's implied probability, the most you can lose is the cost, and profit if right is (1-p) per contract. Buying NO is the same for the opposite outcome. In `ask`, state the total cost and the payout if right (e.g. 'Buy 10 YES at ≤ 38¢ ($3.80, pays $10 if BTC ≥ 66k on Nov 20)?').",
           "Order types: orders rest on the exchange until filled or cancelled. For 'buy if it drops to X' use orderType limit with maxPrice X: it waits on the book and may never fill. For 'buy once it rises to X' use stop-limit with stopPrice X (at or above the last trade) and maxPrice 1-2¢ above. A limit at or above the current ask fills right away. Say which one it is.",
-          "Pick contracts that can actually trade: open, closing more than 20 minutes from now, with a bid and ask; mention a wide spread. Use `condition` only for a different number (e.g. BTC spot ≥ 64k before buying the BTC-above-66k contract), never for the order's own price.",
+          "Pick contracts that can actually trade: open, closing more than 20 minutes from now, with a bid and ask; mention a wide spread. Use `condition` only for a different number, never for the order's own price: e.g. BTC spot ≥ 64k, or the Chainlink oracle (metric oracle_price, with an oracle_price research step for that symbol) before buying a BTC contract. A Chainlink check is a strong, cheap (0.0001 USDC) independent confirmation for crypto moves.",
           v === "gemini-sandbox"
             ? "Test exchange: only markets in search_markets' `tradable` list can be ordered (crypto and commodities, no sports). Answer questions with the live markets, but take order symbols and prices from `tradable`. If the user wants something not tradable, say so instead of proposing."
             : "",
         ].join("\n")
       : "",
-    `PAID RESEARCH you can attach to a move (bought after approval, from the user's vault, over x402 on Arc):\n${researchMenu()}\nAttach 1-2 lookups only when they could change the decision and say why in each; skip research the free tools already answered. Research symbols must be live markets with data.`,
+    TOOLKIT[agent].research.includes("oracle_price")
+      ? "CHAINLINK: you CAN check crypto prices against Chainlink's oracle (BTC, ETH, SOL, LINK). It isn't a free lookup: add a research step {tool: oracle_price, args: {symbol: 'btcusd'}} to the move, and to make the order depend on it add condition {metric: 'oracle_price', symbol: 'btcusd', op, value}. It's bought for 0.0001 USDC right before the check. Never tell the user you can't access Chainlink."
+      : "",
+    `PAID RESEARCH you can attach to a move (bought after approval; Gemini data from the user's vault over x402 on Arc, Chainlink prices from Quicknode on Circle's Agent Marketplace via Gateway nanopayments):\n${researchMenu(agent)}\nAttach 1-2 lookups only when they could change the decision and say why in each; skip research the free tools already answered. Research symbols must be live markets with data.`,
     "MARKETPLACE: use search_services when the user wants deeper data than the free tools. Be honest: most of Circle's Agent Marketplace charges on Arc mainnet or Base with real USDC; only services marked payableHere=true work with this app's Arc testnet vault today.",
     "TRUTH: never invent tickers, symbols, prices, odds or places; use what the tools returned in this conversation (see 'facts' in earlier turns) or look them up again. Prices of prediction contracts are 0-1; say them as cents or %. Don't promise fills or profits. This isn't financial advice; say so only if asked for advice.",
     "STYLE: short and plain, 2-5 sentences or a few bullets, no headings or tables. End with one line starting 'Next:' and 2-3 short replies the user might tap, separated by ' | '.",
@@ -54,8 +57,11 @@ const PROPOSE: ToolSpec = {
   parameters: z.toJSONSchema(ProposalInput),
 };
 
-const TOOL_SPECS: ToolSpec[] = [
-  ...Object.entries(FREE_TOOLS).map(([name, t]) => ({ name, description: t.description, parameters: z.toJSONSchema(t.params) })),
+/** Each agent only sees its own tools. */
+const toolSpecs = (agent: AgentId): ToolSpec[] => [
+  ...Object.entries(FREE_TOOLS)
+    .filter(([name]) => TOOLKIT[agent].free.includes(name))
+    .map(([name, t]) => ({ name, description: t.description, parameters: z.toJSONSchema(t.params) })),
   PROPOSE,
 ];
 
@@ -128,7 +134,7 @@ export async function exploreTurn(agent: AgentId, chat: ChatMsg[], onTool: (note
   let proposal: Proposal | undefined;
   for (let round = 0; round < MAX_ROUNDS; round++) {
     const last = round === MAX_ROUNDS - 1;
-    const r = await aiChat(messages, last ? [] : TOOL_SPECS);
+    const r = await aiChat(messages, last ? [] : toolSpecs(agent));
     if (!r) break;
     usage.push(r.usage);
     messages.push(r.message);

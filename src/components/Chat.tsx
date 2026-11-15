@@ -9,7 +9,8 @@ import { post } from "./useRun";
 import { toast } from "./Toaster";
 import { runOutfit } from "@/lib/summary";
 
-const RESEARCH_PRICE: Record<string, number> = { odds_history: 0.02, trade_tape: 0.1, spot_candles: 0.02, drive_route: 0.03 };
+const RESEARCH_PRICE: Record<string, number> = { odds_history: 0.02, trade_tape: 0.1, spot_candles: 0.02, drive_route: 0.03, oracle_price: 0.0001 };
+const usdc = (x: number) => (x < 0.01 ? x.toFixed(4) : x.toFixed(2));
 const cents = (x: number) => `${Math.round(x * 100)}¢`;
 
 export function actionText(a: MoveAction) {
@@ -21,8 +22,10 @@ export function actionText(a: MoveAction) {
   return `Plan ${a.stops.join(" → ")} · ≤ ${a.hoursPerDay} h/day`;
 }
 export function conditionLabel(c: MoveCondition) {
-  const what = c.metric === "spot_price" ? `${c.symbol.replace(/usd$/, "").toUpperCase()} price` : c.metric === "yes_price" ? "YES price" : "NO price";
-  return `${what} ${c.op === "<=" ? "≤" : "≥"} ${c.metric === "spot_price" ? `$${c.value.toLocaleString()}` : cents(c.value)}`;
+  const coin = c.symbol.replace(/usd$/, "").toUpperCase();
+  const what = c.metric === "oracle_price" ? `Chainlink ${coin}` : c.metric === "spot_price" ? `${coin} price` : c.metric === "yes_price" ? "YES price" : "NO price";
+  const dollars = c.metric === "spot_price" || c.metric === "oracle_price";
+  return `${what} ${c.op === "<=" ? "≤" : "≥"} ${dollars ? `$${c.value.toLocaleString()}` : cents(c.value)}`;
 }
 const maxCost = (a?: MoveAction) => (!a ? 0 : a.kind === "prediction_order" ? a.maxPrice * a.quantity : a.kind === "spot_order" ? a.amountUsd : 0);
 
@@ -61,7 +64,7 @@ export function MoveCard({ p, run, chosen, onChoose, busy }: { p: Proposal; run:
             <span className="min-w-0 flex-1">
               {r.label} <span className="text-ink-3">· {r.why}</span>
             </span>
-            <span className="num shrink-0 text-ink-3">{RESEARCH_PRICE[r.tool]?.toFixed(2) ?? "?"} USDC</span>
+            <span className="num shrink-0 text-ink-3">{RESEARCH_PRICE[r.tool] != null ? usdc(RESEARCH_PRICE[r.tool]) : "?"} USDC</span>
           </li>
         ))}
         {p.condition && (
@@ -89,7 +92,7 @@ export function MoveCard({ p, run, chosen, onChoose, busy }: { p: Proposal; run:
       )}
       <div className="mt-3 flex flex-wrap items-center justify-between gap-2 border-t border-line pt-2.5">
         <span className="num text-[12px] text-ink-3">
-          Research {research.toFixed(2)} USDC from your vault{maxCost(p.action) > 0 ? ` · order ≤ $${maxCost(p.action).toFixed(2)} ${p.venue === "paper" ? "simulated" : "on the exchange"}` : ""}
+          Research {usdc(research)} USDC from your vault{maxCost(p.action) > 0 ? ` · order ≤ $${maxCost(p.action).toFixed(2)} ${p.venue === "paper" ? "simulated" : "on the exchange"}` : ""}
         </span>
         {onChoose && !chosen && (
           <Button onClick={onChoose} disabled={busy || run.status !== "exploring"} className="bg-agent hover:opacity-90" data-testid="adopt-move">

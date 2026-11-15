@@ -117,14 +117,10 @@ export function MethodPicker({ run }: { run: Run }) {
           </span>
         )}
       </div>
-      <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
+      <div className="grid grid-cols-1 gap-3">
         <div>
           <div className="mb-1.5 text-[11px] font-medium uppercase tracking-wide text-ink-3">Data</div>
           <Segment label="Data seller" value={run.method.seller} options={SELLERS} onChange={(seller) => set({ seller })} disabled={disabled} />
-        </div>
-        <div>
-          <div className="mb-1.5 text-[11px] font-medium uppercase tracking-wide text-ink-3">Analysis</div>
-          <Segment label="Analysis" value={run.method.analysis} options={ANALYSIS} onChange={(analysis) => set({ analysis })} disabled={disabled} />
         </div>
       </div>
     </section>

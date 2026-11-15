@@ -25,6 +25,7 @@ import { aiEnabled, type AiUsage } from "./ai";
 import { exploreTurn } from "./explore";
 import { cancelOrder, refreshOrder } from "./exchange";
 import { stillTradable } from "./tools";
+import { depositToGateway, gatewayBalance } from "./nanopay";
 import { offVault, type ChatMsg, type Proposal } from "@/lib/types";
 import { PhaseFailure, type AgentCtx, type PlanDraft } from "./agents/types";
 import { FACTORY, USDC, addresses, factoryAbi, liveReady, publicClient, vaultAbi } from "./chain";
@@ -637,6 +638,7 @@ function agentCtx(ctl: Ctl, phaseId: string): AgentCtx {
     },
     buy: (lineId, product, params, key) => buy(ctl, phaseId, lineId, product, params, key),
     order: (o) => emit(ctl, { type: "order.updated", order: o }),
+    buyMarketplace: (lineId, key, product, fetcher) => buyMarketplace(ctl, phaseId, lineId, key, product, fetcher),
   };
 }
 
@@ -678,6 +680,49 @@ async function buy<T>(ctl: Ctl, phaseId: string, lineId: string, product: string
     update({ txState: "failed" });
     throw e;
   }
+}
+
+/**
+ * Buys from a Circle Agent Marketplace seller with a Gateway nanopayment. Same rules as vault
+ * spends: an approved line, its payee, its price. Paid from the agent's Gateway balance.
+ */
+async function buyMarketplace<T>(ctl: Ctl, phaseId: string, lineId: string, key: string, product: string, fetcher: () => Promise<T & { paid: { amountUsdc: number; payTo: string; via: string } }>): Promise<T> {
+  if (ctl.cache.has(key)) return ctl.cache.get(key) as T;
+  if (ctl.cancelled) throw new Cancelled();
+  const line = ctl.run.lines.find((l) => l.id === lineId);
+  if (!line) throw new PhaseFailure("policy_block", "No approved line for this purchase");
+  const unit = BigInt(line.calls?.unitPrice ?? line.approved);
+  const verdict = checkSpend(ctl.run, { lineId, payee: line.payee, amount: unit });
+  if (!verdict.ok) throw new PhaseFailure("policy_block", verdict.detail);
+  await ensureGateway();
+  const payment: Payment = { id: key, lineId, txState: "signing", amount: unit.toString(), via: "Circle Gateway nanopayment" };
+  emit(ctl, { type: "payment.updated", phaseId, payment: { ...payment, at: now() } });
+  try {
+    const got = await fetcher();
+    const paid = BigInt(Math.round(got.paid.amountUsdc * 1e6));
+    // The seller's price must match what was approved; anything else is refused, never paid silently.
+    if (paid > unit || got.paid.payTo.toLowerCase() !== line.payee.toLowerCase()) throw new PhaseFailure("policy_block", "Seller's price or payee changed");
+    const fresh = ctl.run.lines.find((l) => l.id === lineId)!;
+    emit(ctl, { type: "line.updated", line: { ...fresh, actual: (BigInt(fresh.actual) + paid).toString() } });
+    emit(ctl, { type: "payment.updated", phaseId, payment: { ...payment, txState: "settled", amount: paid.toString(), at: now() } });
+    ctl.cache.set(key, got);
+    emit(ctl, { type: "data.received", key, product, data: got });
+    return got;
+  } catch (e) {
+    emit(ctl, { type: "payment.updated", phaseId, payment: { ...payment, txState: "failed", at: now() } });
+    if (e instanceof PhaseFailure) throw e;
+    throw new PaymentError("payment_rejected", `Marketplace purchase failed: ${(e as Error).message.slice(0, 140)}`);
+  }
+}
+
+/** Keeps a little USDC in the agent's Gateway balance for marketplace nanopayments. */
+async function ensureGateway() {
+  const min = Number(process.env.GATEWAY_MIN_BALANCE ?? 0.05);
+  const topUp = Number(process.env.GATEWAY_TOPUP ?? 1);
+  const bal = await gatewayBalance().catch(() => 0);
+  if (bal >= min) return;
+  await depositToGateway(topUp);
+  for (let i = 0; i < 40 && (await gatewayBalance().catch(() => 0)) < min; i++) await new Promise((r) => setTimeout(r, 3000));
 }
 
 async function requestReapproval(

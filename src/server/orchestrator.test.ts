@@ -27,6 +27,12 @@ vi.mock("@/server/gemini", async (orig) => {
 
 vi.mock("@/server/agents/ai-planning", async (orig) => ({ ...(await orig<typeof import("@/server/agents/ai-planning")>()), spotSymbols: async () => ["btcusd", "ethusd"] }));
 
+vi.mock("@/server/chainlink", async (orig) => ({
+  ...(await orig<typeof import("@/server/chainlink")>()),
+  chainlinkPrice: async (symbol: string) => ({ symbol, feed: "0xF4030086522a5bEEa4988F8cA5B36dbC97BeE88c", description: "BTC / USD", price: 61000, updatedAt: new Date().toISOString(), ageMinutes: 3, round: "1", paid: { amountUsdc: 0.0001, payTo: "0xF46394adDdA95A3d5bCC1124605E3d15D204623C", via: "test" } }),
+}));
+vi.mock("@/server/nanopay", async (orig) => ({ ...(await orig<typeof import("@/server/nanopay")>()), gatewayBalance: async () => 1, depositToGateway: async () => ({}) }));
+
 process.env.DEMO_DELAY_SCALE = "0";
 process.env.AI_DISABLED = "true";
 process.env.FAULT_TIMEOUT_MS = "50";
@@ -230,6 +236,34 @@ describe("explore, then act", () => {
     expect(run.status).toBe("done");
     expect(run.order?.status).toBe("skipped");
     expect(run.deliverable?.summary).toMatch(/Held off/);
+  });
+
+  it("a Chainlink price bought from the marketplace gates the order, paid through the same policy", async () => {
+    const mk = (value: number) =>
+      orch.createRun({
+        agent: "inso",
+        task: "BTC with oracle check",
+        proposal: {
+          id: `p-${value}`,
+          title: "Buy YES if Chainlink agrees",
+          why: "test",
+          ask: "Buy 2 YES at 52¢ if Chainlink BTC ≥ value?",
+          research: [{ id: "r1", tool: "oracle_price", args: { symbol: "btcusd" }, label: "Chainlink BTC/USD", why: "independent price" }],
+          action: { kind: "prediction_order", eventTicker: "BTC-1", symbol: "GEMI-BTC-A", label: "A", side: "yes", orderType: "limit", maxPrice: 0.52, quantity: 2 },
+          condition: { metric: "oracle_price", symbol: "btcusd", op: ">=", value },
+          venue: "paper",
+        },
+      });
+    for (const [value, expected] of [[60000, "simulated"], [65000, "skipped"]] as const) {
+      const r = await mk(value);
+      expect(r.lines.find((l) => l.id === "r1")).toMatchObject({ rail: "gateway", approved: "100", payeeName: "Quicknode (Agent Marketplace)" });
+      await orch.approve(r.id);
+      for (let i = 0; i < 300 && orch.getRun(r.id)!.status !== "done"; i++) await tick();
+      const run = orch.getRun(r.id)!;
+      expect(run.order?.status).toBe(expected);
+      expect(run.lines.find((l) => l.id === "r1")?.actual).toBe("100");
+      expect(run.phases.find((p) => p.id === "r1")?.payments[0]).toMatchObject({ txState: "settled", via: "Circle Gateway nanopayment" });
+    }
   });
 
   it("travo plans driving days from a route", async () => {

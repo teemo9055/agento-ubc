@@ -4,10 +4,12 @@ export type AgentId = "inso" | "trado" | "travo";
 export type PhaseStatus = "planned" | "active" | "awaiting_reapproval" | "failed_waiting" | "done" | "failed" | "skipped";
 export type TxState = "planned" | "signing" | "pending" | "settled" | "failed";
 /** direct: vault.pay · x402: vault-authorized EIP-3009 · subscription: user's own AI, no USDC · exchange: order on an exchange account, not paid from the vault */
-export type Rail = "direct" | "x402" | "subscription" | "exchange";
+export type Rail = "direct" | "x402" | "subscription" | "exchange" | "gateway";
 
 /** Lines that are approved but never paid from the vault. */
-export const offVault = (rail: Rail) => rail === "subscription" || rail === "exchange";
+export const offVault = (rail: Rail) => rail === "subscription" || rail === "exchange" || rail === "gateway";
+/** Lines paid in USDC by the agent (vault x402, or Circle Gateway nanopayments to marketplace sellers). */
+export const paidInUsdc = (rail: Rail) => rail === "x402" || rail === "direct" || rail === "gateway";
 
 export type FailureCode =
   | "seller_402_timeout"
@@ -53,6 +55,8 @@ export interface Payment {
   txHash?: Hex;
   networkFee?: string; // 18-decimal native units
   at?: string;
+  /** How it was paid when not a direct onchain transaction, e.g. a batched Gateway nanopayment. */
+  via?: string;
 }
 
 export interface Phase {
@@ -178,7 +182,7 @@ export type MoveAction =
 /** Condition checked on fresh data right before acting. */
 export interface MoveCondition {
   /** What is compared: the contract's YES price, or a spot price. */
-  metric: "yes_price" | "no_price" | "spot_price";
+  metric: "yes_price" | "no_price" | "spot_price" | "oracle_price";
   symbol: string;
   op: "<=" | ">=";
   value: number;

@@ -36,3 +36,12 @@ export async function circleExecute(walletId: string, contractAddress: Hex, call
   if (!hash) throw new Error(`Circle transaction ${id} has no hash`);
   return hash;
 }
+
+/** Signs EIP-712 typed data with a Circle wallet (EOA). Used for Gateway nanopayment authorizations. */
+export async function circleSignTypedData(walletId: string, typedData: unknown): Promise<Hex> {
+  const data = JSON.stringify(typedData, (_, v) => (typeof v === "bigint" ? v.toString() : v));
+  const r = await circle().signTypedData({ walletId, data });
+  const sig = r.data?.signature;
+  if (!sig) throw new Error("Circle returned no signature");
+  return (sig.startsWith("0x") ? sig : `0x${sig}`) as Hex;
+}

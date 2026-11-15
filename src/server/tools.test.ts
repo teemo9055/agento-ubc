@@ -102,6 +102,18 @@ describe("moves are validated by code, whoever wrote them", () => {
     expect("proposal" in spot && spot.proposal.condition).toMatchObject({ symbol: "btcusd" });
   });
 
+  it("each agent only buys from its own toolkit", async () => {
+    const r = await validateProposal("trado", move({ research: [{ tool: "trade_tape", args: { symbol: "GEMI-BTC-1" }, label: "Tape", why: "x" }] }), "p18");
+    expect(r).toMatchObject({ error: expect.stringContaining("can't buy trade_tape") });
+  });
+
+  it("an oracle condition needs the oracle bought first", async () => {
+    const r = await validateProposal("inso", move({ condition: { metric: "oracle_price", symbol: "btcusd", op: ">=", value: 60000 } }), "p19");
+    expect(r).toMatchObject({ error: expect.stringContaining("oracle_price research step") });
+    const ok = await validateProposal("inso", move({ research: [{ tool: "oracle_price", args: { symbol: "BTCUSD" }, label: "Chainlink", why: "check" }], condition: { metric: "oracle_price", symbol: "btcusd", op: ">=", value: 60000 } }), "p20");
+    expect("proposal" in ok && ok.proposal.condition).toMatchObject({ metric: "oracle_price" });
+  });
+
   it("rejects out-of-range prices via the schema", async () => {
     const r = await validateProposal("inso", move({ action: { kind: "prediction_order", eventTicker: "BTC-1", symbol: "GEMI-BTC-1", label: "Up", side: "yes", orderType: "limit", stopPrice: null, maxPrice: 1.5, quantity: 1 } }), "p5");
     expect(r).toMatchObject({ error: expect.stringContaining("maxPrice") });

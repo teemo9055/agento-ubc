@@ -6,6 +6,7 @@ import { searchServices, networkName, CATEGORIES } from "./marketplace";
 import { spotSymbols } from "./agents/ai-planning";
 import { PRODUCTS } from "./x402";
 import { marketBase, tradingVenue, VENUE_NAME } from "./exchange";
+import { FEEDS } from "./chainlink";
 
 /**
  * Two kinds of tools.
@@ -133,6 +134,13 @@ export const RESEARCH: Record<string, ResearchTool> = {
     key: (a) => `candles:${a.symbol}:${a.tf === "1day" ? "1day" : "1hr"}`,
     params: (a) => ({ symbol: a.symbol, tf: a.tf === "1day" ? "1day" : "1hr" }),
   },
+  oracle_price: {
+    product: "oracle.chainlink",
+    description: "Chainlink oracle price read live from Ethereum mainnet, bought from Quicknode on Circle's Agent Marketplace (args: symbol btcusd|ethusd|solusd|linkusd). An independent check on Gemini's price; can be used in a condition",
+    args: ["symbol"],
+    key: (a) => `oracle:${a.symbol?.toLowerCase()}`,
+    params: (a) => ({ symbol: a.symbol?.toLowerCase() }),
+  },
   drive_route: {
     product: "routes.drive",
     description: "Driving route through ordered stops with distance and hours per leg (args: stops, place names joined by |)",
@@ -142,11 +150,22 @@ export const RESEARCH: Record<string, ResearchTool> = {
   },
 };
 
-export const researchPrice = (tool: string) => PRODUCTS[RESEARCH[tool].product].price;
+/** Marketplace research is priced by the seller; this is the listed price (Quicknode: 0.0001 USDC per call). */
+export const MARKETPLACE_PRICE: Record<string, bigint> = { "oracle.chainlink": 100n };
+export const researchPrice = (tool: string) => MARKETPLACE_PRICE[RESEARCH[tool].product] ?? PRODUCTS[RESEARCH[tool].product].price;
+export const isMarketplace = (tool: string) => RESEARCH[tool].product in MARKETPLACE_PRICE;
 
-export const researchMenu = () =>
+/** Each agent's own harness: what it can look up for free, what it can buy, and what it can do. */
+export const TOOLKIT: Record<AgentId, { free: string[]; research: string[] }> = {
+  inso: { free: ["search_markets", "get_market", "spot_price", "search_services"], research: ["odds_history", "trade_tape", "oracle_price"] },
+  trado: { free: ["spot_price", "search_markets", "get_market", "search_services"], research: ["spot_candles", "oracle_price", "odds_history"] },
+  travo: { free: ["find_place", "search_services"], research: ["drive_route"] },
+};
+
+export const researchMenu = (agent?: AgentId) =>
   Object.entries(RESEARCH)
-    .map(([id, t]) => `- ${id}: ${t.description} · ${(Number(researchPrice(id)) / 1e6).toFixed(3)} USDC`)
+    .filter(([id]) => !agent || TOOLKIT[agent].research.includes(id))
+    .map(([id, t]) => `- ${id}: ${t.description} · ${(Number(researchPrice(id)) / 1e6).toFixed(4)} USDC`)
     .join("\n");
 
 /** What each agent may propose to do. */
@@ -187,7 +206,7 @@ export const ProposalInput = z.object({
     .nullable()
     .describe("The concrete move. null for research only."),
   condition: z
-    .object({ metric: z.enum(["yes_price", "no_price", "spot_price"]), symbol: z.string(), op: z.enum(["<=", ">="]), value: z.number() })
+    .object({ metric: z.enum(["yes_price", "no_price", "spot_price", "oracle_price"]), symbol: z.string(), op: z.enum(["<=", ">="]), value: z.number() })
     .nullable()
     .describe("A check on a DIFFERENT number than the order's own price, read right before placing (e.g. only buy the BTC-above-66k contract if BTC spot ≥ 64k). The order's own price target goes in orderType/maxPrice/stopPrice, not here. null for none."),
   budgetUsd: z.number().positive().nullable().describe("The most the user said they'd spend on this order in USD, if they said; enforced."),
@@ -267,6 +286,8 @@ export async function validateProposal(agent: AgentId, input: unknown, id: strin
 
   for (const r of p.research) {
     const t = RESEARCH[r.tool];
+    if (!TOOLKIT[agent].research.includes(r.tool)) return { error: `This agent can't buy ${r.tool}. It can buy: ${TOOLKIT[agent].research.join(", ")}` };
+    if (r.tool === "oracle_price" && !FEEDS[r.args.symbol?.toLowerCase()]) return { error: `No Chainlink feed for ${r.args.symbol}. Available: ${Object.keys(FEEDS).join(", ")}` };
     const missing = t.args.filter((x) => x !== "tf" && !r.args[x]);
     if (missing.length) return { error: `${r.tool} needs ${missing.join(", ")}` };
     // Paid lookups read live Gemini data. Don't charge the user for a symbol that has none.
@@ -283,7 +304,12 @@ export async function validateProposal(agent: AgentId, input: unknown, id: strin
   // A condition on the order's own price adds nothing: the exchange enforces the limit, and it keeps resting.
   let condition = (p.condition ?? undefined) as MoveCondition | undefined;
   // Only accept checks the app can actually read right before placing.
-  if (condition?.metric === "spot_price") {
+  if (condition?.metric === "oracle_price") {
+    const sym = condition.symbol.toLowerCase();
+    if (!p.research.some((r) => r.tool === "oracle_price" && r.args.symbol?.toLowerCase() === sym))
+      return { error: `An oracle_price condition needs an oracle_price research step for ${sym}, so the price is bought right before the check` };
+    condition = { ...condition, symbol: sym };
+  } else if (condition?.metric === "spot_price") {
     const list = await spotSymbols().catch(() => [] as string[]);
     if (list.length && !list.includes(condition.symbol.toLowerCase())) return { error: `Condition uses unknown spot symbol ${condition.symbol}` };
     condition = { ...condition, symbol: condition.symbol.toLowerCase() };

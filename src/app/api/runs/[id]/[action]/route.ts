@@ -10,7 +10,8 @@ type Ctx = { params: Promise<{ id: string; action: string }> };
 const Edit = z.object({ card: z.enum(["deliverable", "risk", "method", "price"]), prompt: z.string().min(1).max(200) });
 const Hash = z.string().regex(/^0x[0-9a-fA-F]{64}$/);
 const Reapproval = z.object({ requestId: z.string(), outcome: z.enum(["approved", "denied"]), amount: z.string().regex(/^\d+$/).optional(), txHash: Hash.optional() });
-const Method = z.object({ seller: z.enum(["primary", "mirror"]).optional(), analysis: z.enum(["builtin", "ide"]).optional() });
+// Analysis always runs here; to use your own AI, connect it over MCP instead.
+const Method = z.object({ seller: z.enum(["primary", "mirror"]).optional() });
 const Failure = z.object({ failureId: z.string(), action: z.enum(["retry", "skip", "switch", "edit", "cancel", "topup"]), txHash: Hash.optional() });
 const Chat = z.object({ text: z.string().min(1).max(600) });
 const Adopt = z.object({ proposalId: z.string() });

@@ -4,7 +4,8 @@ import { PRODUCTS } from "../x402";
 import * as gemini from "../gemini";
 import * as geo from "../geo";
 import { describeAction, ExchangeError, marketBase, notionalOf, placeOrder, VENUE_NAME, VENUE_NOTE } from "../exchange";
-import { RESEARCH } from "../tools";
+import { RESEARCH, researchPrice } from "../tools";
+import { chainlinkPrice, type OraclePrice } from "../chainlink";
 import type { AgentCtx, AgentDef, EditResult, LineDraft, PhaseDraft, PlanDraft } from "./types";
 import { PhaseFailure } from "./types";
 
@@ -18,6 +19,8 @@ const seller = SELLERS.primary;
 const mirror = SELLERS.mirror;
 const usd = (x: number) => BigInt(Math.round(x * 1e6)).toString();
 export const EXCHANGE_PAYEE = "0x0000000000000000000000000000000000000e0e" as const;
+/** Quicknode's payTo for x402 on the Agent Marketplace (from its listing). */
+export const QUICKNODE_PAYEE = "0xF46394adDdA95A3d5bCC1124605E3d15D204623C" as const;
 
 type Opts = { proposal?: Proposal };
 type Mem = { orderSince?: number; data: Record<string, unknown>; check?: CheckResult; order?: OrderResult; days?: Day[]; route?: geo.Route; places?: geo.Place[] };
@@ -88,14 +91,23 @@ async function observe(c: MoveCondition, action: MoveAction | undefined, venue: 
   return c.metric === "yes_price" ? yes : 1 - (k.bid ?? k.last ?? yes);
 }
 
-const fmtVal = (metric: MoveCondition["metric"], v: number) => (metric === "spot_price" ? `$${v.toLocaleString()}` : `${Math.round(v * 100)}¢`);
-export const conditionText = (c: MoveCondition) => `${c.metric === "spot_price" ? `${c.symbol.replace(/usd$/, "").toUpperCase()} price` : c.metric === "yes_price" ? "YES price" : "NO price"} ${c.op === "<=" ? "≤" : "≥"} ${fmtVal(c.metric, c.value)}`;
+const dollars = (m: MoveCondition["metric"]) => m === "spot_price" || m === "oracle_price";
+const fmtVal = (metric: MoveCondition["metric"], v: number) => (dollars(metric) ? `$${v.toLocaleString(undefined, { maximumFractionDigits: 2 })}` : `${Math.round(v * 100)}¢`);
+const coin = (s: string) => s.replace(/usd$/, "").toUpperCase();
+export const conditionText = (c: MoveCondition) =>
+  `${c.metric === "oracle_price" ? `Chainlink ${coin(c.symbol)}` : c.metric === "spot_price" ? `${coin(c.symbol)} price` : c.metric === "yes_price" ? "YES price" : "NO price"} ${c.op === "<=" ? "≤" : "≥"} ${fmtVal(c.metric, c.value)}`;
 
 export function planFromProposal(p: Proposal): PlanDraft {
   const lines: LineDraft[] = [];
   const phases: PhaseDraft[] = [];
   for (const r of p.research) {
     const t = RESEARCH[r.tool];
+    if (r.tool === "oracle_price") {
+      const price = researchPrice(r.tool);
+      lines.push({ id: r.id, phaseId: r.id, purpose: r.label, service: "Chainlink price via Quicknode", payeeName: "Quicknode (Agent Marketplace)", payee: QUICKNODE_PAYEE, rail: "gateway", approved: price.toString(), calls: { max: 1, unitPrice: price.toString() } });
+      phases.push({ id: r.id, label: r.label, sub: r.why, dependsOn: [], optional: true, lineId: r.id });
+      continue;
+    }
     const price = PRODUCTS[t.product].price;
     lines.push({ id: r.id, phaseId: r.id, purpose: r.label, service: t.product, payeeName: seller.name, payee: seller.address, rail: "x402", approved: price.toString(), calls: { max: 1, unitPrice: price.toString() } });
     phases.push({
@@ -131,7 +143,7 @@ export function planFromProposal(p: Proposal): PlanDraft {
         "Prices can move after the check",
       ].slice(0, 3),
     },
-    { kind: "method", title: "Pay per request", points: [p.research.length ? `${p.research.length} paid lookups via x402 on Arc` : "No paid lookups", "Paid from your vault only", a && a.kind !== "itinerary" ? (p.venue === "paper" ? "Order simulated, not sent" : `Order on ${VENUE_NAME[p.venue]}`) : "Built-in analysis"] },
+    { kind: "method", title: "Pay per request", points: [p.research.length ? `${p.research.length} paid lookups${p.research.some((r) => r.tool === "oracle_price") ? " incl. Circle Agent Marketplace" : ""}` : "No paid lookups", "Paid from your vault only", a && a.kind !== "itinerary" ? (p.venue === "paper" ? "Order simulated, not sent" : `Order on ${VENUE_NAME[p.venue]}`) : "Built-in analysis"] },
   ];
   return { cards, lines, phases };
 }
@@ -186,6 +198,14 @@ export function toolboxAgent(id: AgentId): AgentDef {
       const mem = ctx.memory as Mem;
       mem.data ??= {};
       const step = p.research.find((r) => r.id === phaseId);
+      if (step?.tool === "oracle_price") {
+        ctx.progress(0.2, step.label);
+        const sym = step.args.symbol.toLowerCase();
+        const q = await ctx.buyMarketplace!(step.id, `oracle:${sym}`, "oracle.chainlink", () => chainlinkPrice(sym));
+        mem.data[step.id] = q;
+        ctx.progress(1, `${q.description} $${q.price.toLocaleString(undefined, { maximumFractionDigits: 2 })} · ${q.ageMinutes} min old`);
+        return;
+      }
       if (step) {
         const t = RESEARCH[step.tool];
         let params = t.params(step.args);
@@ -206,6 +226,10 @@ export function toolboxAgent(id: AgentId): AgentDef {
           const d = mem.data[r.id];
           if (r.tool === "odds_history") return { step: r.label, ...oddsStats(d as gemini.OddsPoint[]) };
           if (r.tool === "spot_candles") return { step: r.label, ...spotStats(d as gemini.OddsPoint[]) };
+          if (r.tool === "oracle_price") {
+            const q = d as OraclePrice | undefined;
+            return { step: r.label, oracle: q?.price, ageMinutes: q?.ageMinutes, source: q ? `${q.description} · Chainlink on Ethereum` : undefined };
+          }
           if (r.tool === "trade_tape") {
             const ts = (d as { size: number; side: string }[]) ?? [];
             return { step: r.label, trades: ts.length, buys: ts.filter((x) => x.side === "buy").reduce((s, x) => s + x.size, 0), sells: ts.filter((x) => x.side === "sell").reduce((s, x) => s + x.size, 0) };
@@ -216,7 +240,11 @@ export function toolboxAgent(id: AgentId): AgentDef {
         if (!p.condition) {
           mem.check = { met: true, text: "No condition: proceeding", stats };
         } else {
-          const v = await observe(p.condition, p.action, p.venue).catch(() => undefined);
+          const bought = p.research.find((r) => r.tool === "oracle_price" && r.args.symbol.toLowerCase() === p.condition!.symbol);
+          const v =
+            p.condition.metric === "oracle_price"
+              ? (mem.data[bought?.id ?? ""] as OraclePrice | undefined)?.price
+              : await observe(p.condition, p.action, p.venue).catch(() => undefined);
           const met = v != null && (p.condition.op === "<=" ? v <= p.condition.value : v >= p.condition.value);
           mem.check = { met, observed: v, stats, text: v == null ? "Couldn't read a fresh price, so the move is skipped" : `${conditionText(p.condition)} → now ${fmtVal(p.condition.metric, v)} · ${met ? "met" : "not met"}` };
         }

@@ -1,4 +1,4 @@
-import { offVault, type Hex, type Run } from "./types";
+import { paidInUsdc, type Hex, type Run } from "./types";
 
 export type SpendRequest = { lineId: string; payee: Hex; amount: bigint };
 
@@ -14,7 +14,7 @@ export function checkSpend(run: Run, req: SpendRequest): PolicyResult {
   if (run.status !== "running") return { ok: false, reason: "not_running", detail: `run is ${run.status}` };
   const line = run.lines.find((l) => l.id === req.lineId);
   if (!line) return { ok: false, reason: "off_plan", detail: "no approved line for this spend" };
-  if (offVault(line.rail)) return { ok: false, reason: "off_plan", detail: "line is not paid in USDC" };
+  if (!paidInUsdc(line.rail)) return { ok: false, reason: "off_plan", detail: "line is not paid in USDC" };
   if (line.payee.toLowerCase() !== req.payee.toLowerCase())
     return { ok: false, reason: "new_payee", detail: `approved payee is ${line.payeeName}` };
   if (line.calls && req.amount > BigInt(line.calls.unitPrice))
