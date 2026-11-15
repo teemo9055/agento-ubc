@@ -1,7 +1,9 @@
 import { BatchEvmScheme, CHAIN_CONFIGS } from "@circle-fin/x402-batching/client";
 import { encodeFunctionData, parseAbi, type Hex } from "viem";
 import { circleExecute, circleSignTypedData, circleWallets } from "./circle";
-import { USDC } from "./chain";
+import { USDC, publicClient, usdcAbi } from "./chain";
+import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
+import path from "node:path";
 
 /**
  * Buying from Circle's Agent Marketplace with Gateway nanopayments.
@@ -54,6 +56,88 @@ export async function depositToGateway(usdc: number): Promise<{ approveTx: Hex; 
   const approveTx = await circleExecute(w.id, USDC, encodeFunctionData({ abi: erc20, functionName: "approve", args: [chain.gatewayWallet as Hex, value] }));
   const depositTx = await circleExecute(w.id, chain.gatewayWallet as Hex, encodeFunctionData({ abi: gatewayAbi, functionName: "deposit", args: [USDC, value] }));
   return { approveTx, depositTx };
+}
+
+// ---------- automatic top-ups, with a daily cap ----------
+
+const MIN_BALANCE = () => Number(process.env.GATEWAY_MIN_BALANCE ?? 0.05);
+const TOP_UP = () => Number(process.env.GATEWAY_TOPUP ?? 1);
+/** Most the agent may move into Gateway on its own in 24 hours. */
+const DAILY_CAP = () => Number(process.env.GATEWAY_DAILY_CAP ?? 3);
+
+interface Deposit {
+  at: number;
+  usdc: number;
+  tx: string;
+}
+const ledgerFile = () => path.join(process.env.DATA_DIR ?? path.join(process.cwd(), ".data"), "gateway-deposits.json");
+let ledger: Deposit[] | undefined;
+function deposits(): Deposit[] {
+  if (ledger) return ledger;
+  const persist = process.env.PERSIST !== "false" && !process.env.VITEST;
+  ledger = persist && existsSync(ledgerFile()) ? (JSON.parse(readFileSync(ledgerFile(), "utf8")) as Deposit[]) : [];
+  return ledger;
+}
+function logDeposit(d: Deposit) {
+  const day = Date.now() - 7 * 86_400_000;
+  ledger = [...deposits().filter((x) => x.at > day), d];
+  if (process.env.PERSIST === "false" || process.env.VITEST) return;
+  mkdirSync(path.dirname(ledgerFile()), { recursive: true });
+  writeFileSync(ledgerFile(), JSON.stringify(ledger));
+}
+export const depositedToday = () => deposits().filter((d) => d.at > Date.now() - 86_400_000).reduce((s, d) => s + d.usdc, 0);
+
+export class GatewayFundsError extends Error {}
+
+export interface GatewayStatus {
+  balance: number;
+  wallet: number;
+  depositedToday: number;
+  dailyCap: number;
+  /** Plain warning for the user, if purchases are about to stop. */
+  warning?: string;
+}
+
+async function walletUsdc(address: Hex) {
+  const raw = (await publicClient.readContract({ address: USDC, abi: usdcAbi, functionName: "balanceOf", args: [address] })) as bigint;
+  return Number(raw) / 1e6;
+}
+
+export async function gatewayStatus(): Promise<GatewayStatus> {
+  const w = agentWallet();
+  const [balance, wallet] = await Promise.all([gatewayBalance(w.address).catch(() => 0), walletUsdc(w.address).catch(() => 0)]);
+  const today = depositedToday();
+  const s: GatewayStatus = { balance, wallet, depositedToday: today, dailyCap: DAILY_CAP() };
+  if (balance < MIN_BALANCE()) {
+    if (wallet < TOP_UP()) s.warning = `Marketplace purchases are low on funds: Gateway holds ${balance.toFixed(4)} USDC and the agent wallet ${wallet.toFixed(2)}. Send USDC on Arc testnet to ${w.address}.`;
+    else if (today + TOP_UP() > DAILY_CAP()) s.warning = `The agent hit its ${DAILY_CAP()} USDC daily top-up limit; marketplace purchases resume tomorrow or when GATEWAY_DAILY_CAP is raised.`;
+  }
+  return s;
+}
+
+let topping: Promise<void> | undefined;
+/**
+ * Keeps a little USDC in Gateway for nanopayments. One top-up at a time, never past the daily cap,
+ * and a clear error instead of a silent stall when the wallet is empty or the deposit isn't credited.
+ */
+export function ensureGatewayFunds(): Promise<void> {
+  topping ??= (async () => {
+    const w = agentWallet();
+    const min = MIN_BALANCE();
+    if ((await gatewayBalance(w.address).catch(() => 0)) >= min) return;
+    const amount = TOP_UP();
+    if (depositedToday() + amount > DAILY_CAP()) throw new GatewayFundsError(`Daily top-up limit reached (${DAILY_CAP()} USDC). Raise GATEWAY_DAILY_CAP or try tomorrow.`);
+    const have = await walletUsdc(w.address).catch(() => Infinity);
+    if (have < amount) throw new GatewayFundsError(`The agent wallet has ${have.toFixed(2)} USDC, not enough to top up Gateway by ${amount}. Send USDC on Arc testnet to ${w.address}.`);
+    const { depositTx } = await depositToGateway(amount);
+    logDeposit({ at: Date.now(), usdc: amount, tx: depositTx });
+    for (let i = 0; i < 40; i++) {
+      if ((await gatewayBalance(w.address).catch(() => 0)) >= min) return;
+      await new Promise((r) => setTimeout(r, 3000));
+    }
+    throw new GatewayFundsError(`Deposited ${amount} USDC (tx ${depositTx.slice(0, 10)}…) but Gateway hasn't credited it yet. Retry in a minute; it won't deposit again.`);
+  })().finally(() => (topping = undefined));
+  return topping;
 }
 
 let scheme: BatchEvmScheme | null = null;

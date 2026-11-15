@@ -31,7 +31,7 @@ vi.mock("@/server/chainlink", async (orig) => ({
   ...(await orig<typeof import("@/server/chainlink")>()),
   chainlinkPrice: async (symbol: string) => ({ symbol, feed: "0xF4030086522a5bEEa4988F8cA5B36dbC97BeE88c", description: "BTC / USD", price: 61000, updatedAt: new Date().toISOString(), ageMinutes: 3, round: "1", paid: { amountUsdc: 0.0001, payTo: "0xF46394adDdA95A3d5bCC1124605E3d15D204623C", via: "test" } }),
 }));
-vi.mock("@/server/nanopay", async (orig) => ({ ...(await orig<typeof import("@/server/nanopay")>()), gatewayBalance: async () => 1, depositToGateway: async () => ({}) }));
+vi.mock("@/server/nanopay", async (orig) => ({ ...(await orig<typeof import("@/server/nanopay")>()), gatewayBalance: async () => 1, depositToGateway: async () => ({}), ensureGatewayFunds: async () => {} }));
 
 process.env.DEMO_DELAY_SCALE = "0";
 process.env.AI_DISABLED = "true";

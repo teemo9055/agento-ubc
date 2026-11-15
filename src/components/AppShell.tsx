@@ -3,17 +3,42 @@ import { useEffect, useRef, useState } from "react";
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { THEMES } from "@/lib/themes";
-import { Toaster } from "./Toaster";
+import { Toaster, toast } from "./Toaster";
 import { useRuns } from "./runsStore";
 import { TransitionResolver } from "./transitions";
 import { Icon, type IconName } from "./Icon";
 
 const NOTIFY_KEY = "agento:notify";
 
-/** "(2) agento" in the tab title, and an opt-in notification when a job starts waiting for you. */
+/** "(2) agento" in the tab title; a toast and opt-in notification when a job needs you or its order fills. */
 function NeedsYouWatcher() {
   const { runs } = useRuns();
   const prev = useRef<Map<string, number> | null>(null);
+  const fills = useRef<Map<string, number> | null>(null);
+  useEffect(() => {
+    if (!runs) return;
+    const before = fills.current;
+    fills.current = new Map(runs.filter((r) => r.order).map((r) => [r.id, r.order!.filled ?? 0]));
+    if (!before) return;
+    const notify = localStorage.getItem(NOTIFY_KEY) === "on" && typeof Notification !== "undefined" && Notification.permission === "granted";
+    for (const r of runs) {
+      const o = r.order;
+      if (!o || o.venue === "paper" || !before.has(r.id)) continue;
+      const was = before.get(r.id) ?? 0;
+      const got = o.filled ?? 0;
+      if (got <= was) continue;
+      const done = o.status === "filled";
+      const text = done ? `Order filled: ${r.task}` : `Order partly filled (${got}${o.quantity ? ` of ${o.quantity}` : ""}): ${r.task}`;
+      toast(text, "good");
+      if (notify) {
+        const n = new Notification(`${THEMES[r.agent].name}: ${done ? "order filled" : "partly filled"}`, { body: r.task, tag: `fill-${r.id}-${got}` });
+        n.onclick = () => {
+          window.focus();
+          window.location.href = `/runs/${r.id}`;
+        };
+      }
+    }
+  }, [runs]);
   useEffect(() => {
     if (!runs) return;
     const total = runs.reduce((a, r) => a + r.needsYou, 0);
@@ -59,7 +84,7 @@ export function NotifyToggle() {
         setOn(ok);
       }}
       className={`pressable tap inline-flex h-10 items-center gap-2 rounded-lg border px-3 text-[13px] font-medium transition-colors ${on ? "border-ink bg-ink text-white" : "border-line bg-panel text-ink-2 hover:border-[#c9c8c2]"}`}
-      title="Get a notification when a job needs your approval"
+      title="Get a notification when a job needs your approval or an order fills"
     >
       <Icon name="bell" size={16} /> {on ? "Notifications on" : "Notify me"}
     </button>
