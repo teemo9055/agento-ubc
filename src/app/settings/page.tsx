@@ -145,7 +145,7 @@ export default function Settings() {
               className={`pressable tap rounded-lg border px-3 py-2 text-left text-[13px] disabled:opacity-50 ${ready && mode === m ? "border-ink bg-ink text-white" : "border-line bg-panel text-ink-2"}`}
             >
               <span className="block font-semibold">{m === "live" ? "Arc testnet" : "Practice"}</span>
-              <span className={`block text-[12px] ${ready && mode === m ? "text-white/70" : "text-ink-3"}`}>{m === "live" ? "Real testnet USDC, onchain" : "Real data, nothing settles"}</span>
+              <span className={`block text-[12px] ${ready && mode === m ? "text-white/70" : "text-ink-3"}`}>{m === "live" ? "Real testnet USDC, onchain" : "Real data; vault and orders simulated"}</span>
             </button>
           ))}
         </div>

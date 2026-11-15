@@ -98,9 +98,29 @@ Prediction markets work as cheap insurance. Tell Inso what you'd lose and when (
 - **Run again / Save.** A finished job can be repeated: the same move is re-checked against today's prices and limits and comes back as a fresh draft to approve.
 - **Settings.** Spending limits, wallet, network, exchange connection, notifications and test switches are set once there, not on every job.
 
-### Plans across agents
+### Plans: how a request is broken down
 
-Ask for several things at once ("buy 5 YES on BTC, then plan a drive from Dallas to Austin, and book a hotel") and the agent proposes one plan card: a full move per step, each for the agent that does it, plus a plain list of what it can't do here (hotel and flight booking services on Circle's marketplace take Arc mainnet only). Starting the plan runs each step as its own job, one after another, each approved within the limits shown on the card. A step can wait until the previous step's order has filled (e.g. spend what a sell brought in); if that order is cancelled, the rest of the plan doesn't run. Stop cancels the running step and returns its unspent funds. Plans pick up again after a restart.
+Ask for several things at once ("check gold and Bitcoin fees, and separately plan a drive from Dallas to Austin, then buy 3 YES on BTC") and the host agent breaks it into the steps that really make it up:
+
+- **Each step is built by the agent that owns it.** The host writes a short brief per step; the owning agent (Inso, Trado or Travo) turns it into a checked move with its own tools and knowledge. The host never writes another agent's order.
+- **Steps say what they wait for.** Independent steps run at the same time; a step that waits starts when the ones before it finish, or, with a fill gate, only once their orders have actually filled.
+- **A step can spend what an earlier one brought in.** "Sell X, then use the money for Y": Y's budget is set from the sell's proceeds when it starts, and the move is re-checked at that size.
+- **A failure stays local.** A failed or cancelled step only skips the steps that depended on it. Everything else carries on.
+- **Results are handed over.** When a step starts it is told what the steps before it did.
+
+The plan is one card with one Start button, plus a plain list of what can't be done here (hotel and flight booking services on Circle's marketplace take mainnet only). Each step runs as its own job with its own approval limits and receipt. Stop cancels whatever is running and returns unspent funds. Plans pick up again after a restart.
+
+### What agents buy, and from whom
+
+Agents pay per request in USDC. Three kinds of seller, one approval and policy path:
+
+| Seller | What | How it's paid |
+| ------ | ---- | ------------- |
+| Agento's own x402 feed | Gemini odds history, trade flow, price candles; driving routes | x402 from the job's vault on Arc |
+| Quicknode, on Circle's Agent Marketplace | Typed onchain reads across chains: Chainlink prices (BTC, ETH, SOL, LINK, AVAX, BNB, USDC, gold, silver, EUR, GBP, JPY), gas price on Ethereum, Base, Arbitrum, Optimism and Polygon, Bitcoin fees and mempool, any wallet's USDC balance. 0.0001 USDC a request | Circle Gateway nanopayment from the agent's Arc balance |
+| Any other marketplace listing payable on our network | Whatever it sells. The agent finds it with a catalog search and adds a `service` step; code reads the price and payee from the listing and the seller's own 402 quote, never from the model | Circle Gateway nanopayment |
+
+Before anything is signed the purchase is checked against the approved line: the price can't exceed it and the payee must match. Requests that would send or sign a transaction are refused; paid nodes are read-only. On Arc testnet 134 of the marketplace's 2,650 listings are payable today (Quicknode's 132 chains and BotPay); another 2,052 take Arc mainnet. They go through this same buyer, but paying them is not wired up yet: it needs the mainnet Gateway settings and real USDC. The Agents page shows these numbers live and searches the whole catalog.
 
 ## Safety limits
 

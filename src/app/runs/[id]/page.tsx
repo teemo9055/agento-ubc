@@ -179,7 +179,7 @@ export default function RunPage({ params }: { params: Promise<{ id: string }> })
     <div className="flex flex-wrap items-center gap-2 text-[12px] font-medium text-ink-3">
       <span className="font-pixel text-[13px] text-agent-ink">{theme.name}</span>
       {run.mode === "demo" && (
-        <span className="inline-flex h-[22px] items-center rounded-md bg-[#f1f0ec] px-2 text-[12px] font-semibold text-ink-2" title="Practice mode: real data, nothing settles. Change it in Settings.">
+        <span className="inline-flex h-[22px] items-center rounded-md bg-[#f1f0ec] px-2 text-[12px] font-semibold text-ink-2" title="Practice mode: real data; the vault and orders are simulated (marketplace vendors are still paid from the agent's testnet balance). Change it in Settings.">
           Practice
         </span>
       )}

@@ -31,8 +31,8 @@ export interface Service {
   input?: string;
 }
 
-const NET_NAMES: Record<string, string> = { [ARC_TESTNET]: "Arc testnet", [ARC_MAINNET]: "Arc", "eip155:8453": "Base", "eip155:84532": "Base Sepolia", "eip155:1": "Ethereum", "eip155:137": "Polygon" };
-export const networkName = (n: string) => NET_NAMES[n] ?? n;
+const NET_NAMES: Record<string, string> = { [ARC_TESTNET]: "Arc testnet", [ARC_MAINNET]: "Arc", "eip155:8453": "Base", "eip155:84532": "Base Sepolia", "eip155:1": "Ethereum", "eip155:137": "Polygon", "eip155:42161": "Arbitrum", "eip155:43114": "Avalanche", "eip155:10": "Optimism" };
+export const networkName = (n: string) => NET_NAMES[n] ?? (n.startsWith("solana:") ? "Solana" : n.startsWith("eip155:") ? `chain ${n.slice(7)}` : n);
 
 /** "query: q (string), limit (integer)" from a JSON schema, short enough for a prompt. */
 function inputHint(input: unknown): string | undefined {
