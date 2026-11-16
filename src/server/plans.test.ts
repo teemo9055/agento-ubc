@@ -181,12 +181,12 @@ describe("plans across agents", () => {
   });
 
   it("a step can spend what an earlier sell brought in", async () => {
-    const id = await begin(await plan([step("trado", "sell"), step("inso", "big order", [1], "filled", true)]));
+    const id = await begin(await plan([step("trado", "sell"), step("inso", "order", [1], "filled", true)]));
     await until(() => orch.getRun(id)!.plan?.status === "done", "the plan to finish");
     const [sell, buy] = orch.getRun(id)!.plan!.steps;
     expect([sell.status, buy.status]).toEqual(["done", "done"]);
     const bought = orch.getRun(buy.runId!)!;
-    // The $10 the sell brought in buys 19 contracts at 52¢, not the 40 first drafted.
+    // The $10 the sell brought in buys 19 contracts at 52¢: the order is sized to the money, not left at the 5 first drafted.
     expect(bought.proposal!.action).toMatchObject({ kind: "prediction_order", quantity: 19 });
     expect(bought.proposal!.budgetUsd).toBe(10);
     expect(bought.handoff).toMatch(/Budget for this step: \$10\.00/);

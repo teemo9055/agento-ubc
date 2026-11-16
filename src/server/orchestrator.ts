@@ -1226,7 +1226,13 @@ async function advanceNow(parentId: string) {
       // Spending what an earlier step brought in: the move is re-checked with that as its budget.
       if (budget != null) {
         if (budget <= 0) throw new Error("The sell it waits for brought in nothing to spend");
-        const v = await validateProposal(s.agent, { ...toProposalInput(s.proposal), budgetUsd: budget }, s.proposal.id);
+        // "Use the money" means spend it: the order is sized to the proceeds (within your order limit), not left at its first draft.
+        const draft = toProposalInput(s.proposal);
+        const spend = Math.min(budget, limits().maxOrderUsd);
+        const a = draft.action;
+        if (a?.kind === "prediction_order" && a.trade !== "sell" && !draft.hedge) a.quantity = Math.min(500, Math.max(1, Math.floor(spend / a.maxPrice + 1e-9)));
+        if (a?.kind === "spot_order" && a.side === "buy") a.amountUsd = Math.min(100, Math.max(1, Math.floor(spend * 100) / 100));
+        const v = await validateProposal(s.agent, { ...draft, budgetUsd: budget }, s.proposal.id);
         if ("error" in v) throw new Error(v.error.split(". ")[0]);
         proposal = v.proposal;
         s.proposal = proposal;
