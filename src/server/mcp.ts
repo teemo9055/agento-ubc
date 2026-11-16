@@ -118,7 +118,7 @@ export function buildMcpServer(base: string) {
     {
       title: "Chat with an agent",
       description: "Starts (or continues, with id) an explore chat with a built-in agent. It looks things up and may propose a move. Returns the job; poll get_job for the reply.",
-      inputSchema: { agent: AGENT.optional(), id: z.string().optional(), message: z.string().min(2).max(600), live: z.boolean().optional() },
+      inputSchema: { agent: AGENT.optional(), id: z.string().optional(), message: z.string().min(2).max(1000), live: z.boolean().optional() },
     },
     async ({ agent, id, message, live }) => {
       try {
@@ -139,7 +139,7 @@ export function buildMcpServer(base: string) {
     {
       title: "Propose a move as a work order",
       description: "Your own move (from your research with look_up) becomes a priced draft work order. The server validates tickers and limits. The user approves it in the app via the returned url.",
-      inputSchema: { agent: AGENT, task: z.string().min(3).max(280).describe("The user's goal in their words"), move: ProposalInput, live: z.boolean().optional() },
+      inputSchema: { agent: AGENT, task: z.string().min(3).max(1000).describe("The user's goal in their words"), move: ProposalInput, live: z.boolean().optional() },
     },
     async ({ agent, task, move, live }) => {
       const v = await validateProposal(agent as AgentId, move, randomUUID().slice(0, 8));
@@ -154,9 +154,9 @@ export function buildMcpServer(base: string) {
     {
       title: "Propose a plan of several moves",
       description:
-        "For a request with several parts. You give 2-5 steps, each a full move for the agent that does it (same shape as propose_move), and say which earlier steps each waits for. Steps with nothing to wait for run at the same time. The server validates every move and the plan's shape, then shows it to the user as one plan to start in the app via the returned url. You cannot start it.",
+        "For a request with several parts. You give 2-12 steps, each a full move for the agent that does it (same shape as propose_move), and say which earlier steps each waits for. Steps with nothing to wait for run at the same time. The server validates every move and the plan's shape, then shows it to the user as one plan to start in the app via the returned url. You cannot start it.",
       inputSchema: {
-        task: z.string().min(3).max(280).describe("The user's goal in their words"),
+        task: z.string().min(3).max(1000).describe("The user's goal in their words"),
         title: z.string().max(70),
         why: z.string().max(240).describe("How the steps fit together, one or two sentences"),
         steps: z
@@ -164,13 +164,13 @@ export function buildMcpServer(base: string) {
             z.object({
               agent: AGENT,
               move: ProposalInput,
-              after: z.array(z.number().int().min(1).max(5)).max(4).default([]).describe("Numbers of earlier steps this one waits for; empty to start right away"),
+              after: z.array(z.number().int().min(1).max(12)).max(6).default([]).describe("Numbers of earlier steps this one waits for; empty to start right away"),
               gate: z.enum(["done", "filled"]).default("done").describe("filled: only once the orders it waits for have filled"),
               useProceeds: z.boolean().default(false).describe("Spend what the sell it waits for brought in (needs gate filled)"),
             }),
           )
           .min(2)
-          .max(5),
+          .max(12),
         unavailable: z.array(z.object({ what: z.string().max(80), why: z.string().max(160) })).max(4).default([]).describe("Parts of the request no agent can do here, with the reason"),
         live: z.boolean().optional(),
       },

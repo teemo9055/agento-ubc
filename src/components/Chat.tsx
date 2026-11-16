@@ -1,7 +1,7 @@
 "use client";
 import { useEffect, useRef, useState } from "react";
 import { AnimatePresence, motion } from "framer-motion";
-import type { Card, ChatMsg, MoveAction, MoveCondition, Plan, PlanStep, Proposal, Run, Venue } from "@/lib/types";
+import type { Card, ChatMsg, Plan, Proposal, Run, Venue } from "@/lib/types";
 import Link from "next/link";
 import { THEMES } from "@/lib/themes";
 import { fmt } from "@/lib/money";
@@ -11,29 +11,10 @@ import { Icon } from "./Icon";
 import { post } from "./useRun";
 import { toast } from "./Toaster";
 import { runOutfit } from "@/lib/summary";
+import { quickFor, stepFromText, type Quick } from "@/lib/quick";
+import { actionText, cents, conditionLabel, lookupCost, maxCost, usdc } from "@/lib/move";
 
-const RESEARCH_PRICE: Record<string, number> = { odds_history: 0.02, trade_tape: 0.1, spot_candles: 0.02, drive_route: 0.03, oracle_price: 0.0001, gas_price: 0.0001, btc_network: 0.0002, wallet_balance: 0.0001 };
-/** What a paid lookup costs; a marketplace service carries the price its seller quoted. */
-const lookupCost = (r: Proposal["research"][number]) => (r.tool === "service" ? Number(r.args.price ?? 0) / 1e6 : (RESEARCH_PRICE[r.tool] ?? 0));
-const usdc = (x: number) => (x < 0.01 ? x.toFixed(4) : x.toFixed(2));
-const cents = (x: number) => `${Math.round(x * 100)}¢`;
-
-export function actionText(a: MoveAction) {
-  if (a.kind === "prediction_order" && a.trade === "sell") return `Sell ${a.quantity} × ${a.side.toUpperCase()} “${a.label}” at ≥ ${cents(a.maxPrice)}, resting until filled`;
-  if (a.kind === "prediction_order")
-    return a.orderType === "stop-limit"
-      ? `${a.quantity} × ${a.side.toUpperCase()} “${a.label}” once it rises to ${cents(a.stopPrice ?? a.maxPrice)}, paying ≤ ${cents(a.maxPrice)}`
-      : `${a.quantity} × ${a.side.toUpperCase()} “${a.label}” at ≤ ${cents(a.maxPrice)}, resting until filled`;
-  if (a.kind === "spot_order") return `${a.side === "buy" ? "Buy" : "Sell"} $${a.amountUsd} of ${a.symbol.replace(/usd$/, "").toUpperCase()} at ${a.side === "buy" ? "≤" : "≥"} $${a.limitPrice.toLocaleString()}`;
-  return `Plan ${a.stops.join(" → ")} · ≤ ${a.hoursPerDay} h/day`;
-}
-export function conditionLabel(c: MoveCondition) {
-  const coin = c.symbol.replace(/usd$/, "").toUpperCase();
-  const what = c.metric === "oracle_price" ? `Chainlink ${coin}` : c.metric === "spot_price" ? `${coin} price` : c.metric === "yes_price" ? "YES price" : "NO price";
-  const dollars = c.metric === "spot_price" || c.metric === "oracle_price";
-  return `${what} ${c.op === "<=" ? "≤" : "≥"} ${dollars ? `$${c.value.toLocaleString()}` : cents(c.value)}`;
-}
-const maxCost = (a?: MoveAction) => (!a ? 0 : a.kind === "prediction_order" ? (a.trade === "sell" ? 0 : a.maxPrice * a.quantity) : a.kind === "spot_order" ? a.amountUsd : 0);
+export { actionText, conditionLabel, usdc };
 
 const VENUE_BADGE: Record<Venue, { label: string; title: string; cls: string }> = {
   gemini: { label: "Live · real money", title: "Orders go to your Gemini account with real money", cls: "border-bad/50 bg-bad/10 text-bad" },
@@ -73,7 +54,7 @@ function notes(p: Proposal) {
     );
 }
 
-export function MoveCard({ p, run, chosen, onChoose, busy }: { p: Proposal; run: Run; chosen?: boolean; onChoose?: () => void; busy?: boolean }) {
+export function MoveCard({ p, run, chosen, onChoose, busy, drawn }: { p: Proposal; run: Run; chosen?: boolean; onChoose?: () => void; busy?: boolean; /** The move is drawn in the workspace beside the chat, so the card only needs the facts and the button. */ drawn?: boolean }) {
   const research = p.research.reduce((s, r) => s + lookupCost(r), 0);
   const total = research + maxCost(p.action);
   const trade = p.action && p.action.kind !== "itinerary";
@@ -98,7 +79,7 @@ export function MoveCard({ p, run, chosen, onChoose, busy }: { p: Proposal; run:
           trade && p.venue !== "paper" && <VenueBadge venue={p.venue ?? "paper"} />
         )}
       </div>
-      <p className="mt-1 text-[13.5px] leading-snug text-ink-2">{p.ask}</p>
+      {!drawn && <p className="mt-1 text-[13.5px] leading-snug text-ink-2">{p.ask}</p>}
       {p.changes && p.changes.length > 0 && (
         <p className="mt-2 text-[12px] font-medium text-agent-ink" data-testid="move-changes">
           Changed: {p.changes.join(" · ")}
@@ -117,123 +98,7 @@ export function MoveCard({ p, run, chosen, onChoose, busy }: { p: Proposal; run:
   );
 }
 
-const STEP_STATUS: Record<PlanStep["status"], { text: string; cls: string }> = {
-  waiting: { text: "Next", cls: "text-ink-3" },
-  running: { text: "Running", cls: "text-agent-ink" },
-  blocked: { text: "Waiting", cls: "text-warn-ink" },
-  done: { text: "Done", cls: "text-good" },
-  failed: { text: "Didn't go through", cls: "text-bad" },
-  skipped: { text: "Skipped", cls: "text-ink-3" },
-};
-
-const stepCost = (p: Proposal) => p.research.reduce((s, r) => s + lookupCost(r), 0) + maxCost(p.action);
-
-/** Several moves in a row, possibly by different agents. Started once; each step runs as its own job. */
-export function PlanCard({ plan, run }: { plan: Plan; run: Run }) {
-  const [busy, setBusy] = useState(false);
-  const live = run.plan?.id === plan.id ? run.plan : plan;
-  const total = live.steps.reduce((s, st) => s + stepCost(st.proposal), 0);
-  const startedElsewhere = run.plan && run.plan.id !== plan.id && run.plan.status === "running";
-  async function act(path: "plan-start" | "plan-stop") {
-    setBusy(true);
-    try {
-      await post(`/api/runs/${run.id}/${path}`, path === "plan-start" ? { planId: plan.id } : {});
-      toast(path === "plan-start" ? "Plan started · each step runs as its own job" : "Plan stopped", "good");
-    } catch (e) {
-      toast((e as Error).message, "bad");
-    } finally {
-      setBusy(false);
-    }
-  }
-  return (
-    <div className={`mt-2 rounded-xl border-[1.5px] bg-panel p-3.5 ${live.status === "proposed" ? "border-ink shadow-[3px_3px_0_0_var(--agent)]" : "border-line"}`} data-testid="plan-card">
-      <div className="flex items-start justify-between gap-2">
-        <div className="text-[15px] font-semibold leading-snug">{live.title}</div>
-        {live.status !== "proposed" && (
-          <span className={`shrink-0 text-[12px] font-semibold ${live.status === "done" ? "text-good" : live.status === "stopped" ? "text-ink-3" : "text-agent-ink"}`} data-testid="plan-status">
-            {live.status === "running" ? "Running" : live.status === "done" ? "Finished" : "Stopped"}
-          </span>
-        )}
-      </div>
-      <p className="mt-1 text-[13.5px] leading-snug text-ink-2">{live.why}</p>
-      <ol className="mt-2.5 space-y-2" aria-label="Plan steps">
-        {live.steps.map((st, i) => {
-          const s = STEP_STATUS[st.status];
-          const cost = stepCost(st.proposal);
-          return (
-            <li key={st.id} className="flex gap-2.5 rounded-lg border border-line p-2.5" data-testid="plan-step">
-              <span className="mt-0.5 shrink-0">
-                <AgentIcon agent={st.agent} size={26} mood={st.status === "running" ? "working" : "happy"} />
-              </span>
-              <div className="min-w-0 flex-1 text-[13px]">
-                <div className="flex flex-wrap items-baseline justify-between gap-x-2">
-                  <span className="font-medium">
-                    {i + 1}. {st.proposal.title}
-                  </span>
-                  {live.status !== "proposed" && (
-                    <span className={`text-[12px] font-semibold ${s.cls}`} data-testid="plan-step-status">
-                      {s.text}
-                    </span>
-                  )}
-                </div>
-                <div className="text-[12px] text-ink-3">
-                  {THEMES[st.agent].name}
-                  {st.proposal.action ? ` · ${actionText(st.proposal.action)}` : ""}
-                  {st.proposal.research.length ? ` · ${st.proposal.research.length} lookup${st.proposal.research.length > 1 ? "s" : ""}` : ""}
-                  {cost > 0 ? ` · ≤ $${cost < 0.01 ? usdc(cost) : cost.toFixed(2)}` : ""}
-                </div>
-                {(st.status === "waiting" || st.status === "blocked") && live.steps.length > 1 && (
-                  <div className="text-[12px] text-ink-3" data-testid="plan-step-when">
-                    {(st.after ?? []).length === 0
-                      ? live.steps.filter((x) => !(x.after ?? []).length).length > 1
-                        ? "Starts right away, alongside the others"
-                        : "Starts right away"
-                      : `After step ${(st.after ?? []).map((id) => id.replace(/^s/, "")).join(" and ")}${st.gate === "filled" ? "’s order fills" : ""}${st.useProceeds ? " · spends what it brings in" : ""}`}
-                  </div>
-                )}
-                {(st.note || st.runId) && live.status !== "proposed" && (
-                  <div className="mt-0.5 text-[12px] text-ink-2">
-                    {st.note}
-                    {st.runId && (
-                      <>
-                        {st.note ? " · " : ""}
-                        <Link href={`/runs/${st.runId}`} className="underline decoration-line underline-offset-2" data-testid="plan-step-link">
-                          Open
-                        </Link>
-                      </>
-                    )}
-                  </div>
-                )}
-              </div>
-            </li>
-          );
-        })}
-      </ol>
-      {live.unavailable.length > 0 && (
-        <ul className="mt-2 space-y-0.5 text-[12px]" data-testid="plan-unavailable">
-          {live.unavailable.map((u) => (
-            <li key={u.what} className="text-ink-2">
-              <span className="font-medium text-bad">Can&apos;t do here:</span> {u.what}. <span className="text-ink-3">{u.why}</span>
-            </li>
-          ))}
-        </ul>
-      )}
-      <div className="mt-3 flex items-center justify-between gap-2 border-t border-[#f1f0ec] pt-2.5">
-        <span className="num text-[12.5px] text-ink-2">≤ ${total < 0.01 ? usdc(total) : total.toFixed(2)} across {live.steps.length} steps</span>
-        {live.status === "proposed" && !startedElsewhere && (
-          <Button onClick={() => act("plan-start")} disabled={busy || run.status !== "exploring"} variant="agent" className="h-9" data-testid="start-plan">
-            {busy ? <Spinner /> : null} Start plan
-          </Button>
-        )}
-        {live.status === "running" && (
-          <Button onClick={() => act("plan-stop")} disabled={busy} variant="danger" className="h-9" data-testid="stop-plan">
-            {busy ? <Spinner /> : null} Stop
-          </Button>
-        )}
-      </div>
-    </div>
-  );
-}
+export const stepCost = (p: Proposal) => p.research.reduce((s, r) => s + lookupCost(r), 0) + maxCost(p.action);
 
 /** The model sometimes uses **bold**; render it rather than show asterisks. */
 function Rich({ text }: { text: string }) {
@@ -264,7 +129,7 @@ function UserRow({ children, tag }: { children: React.ReactNode; tag?: string })
 
 const bubble = "whitespace-pre-wrap rounded-2xl rounded-bl-md border border-line bg-panel px-3.5 py-2.5 text-[14px] leading-relaxed";
 
-function Bubble({ m, run, onChoose, busy }: { m: ChatMsg; run: Run; onChoose: (id: string) => void; busy: boolean }) {
+function Bubble({ m, run, onChoose, busy, onShowPlan, drawn }: { m: ChatMsg; run: Run; onChoose: (id: string) => void; busy: boolean; onShowPlan?: () => void; drawn?: boolean }) {
   if (m.role === "user") return <UserRow>{m.text}</UserRow>;
   return (
     <motion.li initial={{ opacity: 0, y: 6 }} animate={{ opacity: 1, y: 0 }} className="flex gap-2.5" data-testid="msg-agent">
@@ -295,8 +160,23 @@ function Bubble({ m, run, onChoose, busy }: { m: ChatMsg; run: Run; onChoose: (i
             Couldn't check {m.unverified.join(", ")} against live data; treat as approximate.
           </p>
         )}
-        {m.plan && <PlanCard plan={m.plan} run={run} />}
-        {m.proposal && <MoveCard p={m.proposal} run={run} chosen={run.proposal?.id === m.proposal.id} onChoose={() => onChoose(m.proposal!.id)} busy={busy} />}
+        {m.plan && (
+          <button
+            type="button"
+            onClick={onShowPlan}
+            className="mt-2 flex w-full items-center justify-between gap-2 rounded-xl border border-line bg-panel px-3 py-2.5 text-left text-[13px] hover:border-ink/40"
+            data-testid="plan-summary"
+          >
+            <span className="min-w-0">
+              <span className="block truncate font-semibold">{m.plan.title}</span>
+              <span className="text-ink-3">
+                {m.plan.steps.length} steps on the plan board{m.plan.unavailable.length ? ` · ${m.plan.unavailable.length} part${m.plan.unavailable.length > 1 ? "s" : ""} it can't do` : ""}
+              </span>
+            </span>
+            <Icon name="graph" size={16} className="shrink-0 text-agent-ink" />
+          </button>
+        )}
+        {m.proposal && <MoveCard p={m.proposal} run={run} chosen={run.proposal?.id === m.proposal.id} onChoose={() => onChoose(m.proposal!.id)} busy={busy} drawn={drawn} />}
       </div>
     </motion.li>
   );
@@ -434,10 +314,34 @@ function EditReply({ t, run, onApply, onDrop, onTry, last }: { t: EditTurn; run:
  * The conversation with the agent, docked beside the plan for the whole job.
  * With a card in focus, messages edit that card: the agent re-prices and you apply or drop the change.
  */
-export function Chat({ run, focus, onFocusClear, onAdopted }: { run: Run; focus?: EditTarget | null; onFocusClear?: () => void; onAdopted?: () => void }) {
+export function Chat({
+  run,
+  focus,
+  onFocusClear,
+  onAdopted,
+  onShowPlan,
+  plan,
+  onApprove,
+  prefill,
+  drawn,
+}: {
+  run: Run;
+  focus?: EditTarget | null;
+  onFocusClear?: () => void;
+  onAdopted?: () => void;
+  onShowPlan?: () => void;
+  /** The plan on the board, when there is one: quick options can change it directly. */
+  plan?: Plan;
+  onApprove?: () => void;
+  /** Text to put in the box for the user to send or change, e.g. an example from the workspace. */
+  prefill?: { text: string; n: number } | null;
+  /** The work is drawn beside the chat, so cards here stay short. */
+  drawn?: boolean;
+}) {
   const [text, setText] = useState("");
   const [sending, setSending] = useState(false);
   const [adopting, setAdopting] = useState(false);
+  const [acting, setActing] = useState<string | null>(null);
   const [edits, setEdits] = useState<EditTurn[]>([]);
   const scroller = useRef<HTMLDivElement>(null);
   const input = useRef<HTMLTextAreaElement>(null);
@@ -456,6 +360,12 @@ export function Chat({ run, focus, onFocusClear, onAdopted }: { run: Run; focus?
   useEffect(() => {
     if (focus) input.current?.focus();
   }, [focus]);
+
+  useEffect(() => {
+    if (!prefill) return;
+    setText(prefill.text);
+    input.current?.focus();
+  }, [prefill]);
 
   const patch = (id: number, p: Partial<EditTurn>) => setEdits((xs) => xs.map((x) => (x.id === id ? { ...x, ...p } : x)));
 
@@ -488,6 +398,9 @@ export function Chat({ run, focus, onFocusClear, onAdopted }: { run: Run; focus?
     if (!msg || busy) return;
     setText("");
     if (editing && focus) return checkEdit(focus, msg);
+    // "Add a step: …" while a plan is on the board goes onto the board, not back through the whole plan.
+    const step = proposedPlan ? stepFromText(msg) : null;
+    if (step) return void planAct("Your own step", "plan-edit", { op: "add", agent: "auto", brief: step }, "Step added to the board");
     setSending(true);
     try {
       if (run.status === "draft") await post(`/api/runs/${run.id}/back`);
@@ -498,6 +411,32 @@ export function Chat({ run, focus, onFocusClear, onAdopted }: { run: Run; focus?
     } finally {
       setSending(false);
     }
+  }
+
+  /** Something done to the plan from the chat: the board shows the result. */
+  async function planAct(label: string, path: string, body: unknown, ok: string) {
+    setActing(label);
+    try {
+      await post(`/api/runs/${run.id}/${path}`, body);
+      toast(ok, "good");
+    } catch (e) {
+      toast((e as Error).message, "bad");
+    } finally {
+      setActing(null);
+    }
+  }
+
+  function doQuick(q: Quick) {
+    const d = q.do;
+    if ("say" in d) return void send(d.say);
+    if ("fill" in d) {
+      setText(d.fill);
+      return input.current?.focus();
+    }
+    if ("add" in d) return void planAct(q.label, "plan-edit", { op: "add", agent: d.add.agent, brief: d.add.brief }, `${q.label} added to the board`);
+    if (d.act === "approve") return onApprove?.();
+    if (d.act === "stop-plan" && plan) return void planAct(q.label, "plan-stop", { planId: plan.id }, "Plan stopped · steps already running will finish");
+    if (d.act === "start-plan" && proposedPlan) return void planAct(q.label, "plan-start", { planId: proposedPlan.id }, "Plan started · each step runs as its own job");
   }
 
   async function choose(proposalId: string) {
@@ -514,15 +453,16 @@ export function Chat({ run, focus, onFocusClear, onAdopted }: { run: Run; focus?
     }
   }
 
-  const accept = (s: string) => /^(yes|set it up|build|do it|ok|start)/i.test(s);
-  const placeholder = editing && focus ? (focus.kind === "card" ? CARD_HINT[focus.card] : focus.hint) : run.status === "draft" ? "Ask for something different" : last?.options?.length ? "Or type your own answer" : chat.length > 1 ? "Reply or ask something else" : `Ask ${THEMES[run.agent].name} anything`;
+  const proposedPlan = plan?.status === "proposed" && run.status === "exploring" ? plan : undefined;
+  const quick = quickFor(run, plan).filter((q) => !("act" in q.do && q.do.act === "approve") || Boolean(onApprove));
+  const placeholder = editing && focus ? (focus.kind === "card" ? CARD_HINT[focus.card] : focus.hint) : run.status === "draft" ? "Ask for something different" : proposedPlan ? "Say what to change, or “Add a step: …”" : last?.options?.length ? "Or type your own answer" : chat.length > 1 ? "Reply or ask something else" : `Ask ${THEMES[run.agent].name} anything`;
 
   return (
     <section className="flex h-full min-h-0 flex-col" aria-label="Chat with the agent">
       <div ref={scroller} className="min-h-0 flex-1 overflow-y-auto px-4 py-4">
         <ul className="space-y-4" aria-live="polite">
           {chat.map((m) => (
-            <Bubble key={m.id} m={m} run={run} onChoose={choose} busy={adopting} />
+            <Bubble key={m.id} m={m} run={run} onChoose={choose} busy={adopting} onShowPlan={onShowPlan} drawn={drawn} />
           ))}
           <AnimatePresence>
             {run.thinking && (
@@ -563,35 +503,23 @@ export function Chat({ run, focus, onFocusClear, onAdopted }: { run: Run; focus?
               ))}
             </div>
           )}
-          {!busy && run.status === "exploring" && last?.role === "agent" && !last.options?.length && !last.proposal && !last.plan && last.suggestions && last.suggestions.length > 0 && (
-            <div className="mb-2.5 flex flex-wrap gap-1.5" data-testid="next-steps">
-              {last.suggestions
-                .filter((s) => !accept(s))
-                .slice(0, 3)
-                .map((s, i) => (
-                  <button
-                    key={s}
-                    type="button"
-                    onClick={() => send(s)}
-                    className={`pressable rounded-lg border px-3 py-1.5 text-[13px] font-medium ${i === 0 ? "border-ink bg-ink text-white" : "border-line bg-panel text-ink-2 hover:border-ink/40"}`}
-                  >
-                    {s}
-                  </button>
-                ))}
-            </div>
-          )}
-          {/* With a card on screen its button is the next step; the chips are only ways to change it. */}
-          {!busy && run.status === "exploring" && last?.role === "agent" && (last.proposal || last.plan) && last.suggestions && last.suggestions.filter((s) => !accept(s)).length > 0 && (
-            <div className="mb-2.5 flex flex-wrap items-center gap-1.5" data-testid="tweaks">
-              <span className="text-[12px] text-ink-3">Or change it:</span>
-              {last.suggestions
-                .filter((s) => !accept(s) && !/^not now$/i.test(s))
-                .slice(0, 2)
-                .map((s) => (
-                  <button key={s} type="button" onClick={() => send(s)} className="pressable rounded-lg border border-line bg-panel px-2.5 py-1 text-[12.5px] text-ink-2 hover:border-ink/40">
-                    {s}
-                  </button>
-                ))}
+          {!busy && !editing && quick.length > 0 && (
+            <div className="mb-2.5 flex flex-wrap items-center gap-1.5" role="group" aria-label="Quick options" data-testid="quick">
+              {quick.map((q) => (
+                <button
+                  key={q.label}
+                  type="button"
+                  onClick={() => doQuick(q)}
+                  disabled={Boolean(acting)}
+                  className={`pressable inline-flex h-8 items-center gap-1 rounded-lg border px-2.5 text-[12.5px] font-medium disabled:opacity-50 ${
+                    q.primary ? "border-ink bg-agent text-agent-on shadow-[2px_2px_0_0_var(--color-ink)]" : "border-line bg-panel text-ink-2 hover:border-ink/40 hover:text-ink"
+                  }`}
+                  data-testid={q.primary ? "quick-primary" : "quick-option"}
+                >
+                  {acting === q.label ? <Spinner /> : q.adds ? <Icon name="plus" size={12} stroke={2.6} className="text-agent-ink" /> : null}
+                  {q.label}
+                </button>
+              ))}
             </div>
           )}
           <AnimatePresence initial={false}>
@@ -628,7 +556,7 @@ export function Chat({ run, focus, onFocusClear, onAdopted }: { run: Run; focus?
               }}
               placeholder={placeholder}
               className="max-h-32 min-h-10 min-w-0 flex-1 resize-none bg-transparent px-2 py-2 text-[14px] leading-snug outline-none placeholder:text-ink-3"
-              maxLength={600}
+              maxLength={1000}
               aria-label={editing && focus ? `Change ${targetName(focus)}` : "Message"}
               data-testid="chat-input"
             />

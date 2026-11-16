@@ -9,7 +9,7 @@ import { post, useAgentTheme } from "@/components/useRun";
 import { THEMES } from "@/lib/themes";
 import type { AgentId, Run, Venue } from "@/lib/types";
 import { Icon } from "@/components/Icon";
-import { KITS } from "@/lib/agentKit";
+import { CAPABILITIES, WHERE_LABEL } from "@/lib/capabilities";
 import { usePasskeyWallet } from "@/components/passkey/usePasskey";
 import { usePrefs } from "@/lib/prefs";
 
@@ -69,18 +69,20 @@ export default function NewJob() {
   const usePasskey = mode === "live" && pk.supported && prefs.payFrom === "passkey";
   const needsWallet = usePasskey && !pk.wallet;
 
-  async function start(text: string, agent: Who, key: string) {
-    if (text.trim().length < 3 || needsWallet || busy) return;
+  async function start(text: string, agent: Who, key: string, template?: "showcase") {
+    if (text.trim().length < 3 || (needsWallet && !template) || busy) return;
     setBusy(key);
     setErr("");
     try {
       const run = await post<Run>("/api/runs", {
-        agent,
+        agent: template ? "inso" : agent,
         task: text,
         mode,
-        faults: prefs.faults,
-        accessCode: mode === "live" && !usePasskey ? prefs.accessCode : undefined,
-        payerAddress: usePasskey ? pk.wallet?.address : undefined,
+        template,
+        faults: template ? [] : prefs.faults,
+        // A plan is paid from the app's wallet, whichever wallet single jobs use.
+        accessCode: mode === "live" && (!usePasskey || template) ? prefs.accessCode : undefined,
+        payerAddress: usePasskey && !template ? pk.wallet?.address : undefined,
       });
       router.push(`/runs/${run.id}`);
     } catch (x) {
@@ -117,7 +119,7 @@ export default function NewJob() {
             }
           }}
           rows={2}
-          maxLength={280}
+          maxLength={1000}
           autoFocus
           placeholder="e.g. A cold snap would cost me $20 in rides tomorrow in NYC. Can I cover that?"
           style={{ outline: "none" }}
@@ -155,6 +157,27 @@ export default function NewJob() {
         {err && <p className="mt-3 text-sm text-bad">{err}</p>}
       </form>
 
+      <button
+        type="button"
+        disabled={Boolean(busy)}
+        onClick={() => start("Run the showcase: real work across three agents for a few cents", "inso", "showcase", "showcase")}
+        className="pressable group flex items-center gap-4 rounded-[14px] border-[1.5px] border-ink bg-agent-soft px-4 py-3.5 text-left shadow-[3px_3px_0_0_var(--agent)] disabled:opacity-60"
+        data-testid="showcase"
+      >
+        <span className="flex shrink-0 -space-x-2">
+          {(["inso", "trado", "travo"] as const).map((a) => (
+            <span key={a} data-agent={a}>
+              <AgentIcon agent={a} size={34} mood={busy === "showcase" ? "working" : "happy"} />
+            </span>
+          ))}
+        </span>
+        <span className="min-w-0 flex-1">
+          <span className="block text-[15px] font-semibold">See it work: ten real steps for about six cents</span>
+          <span className="block text-[13px] text-ink-2">Three agents, three sellers, real payments. Prices, network checks, a route, and a bet that waits for a sale and two price sources. You can change any step before it runs.</span>
+        </span>
+        {busy === "showcase" ? <Spinner /> : <Icon name="arrow" size={17} className="shrink-0 transition-transform group-hover:translate-x-0.5" />}
+      </button>
+
       <section aria-label="Start from a goal">
         <h2 className="mb-2 text-[13px] font-semibold text-ink-2">Or start from a goal</h2>
         <div className="grid gap-2 sm:grid-cols-2" data-testid="goals">
@@ -184,16 +207,28 @@ export default function NewJob() {
 
       <details className="group rounded-xl border border-line bg-panel/70 px-3.5 py-2.5 text-[13px]" data-testid="limits-of-agents">
         <summary className="flex cursor-pointer list-none items-center gap-1.5 font-medium text-ink-2 hover:text-ink">
-          <Icon name="chevron" size={14} className="transition-transform group-open:rotate-90" /> What can&apos;t it do yet?
+          <Icon name="chevron" size={14} className="transition-transform group-open:rotate-90" /> What works today, and what doesn&apos;t yet
         </summary>
-        <ul className="mt-2 space-y-1 text-ink-2">
-          {[...new Set((Object.keys(KITS) as AgentId[]).flatMap((a) => KITS[a].cant))].map((x) => (
-            <li key={x} className="flex gap-1.5">
-              <Icon name="x" size={13} stroke={2.4} className="mt-[3px] shrink-0 text-ink-3" /> {x}
-            </li>
-          ))}
-        </ul>
-        <p className="mt-2 text-ink-3">If you ask for one of these, the agent says so and offers the closest thing that works.</p>
+        {(["now", "exchange", "mainnet", "never"] as const).map((w) => (
+          <div key={w} className="mt-3">
+            <div className={`text-[12px] font-semibold uppercase tracking-wide ${w === "now" ? "text-good" : w === "exchange" ? "text-agent-ink" : "text-ink-3"}`}>{WHERE_LABEL[w]}</div>
+            <ul className="mt-1 space-y-1 text-ink-2">
+              {CAPABILITIES.filter((c) => c.where === w).map((c) => (
+                <li key={c.what} className="flex gap-1.5">
+                  <Icon name={w === "now" || w === "exchange" ? "check" : "x"} size={13} stroke={2.4} className={`mt-[3px] shrink-0 ${w === "now" ? "text-good" : w === "exchange" ? "text-agent-ink" : "text-ink-3"}`} />
+                  <span>
+                    {c.what}
+                    <span className="num text-ink-3">
+                      {c.cost ? ` · ${c.cost} USDC` : w === "now" ? " · free" : ""}
+                      {c.note && w !== "now" ? ` · ${c.note}` : ""}
+                    </span>
+                  </span>
+                </li>
+              ))}
+            </ul>
+          </div>
+        ))}
+        <p className="mt-3 text-ink-3">Without an exchange connected, orders are practice orders: everything else still runs for real. Ask for something that isn&apos;t possible and the agent says so, then offers the closest thing that works.</p>
       </details>
 
       <p className="text-center text-[12.5px] text-ink-3" data-testid="ask-status">

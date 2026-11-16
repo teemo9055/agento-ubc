@@ -30,6 +30,7 @@ export function tweaksFor(agent: AgentId, p: Proposal): string[] {
     if (coin && can("oracle_price") && !oracleChecked) out.push(`Only if Chainlink agrees ($${price("oracle_price")})`);
     if (can("odds_history")) out.push(`Check the odds history first ($${price("odds_history")})`);
     if (a.quantity > 2) out.push(`Make it ${Math.max(1, Math.round(a.quantity / 2))} contracts`);
+    if (can("trade_tape")) out.push(`See who's buying first ($${price("trade_tape")})`);
     if (!p.hedge && a.maxPrice > 0.05) out.push(`Only if it drops to ${Math.round((a.maxPrice - 0.03) * 100)}¢`);
   } else if (a?.kind === "prediction_order") {
     out.push(`Ask ${Math.min(99, Math.round(a.maxPrice * 100) + 2)}¢ instead`);
@@ -65,9 +66,10 @@ export function suggestionsFor(agent: AgentId, fromModel: string[], opts: { prop
   if (opts.plan) return add(["Not now", ...fromModel.filter((s) => !accept.test(s))], ["Yes, start the plan"], 3);
   if (opts.proposal) {
     const out = ["Yes, set it up"];
-    add(fromModel.filter((s) => !accept.test(s)).slice(0, 1), out, 3);
-    add(tweaksFor(agent, opts.proposal), out, 3);
-    return add(["Not now"], out, 3);
+    // Up to four ways to change it: they are the quick options above the chat box.
+    add(fromModel.filter((s) => !accept.test(s)).slice(0, 1), out, 5);
+    add(tweaksFor(agent, opts.proposal), out, 5);
+    return add(["Not now"], out, 6);
   }
   return add(DEFAULTS[agent], add(fromModel.filter((s) => !accept.test(s)), [], 3), 3);
 }

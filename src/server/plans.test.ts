@@ -158,7 +158,7 @@ describe("plans across agents", () => {
     const forward = await check([step("travo", "drive", [2]), step("travo", "drive")]);
     expect("error" in forward && forward.error).toMatch(/can only wait for steps before it/);
     const noOrder = await check([step("travo", "drive"), step("inso", "order", [1], "filled")]);
-    expect("error" in noOrder && noOrder.error).toMatch(/places no order/);
+    expect("error" in noOrder && noOrder.error).toMatch(/places an order/);
     const noSell = await check([step("inso", "order"), step("inso", "order", [1], "filled", true)]);
     expect("error" in noSell && noSell.error).toMatch(/exactly one step that sells/);
     const ok = await check([step("trado", "sell"), step("inso", "order", [1], "filled", true), step("travo", "drive")]);
@@ -202,5 +202,87 @@ describe("plans across agents", () => {
     const steps = orch.getRun(id)!.plan!.steps;
     expect(steps.map((s) => s.status)).toEqual(["failed", "done", "skipped"]);
     expect(steps[2].note).toMatch(/Step 1 didn't go through/);
+  });
+
+  const offer = async (p: Awaited<ReturnType<typeof plan>>) => {
+    const r = await orch.createRun({ agent: "inso", task: "hello there, a plan please" }, { quiet: true });
+    orch.offerPlan(r.id, p);
+    return r.id;
+  };
+  const shape = (id: string) => orch.getRun(id)!.plan!.steps.map((x) => [x.id, x.agent, x.after.join("+"), x.gate]);
+
+  it("a plan can be reshaped by hand before it starts, and stays valid", async () => {
+    const id = await offer(await plan([step("inso", "order"), step("travo", "drive", [1])]));
+    // Add a step in plain words: the right agent is picked and builds it.
+    await orch.editPlanOf(id, { op: "add", agent: "auto", brief: "Drive from Calgary to Banff" });
+    expect(shape(id)).toEqual([
+      ["s1", "inso", "", "done"],
+      ["s2", "travo", "s1", "done"],
+      ["s3", "travo", "", "done"],
+    ]);
+    expect(orch.getRun(id)!.plan!.steps[2].proposal.action).toMatchObject({ kind: "itinerary", stops: ["Calgary", "Banff"] });
+
+    // Make the first step wait for the new one: the steps are put back in running order and renumbered.
+    await orch.editPlanOf(id, { op: "wire", step: "s1", after: ["s3"] });
+    expect(shape(id)).toEqual([
+      ["s1", "travo", "", "done"],
+      ["s2", "inso", "s1", "done"],
+      ["s3", "travo", "s2", "done"],
+    ]);
+
+    // Things that can't work are refused with the reason, and nothing changes.
+    await expect(orch.editPlanOf(id, { op: "wire", step: "s1", after: ["s3"] })).rejects.toThrow(/in a circle/);
+    await expect(orch.editPlanOf(id, { op: "wire", step: "s2", after: ["s1"], gate: "filled" })).rejects.toThrow(/places an order/);
+    expect(shape(id)[1]).toEqual(["s2", "inso", "s1", "done"]);
+
+    // Removing a step frees whatever was waiting on it.
+    await orch.editPlanOf(id, { op: "remove", step: "s2" });
+    expect(shape(id)).toEqual([
+      ["s1", "travo", "", "done"],
+      ["s2", "travo", "", "done"],
+    ]);
+
+    // What starts is the plan as edited, not as first proposed.
+    await orch.startPlan(id, orch.getRun(id)!.plan!.id);
+    await until(() => orch.getRun(id)!.plan?.status === "done", "the edited plan to finish");
+    expect(orch.getRun(id)!.plan!.steps.map((x) => [x.agent, x.status])).toEqual([
+      ["travo", "done"],
+      ["travo", "done"],
+    ]);
+    await expect(orch.editPlanOf(id, { op: "remove", step: "s1" })).rejects.toThrow(/before it starts/);
+  });
+
+  it("a step that didn't go through can be retried, and what was skipped because of it gets its turn back", async () => {
+    pause();
+    const id = await begin(await plan([step("travo", "drive"), step("inso", "order", [1])]));
+    await until(() => orch.getRun(id)!.plan!.steps[0].status === "running" && Boolean(orch.getRun(id)!.plan!.steps[0].runId), "step 1 to start");
+    await orch.cancel(orch.getRun(id)!.plan!.steps[0].runId!);
+    hold.release();
+    await until(() => orch.getRun(id)!.plan?.status === "done", "the plan to settle");
+    expect(orch.getRun(id)!.plan!.steps.map((x) => x.status)).toEqual(["failed", "skipped"]);
+
+    await orch.retryPlanStep(id, "s1");
+    await until(() => orch.getRun(id)!.plan?.status === "done", "the retried plan to finish");
+    expect(orch.getRun(id)!.plan!.steps.map((x) => x.status)).toEqual(["done", "done"]);
+    await expect(orch.retryPlanStep(id, "s1")).rejects.toThrow(/only a step that didn't go through/);
+  });
+
+  it("long workflows: a dozen steps in stages run through to the end", async () => {
+    // Four independent lookups, four orders each waiting on one of them, three trips after pairs, one last step after everything.
+    const p = await plan([
+      ...[0, 1, 2, 3].map(() => step("travo", "drive")),
+      ...[1, 2, 3, 4].map((n) => step("inso", "order", [n])),
+      step("travo", "drive", [5, 6]),
+      step("travo", "drive", [7, 8]),
+      step("inso", "order", [9, 10]),
+      step("travo", "drive", [11]),
+    ]);
+    expect(p.steps).toHaveLength(12);
+    const id = await begin(p);
+    await until(() => orch.getRun(id)!.plan?.status === "done", "the long plan to finish");
+    const done = orch.getRun(id)!.plan!.steps;
+    expect(done.every((x) => x.status === "done")).toBe(true);
+    // Nothing started before what it waited for had finished.
+    for (const st of done) for (const a of st.after) expect(Date.parse(orch.getRun(st.runId!)!.createdAt)).toBeGreaterThanOrEqual(Date.parse(orch.getRun(done.find((x) => x.id === a)!.runId!)!.finishedAt!));
   });
 });

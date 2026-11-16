@@ -245,3 +245,63 @@ test("a job has one thing in focus: the conversation is there when asked for", a
   await page.getByTestId("toggle-chat").click();
   await expect(page.getByTestId("msg-agent").first()).toBeVisible();
 });
+
+test("the work is drawn beside the chat, and the likeliest next step is one tap", async ({ page }) => {
+  await prefs(page);
+  await page.goto("/new");
+  await page.fill("#task", "What are BTC odds right now?");
+  await page.getByRole("button", { name: /Ask/ }).click();
+  await expect(page.getByTestId("move-card")).toBeVisible({ timeout: 30_000 });
+  // Left: the move as a drawing, with what it reads and does and the most it can cost.
+  const space = page.getByTestId("workspace");
+  await expect(space).toHaveAttribute("data-filled", "");
+  await expect(space.locator("[data-lane=does] [data-block]")).toHaveCount(1);
+  await expect(space.locator("[data-ghost]")).toHaveCount(0);
+  await expect(page.getByTestId("workspace-cost")).toContainText("Up to $");
+  await expect(page.getByTestId("stages").locator("[aria-current=step]")).toHaveText(/Shape it/);
+  // Right: ways to change it, one tap each.
+  await expect(page.getByTestId("quick").getByRole("button").first()).toBeVisible();
+  await page.getByTestId("adopt-move").click();
+  await expect(page.getByTestId("review-card")).toBeVisible({ timeout: 30_000 });
+  await expect(page.getByTestId("stages").locator("[aria-current=step]")).toHaveText(/Review/);
+  // The chat stays beside the review, and its first option runs the job.
+  await expect(page.getByTestId("quick-primary")).toHaveText("Approve and start");
+  await page.getByTestId("quick-primary").click();
+  await finished(page);
+  await expect(page.getByTestId("stages").locator("[aria-current=step]")).toHaveText(/Done/);
+});
+
+test("before there is a move, the workspace shows the outline of the kind of work", async ({ page }) => {
+  await prefs(page);
+  await page.goto("/new");
+  await page.getByTestId("goals").getByRole("button", { name: /Protect against a cost/ }).click();
+  await expect(page.getByTestId("answer-options")).toBeVisible({ timeout: 30_000 });
+  const space = page.getByTestId("workspace");
+  await expect(space).toHaveAttribute("data-kind", "hedge");
+  await expect(space.locator("[data-ghost]").first()).toBeVisible();
+  // Another kind of work is a tab away, with an example that lands in the chat box to send or change.
+  await page.getByTestId("kind-trip").click();
+  await expect(space).toHaveAttribute("data-kind", "trip");
+  await page.getByTestId("workspace-example").click();
+  await expect(page.getByTestId("chat-input")).toHaveValue(/Dallas/);
+});
+
+test("the showcase builds a long plan that can be changed before anything is paid", async ({ page }) => {
+  await prefs(page);
+  await page.goto("/new");
+  await page.getByTestId("showcase").click();
+  const board = page.getByTestId("plan-card");
+  await expect(board).toBeVisible({ timeout: 60_000 });
+  const steps = board.getByTestId("plan-step");
+  const n = await steps.count();
+  expect(n).toBeGreaterThanOrEqual(6);
+  // The chat leads with starting it; nothing has run.
+  await expect(page.getByTestId("quick-primary")).toHaveText(`Start all ${n} steps`);
+  await expect(board.getByTestId("plan-status")).not.toHaveText("Finished");
+  // Take a step off the board.
+  await steps.last().click();
+  await expect(page.getByTestId("plan-inspector")).toBeVisible();
+  await page.getByTestId("plan-remove").click();
+  await expect(steps).toHaveCount(n - 1);
+  await expect(page.getByTestId("quick-primary")).toHaveText(`Start all ${n - 1} steps`);
+});

@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { z } from "zod";
 import type { SeqEvent } from "@/lib/events";
-import { adopt, approve, backToChat, cancel, startPlan, stopPlan, rerun, saveRun, cancelRunOrder, refreshRunOrder, sendChat, decideReapproval, editCard, fundingInfo, previewEdit, reapprovalPlan, resolveFailure, subscribe } from "@/server/orchestrator";
+import { adopt, approve, backToChat, cancel, startPlan, stopPlan, editPlanOf, retryPlanStep, rerun, saveRun, cancelRunOrder, refreshRunOrder, sendChat, decideReapproval, editCard, fundingInfo, previewEdit, reapprovalPlan, resolveFailure, subscribe } from "@/server/orchestrator";
 
 export const dynamic = "force-dynamic";
 
@@ -12,9 +12,16 @@ const Edit = z.object({ card: z.enum(["deliverable", "risk", "method", "price"])
 const Hash = z.string().regex(/^0x[0-9a-fA-F]{64}$/);
 const Reapproval = z.object({ requestId: z.string(), outcome: z.enum(["approved", "denied"]), amount: z.string().regex(/^\d+$/).optional(), txHash: Hash.optional() });
 const Failure = z.object({ failureId: z.string(), action: z.enum(["retry", "skip", "edit", "cancel", "topup"]), txHash: Hash.optional() });
-const Chat = z.object({ text: z.string().min(1).max(600) });
+const Chat = z.object({ text: z.string().min(1).max(1000) });
 const Adopt = z.object({ proposalId: z.string() });
 const StartPlan = z.object({ planId: z.string() });
+const StepId = z.string().regex(/^s\d{1,2}$/);
+const PlanEdit = z.discriminatedUnion("op", [
+  z.object({ op: z.literal("add"), agent: z.enum(["auto", "inso", "trado", "travo"]), brief: z.string().min(4).max(260), after: z.array(StepId).max(6).optional() }),
+  z.object({ op: z.literal("change"), step: StepId, brief: z.string().min(2).max(200) }),
+  z.object({ op: z.literal("remove"), step: StepId }),
+  z.object({ op: z.literal("wire"), step: StepId, after: z.array(StepId).max(6), gate: z.enum(["done", "filled"]).optional(), useProceeds: z.boolean().optional() }),
+]);
 const Approve = z.object({ txHash: Hash.optional() });
 
 export async function POST(req: NextRequest, ctx: Ctx) {
@@ -40,6 +47,12 @@ export async function POST(req: NextRequest, ctx: Ctx) {
       case "save": {
         const b = (await req.json().catch(() => ({}))) as { saved?: boolean };
         return NextResponse.json(saveRun(id, b.saved !== false));
+      }
+      case "plan-edit":
+        return NextResponse.json(await editPlanOf(id, PlanEdit.parse(await req.json())));
+      case "plan-retry": {
+        const b = z.object({ step: StepId }).parse(await req.json());
+        return NextResponse.json(await retryPlanStep(id, b.step));
       }
       case "plan-stop":
         return NextResponse.json(await stopPlan(id));

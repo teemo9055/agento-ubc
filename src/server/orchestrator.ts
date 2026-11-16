@@ -21,7 +21,9 @@ import type {
 import { AGENTS } from "./agents";
 import { aiSummary } from "./agents/ai-planning";
 import { aiEnabled, type AiUsage } from "./ai";
-import { exploreTurn } from "./explore";
+import { buildPlanStep, exploreTurn } from "./explore";
+import { editPlan, type PlanOp } from "./plan-edit";
+import { routeAgent } from "./route";
 import { cancelOrder, refreshOrder } from "./exchange";
 import { stillTradable, toProposalInput, validateProposal } from "./tools";
 import { ensureGatewayFunds, GatewayFundsError } from "./nanopay";
@@ -219,7 +221,7 @@ export async function createRun(input: CreateInput, opts: { wait?: boolean; quie
   const run: Run = {
     id: id(),
     agent: input.agent,
-    task: input.task.trim().slice(0, 280),
+    task: input.task.trim().slice(0, 1000),
     mode,
     faults: input.faults ?? [],
     status: input.proposal ? "draft" : "exploring",
@@ -287,7 +289,7 @@ export function sendChat(runId: string, text: string): Promise<Run> {
   const ctl = ctlOf(runId);
   if (!["exploring", "draft"].includes(ctl.run.status)) throw new Error("this job is already running");
   if (chatBusy.has(runId)) throw new Error("the agent is still answering");
-  const msg: ChatMsg = { id: id(), role: "user", text: text.trim().slice(0, 600), at: now() };
+  const msg: ChatMsg = { id: id(), role: "user", text: text.trim().slice(0, 1000), at: now() };
   if (!msg.text) throw new Error("empty message");
   chatBusy.add(runId);
   emit(ctl, { type: "chat.message", message: msg });
@@ -1106,7 +1108,8 @@ export async function startPlan(runId: string, planId: string) {
   if (ctl.run.status !== "exploring") throw new Error("go back to the chat to start a plan");
   if (ctl.run.plan?.status === "running") throw new Error("a plan is already running here");
   if (ctl.run.payer === "passkey") throw new Error("Plans approve each step for you, which needs the server wallet; with a passkey wallet, run the steps one at a time");
-  const proposed = [...(ctl.run.chat ?? [])].reverse().find((m) => m.plan?.id === planId)?.plan;
+  // The plan as the user last left it on the board, or as first proposed.
+  const proposed = ctl.run.plan?.id === planId && ctl.run.plan.status === "proposed" ? ctl.run.plan : [...(ctl.run.chat ?? [])].reverse().find((m) => m.plan?.id === planId)?.plan;
   if (!proposed) throw new Error("plan not found");
   const plan: Plan = { ...proposed, status: "running", steps: proposed.steps.map((s) => ({ ...s, status: "waiting", runId: undefined, note: undefined })) };
   emit(ctl, { type: "plan.updated", plan });
@@ -1124,6 +1127,65 @@ export function offerPlan(runId: string, plan: Plan, text = plan.why) {
   const ctl = ctlOf(runId);
   if (ctl.run.status !== "exploring") throw new Error("a plan can only be offered while chatting");
   emit(ctl, { type: "chat.message", message: { id: id(), role: "agent", text, at: now(), plan: { ...plan, status: "proposed" }, suggestions: ["Yes, start the plan", "Not now"] } });
+  return ctl.run;
+}
+
+/** The plan the user is looking at: edited on the board, or the latest one proposed in chat. */
+function currentPlan(ctl: Ctl): Plan | undefined {
+  const latest = [...(ctl.run.chat ?? [])].reverse().find((m) => m.plan)?.plan;
+  return ctl.run.plan && (!latest || ctl.run.plan.id === latest.id) ? ctl.run.plan : latest;
+}
+
+const planBusy = new Set<string>();
+
+/** One edit to a plan that hasn't started: add, change, remove or rewire a step. */
+export async function editPlanOf(runId: string, op: PlanOp | { op: "add"; agent: "auto" | AgentId; brief: string; after?: string[] }) {
+  const ctl = ctlOf(runId);
+  const plan = currentPlan(ctl);
+  if (!plan) throw new Error("there is no plan to change");
+  if (ctl.run.status !== "exploring" || plan.status !== "proposed") throw new Error("a plan can only be changed before it starts");
+  if (planBusy.has(runId)) throw new Error("the plan is still being changed");
+  planBusy.add(runId);
+  try {
+    const real: PlanOp = op.op === "add" ? { ...op, agent: op.agent === "auto" ? await routeAgent(op.brief) : op.agent } : op;
+    const r = await editPlan(plan, real, async (agent, brief, id) => {
+      const built = await buildPlanStep(agent, brief, id);
+      if ("usage" in built) for (const u of built.usage) trackAi(ctl, "plan", u);
+      return built;
+    });
+    if ("error" in r) throw new Error(r.error);
+    emit(ctl, { type: "plan.updated", plan: r.plan });
+    return ctl.run;
+  } finally {
+    planBusy.delete(runId);
+  }
+}
+
+/**
+ * Gives a step that didn't go through another try. The steps that were skipped because of it
+ * get their turn back too.
+ */
+export async function retryPlanStep(runId: string, stepId: string) {
+  const ctl = ctlOf(runId);
+  const plan = ctl.run.plan;
+  if (!plan || plan.status === "proposed") throw new Error("the plan hasn't started");
+  const target = plan.steps.find((s) => s.id === stepId);
+  if (!target || (target.status !== "failed" && target.status !== "skipped")) throw new Error("only a step that didn't go through can be retried");
+  const fresh = (s: PlanStep): PlanStep => ({ ...s, status: "waiting", runId: undefined, note: undefined });
+  const steps = plan.steps.map((s) => (s.id === stepId ? fresh(s) : s));
+  // Anything downstream that was skipped is waiting again; it only runs if what it needs now succeeds.
+  for (let changed = true; changed; ) {
+    changed = false;
+    steps.forEach((s, i) => {
+      if (s.status === "skipped" && s.after.some((a) => steps.find((x) => x.id === a)?.status === "waiting")) {
+        steps[i] = fresh(s);
+        changed = true;
+      }
+    });
+  }
+  emit(ctl, { type: "plan.updated", plan: { ...plan, status: "running", steps } });
+  log(ctl, { kind: "failure", what: `Step ${stepId.slice(1)} of the plan retried`, why: target.note ?? "It didn't go through the first time", outcome: "retried", by: "user" });
+  void advancePlan(runId);
   return ctl.run;
 }
 
@@ -1182,7 +1244,10 @@ async function advanceNow(parentId: string) {
     else if (child.status === "done") {
       const o = child.order;
       s.status = "done";
-      s.note = o && o.status !== "simulated" ? (o.status === "filled" ? "Filled" : o.status === "open" ? "Order placed, waiting to fill" : o.status[0].toUpperCase() + o.status.slice(1)) : (child.deliverable?.summary ?? "Done").slice(0, 120);
+      // What the step actually found, in its own figures: the lookups' readings, or the order's state.
+      const read = child.phases.filter((p) => p.lineId && p.lineId !== "order" && p.note && p.note !== p.label).map((p) => p.note);
+      const ordered = o ? (o.status === "filled" ? "Filled" : o.status === "open" ? "Order placed, waiting to fill" : o.status === "simulated" ? `Practice order: ${o.detail.replace(/^Practice only: /, "")}` : o.status === "skipped" ? o.detail : o.status[0].toUpperCase() + o.status.slice(1)) : "";
+      s.note = ([ordered, ...(ordered ? [] : read)].filter(Boolean).join(" · ") || child.deliverable?.summary || "Done").slice(0, 240);
     } else if (child.status === "cancelled") Object.assign(s, { status: "failed", note: "Cancelled" });
     else s.note = child.pendingFailures.length + child.pendingReapprovals.length ? "Needs you: open the step" : child.status === "draft" ? "Waiting for approval" : "Running";
   }
@@ -1199,7 +1264,8 @@ async function advanceNow(parentId: string) {
     if (deps.some((d) => d.status !== "done")) continue;
     let budget: number | undefined;
     if (s.gate === "filled") {
-      const orders = deps.map((d) => ({ d, run: d.runId ? runs.get(d.runId)?.run : undefined }));
+      // Only the steps that placed an order have a fill to wait for; lookups and routes just had to finish.
+      const orders = deps.filter((d) => d.proposal.action && d.proposal.action.kind !== "itinerary").map((d) => ({ d, run: d.runId ? runs.get(d.runId)?.run : undefined }));
       // An order placed earlier may have filled since: look before deciding.
       await Promise.all(orders.filter((x) => x.run?.order?.status === "open").map((x) => refreshRunOrder(x.run!.id).catch(() => undefined)));
       const state = orders.map((x) => ({ d: x.d, st: x.d.runId ? runs.get(x.d.runId)?.run.order?.status : undefined }));
@@ -1262,7 +1328,7 @@ async function advanceNow(parentId: string) {
     emit(ctl, { type: "plan.updated", plan: { ...plan, status: "done", steps } });
     emit(ctl, {
       type: "chat.message",
-      message: { id: id(), role: "agent", text: done === steps.length ? `All ${steps.length} steps are done.` : `Plan finished: ${done} of ${steps.length} steps done. ${steps.filter((s) => s.status !== "done").map((s) => `${s.proposal.title}: ${s.note ?? s.status}`).join(" · ")}`, at: now() },
+      message: { id: id(), role: "agent", text: done === steps.length ? `All ${steps.length} steps are done.\n${steps.map((x) => `${x.id.slice(1)}. ${x.proposal.title}: ${x.note ?? "done"}`).join("\n")}` : `Plan finished: ${done} of ${steps.length} steps done. ${steps.filter((s) => s.status !== "done").map((s) => `${s.proposal.title}: ${s.note ?? s.status}`).join(" · ")}`, at: now() },
     });
     return;
   }

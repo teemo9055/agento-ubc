@@ -568,13 +568,13 @@ export const PlanInput = z.object({
       z.object({
         agent: z.enum(["inso", "trado", "travo"]).describe("inso: prediction-market orders, hedges and sells. trado: spot crypto orders and onchain checks. travo: driving itineraries."),
         brief: z.string().min(8).max(260).describe("What this agent should do, complete on its own: name the market, coin, places and amounts. That agent builds the move with its own tools; it never sees this conversation."),
-        after: z.array(z.number().int().min(1).max(5)).max(4).describe("Numbers of the earlier steps this one must wait for. Empty when it doesn't depend on any: independent steps run at the same time."),
+        after: z.array(z.number().int().min(1).max(12)).max(6).describe("Numbers of the earlier steps this one must wait for. Empty when it doesn't depend on any: independent steps run at the same time."),
         gate: z.enum(["done", "filled"]).describe("done: start once the steps in `after` finish. filled: only once their orders have actually filled."),
         useProceeds: z.boolean().describe("true when this step should spend what the sell it waits for brought in; its budget is set to that amount when it starts. Needs gate filled."),
       }),
     )
     .min(2)
-    .max(5),
+    .max(12),
   unavailable: z
     .array(z.object({ what: z.string().max(80), why: z.string().max(160) }))
     .max(4)
@@ -595,7 +595,8 @@ export function checkPlanShape(steps: Pick<PlanStep, "id" | "after" | "gate" | "
     const deps = s.after.map((id) => steps.find((x) => x.id === id));
     if (deps.some((d) => !d) || s.after.some((id) => Number(id.slice(1)) >= n)) return `Step ${n} can only wait for steps before it`;
     if (s.gate === "filled" && !s.after.length) return `Step ${n} waits for an order to fill but names no step in \`after\``;
-    if (s.gate === "filled" && deps.some((d) => !placesOrder(d!.proposal))) return `Step ${n} waits for an order to fill, but a step it waits for places no order. Use gate done.`;
+    // A fill gate needs an order to wait on; steps without one (lookups, routes) just have to finish.
+    if (s.gate === "filled" && !deps.some((d) => placesOrder(d!.proposal))) return `Step ${n} waits for an order to fill, but nothing it waits for places an order. Use gate done.`;
     if (s.useProceeds && (s.gate !== "filled" || deps.filter((d) => isSell(d!.proposal)).length !== 1)) return `Step ${n} spends proceeds, so it must wait (gate filled) for exactly one step that sells something`;
   }
   return null;
@@ -606,8 +607,14 @@ export async function validatePlan(input: unknown, id: string, build: BuildStep)
   const parsed = PlanInput.safeParse(input);
   if (!parsed.success) return { error: `Invalid plan: ${parsed.error.issues.map((i) => `${i.path.join(".")} ${i.message}`).join("; ")}` };
   const p = parsed.data;
-  // Each agent works its own step, all at once.
-  const built = await Promise.all(p.steps.map((s, i) => build(s.agent, s.brief, `${id}-s${i + 1}`)));
+  // Each agent works its own step. A few at a time, so a long plan doesn't flood the model.
+  const built: Awaited<ReturnType<BuildStep>>[] = new Array(p.steps.length);
+  let next = 0;
+  await Promise.all(
+    Array.from({ length: Math.min(4, p.steps.length) }, async () => {
+      for (let i = next++; i < p.steps.length; i = next++) built[i] = await build(p.steps[i].agent, p.steps[i].brief, `${id}-s${i + 1}`);
+    }),
+  );
   const failed = built.map((b, i) => ("error" in b ? `Step ${i + 1} (${p.steps[i].agent}): ${b.error}` : null)).filter(Boolean);
   if (failed.length) return { error: failed.join(" | ") };
   const steps: PlanStep[] = p.steps.map((s, i) => ({

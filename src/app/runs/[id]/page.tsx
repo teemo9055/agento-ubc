@@ -11,6 +11,9 @@ import { ApproveModal, Cards, CostTable } from "@/components/WorkOrder";
 import { Chat, stepTarget, targetKey, type EditTarget } from "@/components/Chat";
 import { OrderStatus } from "@/components/OrderStatus";
 import { Details, ReviewCard, StatusCard } from "@/components/JobBrief";
+import { PlanBoard, planOf } from "@/components/PlanBoard";
+import { Assemble } from "@/components/Assemble";
+import { Stages, Workspace } from "@/components/Workspace";
 import { FinishCard } from "@/components/Celebrate";
 import { AgentScene } from "@/components/AgentScene";
 import { KITS } from "@/lib/agentKit";
@@ -88,6 +91,7 @@ export default function RunPage({ params }: { params: Promise<{ id: string }> })
   const [finish, setFinish] = useState<"done" | "cancelled" | null>(null);
   const [details, setDetails] = useState(false);
   const [showChat, setShowChat] = useState(false);
+  const [prefill, setPrefill] = useState<{ text: string; n: number } | null>(null);
   useAgentTheme(run?.agent);
   const wide = useWide();
 
@@ -96,6 +100,11 @@ export default function RunPage({ params }: { params: Promise<{ id: string }> })
   }, [run]);
 
   const status = run?.status;
+  const planId = run ? planOf(run)?.id : undefined;
+  // A plan arriving turns the conversation into a board; on phones that means showing the board tab.
+  useEffect(() => {
+    if (planId) setTab("plan");
+  }, [planId]);
   // Phones open on the chat while exploring and on the plan afterwards, unless the user picked a tab.
   const shownTab = tab ?? (status === "exploring" ? "chat" : "plan");
 
@@ -105,8 +114,10 @@ export default function RunPage({ params }: { params: Promise<{ id: string }> })
   }, [status]);
 
   // After approval the layout changes from plan to progress; bring the progress into view.
+  const [live, setLive] = useState(false);
   const prevStatus = useRef(status);
   useEffect(() => {
+    if (prevStatus.current === "draft" && (status === "funding" || status === "running")) setLive(true);
     if (prevStatus.current === "draft" && (status === "funding" || status === "running")) window.scrollTo({ top: 0, behavior: "smooth" });
     if (prevStatus.current === "exploring" && status === "draft") setTab("plan");
     prevStatus.current = status;
@@ -204,12 +215,13 @@ export default function RunPage({ params }: { params: Promise<{ id: string }> })
               Step {run.stepId?.replace(/^s/, "")} of a plan · back to the plan
             </Link>
           )}
-          <h1 style={{ viewTransitionName: `task-${run.id}` }} className="mt-1 max-w-2xl text-[19px] font-semibold leading-tight tracking-tight sm:text-[24px]">
+          <h1 style={{ viewTransitionName: `task-${run.id}` }} className="mt-1 line-clamp-3 max-w-2xl text-[19px] font-semibold leading-tight tracking-tight sm:text-[24px]">
             {run.proposal?.title ?? run.task}
           </h1>
         </div>
       </div>
-      <div className="flex items-end gap-4">
+      <div className="flex items-center gap-4">
+        {wide && <Stages run={run} />}
         {wide && !exploring && !draft && (run.chat?.length ?? 0) > 0 && (
           <Button variant="quiet" className="h-9 text-[13px]" onClick={() => setShowChat((v) => !v)} aria-pressed={showChat} data-testid="toggle-chat">
             <Icon name="chat" size={15} /> {showChat ? "Hide conversation" : "Conversation"}
@@ -236,7 +248,9 @@ export default function RunPage({ params }: { params: Promise<{ id: string }> })
 
       {draft && (
         <>
-          <ReviewCard run={run} />
+          <Assemble play={run.proposal ? `review-${run.proposal.id}` : null}>
+            <ReviewCard run={run} />
+          </Assemble>
           <AnimatePresence>
             {run.editNote && (
               <motion.p initial={{ opacity: 0, y: 4 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0 }} className={`text-right text-[12.5px] ${run.editNote.ok ? "text-ink-2" : "text-bad"}`}>
@@ -291,7 +305,9 @@ export default function RunPage({ params }: { params: Promise<{ id: string }> })
 
       {!draft && !planning && !exploring && (
         <>
-          <StatusCard run={run} onNeedsYou={pending.length > 0 && dismissed === head?.id ? () => setDismissed(null) : undefined} onCancel={() => setCancelling(true)} />
+          <Assemble play={live ? "status" : null}>
+            <StatusCard run={run} onNeedsYou={pending.length > 0 && dismissed === head?.id ? () => setDismissed(null) : undefined} onCancel={() => setCancelling(true)} />
+          </Assemble>
           <div className="sr-only" aria-live="polite">
             {pending.length ? `${pending.length} needs your decision` : ""}
           </div>
@@ -348,13 +364,31 @@ export default function RunPage({ params }: { params: Promise<{ id: string }> })
           <div className="min-w-0 flex-1 text-[14px] font-semibold">{focus ? "Change this part" : `Conversation with ${theme.name}`}</div>
         </div>
       )}
-      <Chat run={run} focus={focus} onFocusClear={() => setFocus(null)} onAdopted={() => setTab("plan")} />
+      <Chat run={run} focus={focus} onFocusClear={() => setFocus(null)} onAdopted={() => setTab("plan")} onShowPlan={() => setTab("plan")} plan={planOf(run)} onApprove={run.status === "draft" ? approveNow : undefined} prefill={prefill} drawn={Boolean(wide) && (exploring || run.status === "draft")} />
     </div>
   );
 
-  // One thing in focus at a time: the conversation while exploring, the job afterwards.
-  // The chat sits beside a job only when the user is changing a part of it or asked to see it.
-  const beside = wide && !exploring && hasChat && (Boolean(focus) || (showChat && !draft));
+  const boardPlan = exploring ? planOf(run) : undefined;
+  const talkBar = (
+    <div className="mb-3 flex items-center justify-between gap-3">
+      <div className="flex items-center gap-2.5">
+        <Link href="/" aria-label="All jobs" className="inline-flex h-8 w-8 items-center justify-center rounded-lg text-ink-2 hover:bg-ink/5 hover:text-ink">
+          <Icon name="back" size={16} />
+        </Link>
+        <AgentIcon agent={run.agent} size={30} outfit={runOutfit(run)} mood={run.thinking ? "working" : "idle"} />
+        {tags}
+      </div>
+      {wide && boardPlan && <Stages run={run} plan={boardPlan} />}
+      <span className="text-[12.5px] text-ink-3" data-testid="free-note">
+        {boardPlan && boardPlan.status !== "proposed" ? "Each step is approved within the limits on its card" : "Free until you approve something"}
+      </span>
+    </div>
+  );
+
+  // The work is drawn on the left and talked about on the right, from the first message until
+  // it is approved. Once it runs the chat is closed, so it steps aside unless asked for.
+  const shaping = run.status === "draft" || run.status === "funding";
+  const beside = wide && !exploring && hasChat && (shaping || Boolean(focus) || showChat);
 
   return (
     <div className={`pb-24 sm:pb-0 ${beside ? "lg:mx-[calc(50%-min(50vw-24px,720px))]" : ""}`}>
@@ -366,20 +400,50 @@ export default function RunPage({ params }: { params: Promise<{ id: string }> })
         )}
       </AnimatePresence>
 
-      {exploring ? (
-        <div className="mx-auto flex max-w-2xl flex-col" data-testid="talk">
-          <div className="mb-3 flex items-center justify-between gap-3">
-            <div className="flex items-center gap-2.5">
-              <Link href="/" aria-label="All jobs" className="inline-flex h-8 w-8 items-center justify-center rounded-lg text-ink-2 hover:bg-ink/5 hover:text-ink">
-                <Icon name="back" size={16} />
-              </Link>
-              <AgentIcon agent={run.agent} size={30} outfit={runOutfit(run)} mood={run.thinking ? "working" : "idle"} />
-              {tags}
+      {boardPlan ? (
+        // A plan is bigger than a chat bubble: the board takes the page and the conversation sits beside it.
+        <div className="lg:mx-[calc(50%-min(50vw-24px,760px))]" data-testid="plan-mode">
+          {talkBar}
+          {wide ? (
+            <div className="grid grid-cols-[minmax(0,1fr)_380px] items-start gap-6">
+              <PlanBoard plan={boardPlan} run={run} />
+              <aside className="sticky top-[84px] h-[calc(100dvh-170px)] min-h-[460px]" aria-label="Chat">
+                {chatPanel}
+              </aside>
             </div>
-            <span className="text-[12.5px] text-ink-3" data-testid="free-note">
-              Free until you approve something
-            </span>
+          ) : (
+            <>
+              <div role="tablist" aria-label="View" className="sticky top-16 z-20 -mx-4 mb-4 flex gap-1 border-b border-line bg-surface/95 px-4 py-2 backdrop-blur-md">
+                {(["plan", "chat"] as const).map((t) => (
+                  <button
+                    key={t}
+                    role="tab"
+                    aria-selected={(tab ?? "plan") === t}
+                    onClick={() => setTab(t)}
+                    className={`pressable inline-flex h-9 flex-1 items-center justify-center gap-1.5 rounded-lg text-[14px] font-medium transition-colors ${(tab ?? "plan") === t ? "bg-panel text-ink shadow-[0_0_0_1px_var(--color-line)]" : "text-ink-2"}`}
+                  >
+                    <Icon name={t === "plan" ? "graph" : "chat"} size={16} />
+                    {t === "plan" ? "Plan" : "Chat"}
+                  </button>
+                ))}
+              </div>
+              {(tab ?? "plan") === "plan" ? <PlanBoard plan={boardPlan} run={run} /> : <div className="h-[calc(100dvh-var(--tabbar-h)-200px)] min-h-[420px]">{chatPanel}</div>}
+            </>
+          )}
+        </div>
+      ) : exploring && wide ? (
+        <div className="lg:mx-[calc(50%-min(50vw-24px,720px))]" data-testid="talk">
+          {talkBar}
+          <div className="grid grid-cols-[minmax(0,1fr)_400px] items-start gap-6">
+            <Workspace run={run} onExample={(text) => setPrefill((p) => ({ text, n: (p?.n ?? 0) + 1 }))} />
+            <aside className="sticky top-[84px] h-[calc(100dvh-170px)] min-h-[460px]" aria-label="Chat">
+              {chatPanel}
+            </aside>
           </div>
+        </div>
+      ) : exploring ? (
+        <div className="mx-auto flex max-w-2xl flex-col" data-testid="talk">
+          {talkBar}
           <div className="h-[calc(100dvh-var(--tabbar-h)-190px)] min-h-[420px]">{chatPanel}</div>
         </div>
       ) : beside ? (

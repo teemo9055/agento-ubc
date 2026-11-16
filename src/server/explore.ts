@@ -65,7 +65,7 @@ function system(agent: AgentId) {
       ? "CHAINLINK: you CAN check crypto prices against Chainlink's oracle (BTC, ETH, SOL, LINK). It isn't a free lookup: add a research step {tool: oracle_price, args: {symbol: 'btcusd'}} to the move, and to make the order depend on it add condition {metric: 'oracle_price', symbol: 'btcusd', op, value}. It's bought for 0.0001 USDC right before the check. Never tell the user you can't access Chainlink."
       : "",
     `PAID RESEARCH you can attach to a move (bought after approval; Gemini data from the user's vault over x402 on Arc, everything else from vendors on Circle's Agent Marketplace with Gateway nanopayments):\n${researchMenu(agent)}\nAttach 1-2 lookups only when they could change the decision and say why in each; skip research the free tools already answered. Research symbols must be live markets with data.`,
-    "PLANS: when a request has several parts (more than one move, or work for more than one agent), call propose_plan instead of propose_move. Break it into the steps that really make it up, one per thing to get done, and for each write a brief the owning agent can act on alone (inso: prediction orders, hedges, sells; trado: spot orders and onchain checks like gas, Bitcoin fees or a wallet balance; travo: driving itineraries). Put real names and numbers in the brief; look them up first. Say what each step waits for in `after`: leave it empty for steps that don't depend on anything, so they run at the same time; use gate 'filled' when a step should only start once the order it waits for has filled, and useProceeds when it should spend what that sell brought in. Put anything no agent can do here in `unavailable` with the honest reason (hotels and flights: the booking services on Circle's marketplace take mainnet only). Never pretend a step books something.",
+    "PLANS: when a request has several parts (more than one move, or work for more than one agent), call propose_plan instead of propose_move. Break it into the steps that really make it up, one per thing to get done (as many as the task needs, up to 12; long workflows are fine), and for each write a brief the owning agent can act on alone (inso: prediction orders, hedges, sells; trado: spot orders and onchain checks like gas, Bitcoin fees or a wallet balance; travo: driving itineraries). Put real names and numbers in the brief; look them up first. Say what each step waits for in `after`: leave it empty for steps that don't depend on anything, so they run at the same time; use gate 'filled' when a step should only start once the order it waits for has filled, and useProceeds when it should spend what that sell brought in. Put anything no agent can do here in `unavailable` with the honest reason (hotels and flights: the booking services on Circle's marketplace take mainnet only). Never pretend a step books something.",
     `PROVIDERS YOU KNOW (say plainly what each sells and whether you can use it now):\n${providerDirectory()}`,
     "MARKETPLACE: Circle's Agent Marketplace lists thousands of paid services. You can buy from ANY listing with payableHere=true: find it with search_services (payable=true lists only those), then add a `service` research step with its url and the input it takes; code reads the seller's price and payee and the user approves it like any other step. Prefer your typed lookups (oracle_price, gas_price…) when one fits; use `service` for the rest. Be honest about the others: most listings charge on Arc mainnet or Base with real USDC, so say 'that one needs mainnet' instead of pretending.",
     `KNOWLEDGE (shared notes; use them, don't recite them):\n- ${[...PRIMERS[agent], ...lessonLines(agent).map((l) => `Learned from past jobs: ${l}`)].join("\n- ")}`,
@@ -98,7 +98,7 @@ const PROPOSE: ToolSpec = {
 const PROPOSE_PLAN: ToolSpec = {
   name: "propose_plan",
   description:
-    "Break a request with several parts into 2-5 steps and show them as one plan. You write a short brief for each step and say which earlier steps it waits for; the agent that owns the step builds its move with its own tools. Steps that don't depend on each other run at the same time. It becomes one card the user starts with one click.",
+    "Break a request with several parts into 2-12 steps and show them as one plan. You write a short brief for each step and say which earlier steps it waits for; the agent that owns the step builds its move with its own tools. Steps that don't depend on each other run at the same time. It becomes one card the user starts with one click.",
   parameters: z.toJSONSchema(PlanInput),
 };
 
@@ -236,6 +236,13 @@ async function specialistMove(agent: AgentId, brief: string, id: string, onTool:
   return { error: `${NAMES[agent]} couldn't build this step: ${r.text.slice(0, 200)}${r.options?.length ? ` (it needs one of: ${r.options.join(", ")})` : ""}` };
 }
 const NAMES: Record<AgentId, string> = { inso: "Inso", trado: "Trado", travo: "Travo" };
+
+/** A step added or changed by hand on the plan board: its agent builds the move, the same way as in a proposed plan. */
+export async function buildPlanStep(agent: AgentId, brief: string, id: string): Promise<{ proposal: Proposal; usage: AiUsage[] } | { error: string }> {
+  const usage: AiUsage[] = [];
+  const r = await specialistMove(agent, brief, id, () => undefined, usage);
+  return "error" in r ? r : { ...r, usage };
+}
 
 export async function exploreTurn(agent: AgentId, chat: ChatMsg[], onTool: (note: string) => void, proposalId: string, opts: { solo?: boolean } = {}): Promise<TurnResult> {
   if (!aiEnabled()) return rulesTurn(agent, chat, onTool, proposalId);

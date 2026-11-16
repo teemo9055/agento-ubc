@@ -91,8 +91,10 @@ Prediction markets work as cheap insurance. Tell Inso what you'd lose and when (
 ### What you see
 
 - **Ask.** Say what you want done, or start from a goal (protect against a cost, bet on an outcome, plan a drive…). The agent that fits is picked for you.
-- **Guided conversation.** The conversation fills the page while you talk. When the agent needs something from you it asks one question with answers to tap (what cost? how much?), then proposes a single card with one button. Short answers come with a clearly-first next step.
-- **Review.** One card: the steps in plain words, the most it can cost, and one Approve button (a second confirmation only when your own passkey wallet has to sign). The graph and every cost line are one click away, not in the way.
+- **Workspace on the left, chat on the right.** The chat is where you talk and give commands; the workspace is a drawing of the work. Before the agent proposes anything it shows the outline of the kind of work being asked for (look something up, an order, an order with a condition, a hedge, a trip, a multi-step job): what it reads, what it checks, what it does, what you get. The outline is fixed per kind of work, not generated; its blocks fill in with the real steps, checks and costs once there is a move. A tracker shows where the job is: shape it, review, run, done. On phones the chat fills the screen.
+- **Quick options.** Above the chat box are the decisions people most often make next, one tap each, likeliest first: the next step after an answer, ways to change a move (add a second price source, halve the size, wait for a dip), start a plan or add a step to it, approve a draft. When the agent needs something from you it asks one question with answers to tap.
+- **Review.** One card: the steps in plain words, the most it can cost, and one Approve button (a second confirmation only when your own passkey wallet has to sign). The graph and every cost line are one click away, not in the way. Nothing runs until this is approved.
+- **Motion.** When the workspace changes form (outline to move, move to review, review to status) blocks fly in and settle into the outline of what is appearing. It is a fixed animation over the shapes already on the page, and is skipped for people who ask for reduced motion.
 - **Status.** After approval the page leads with one line that answers "what happened?": step 2 of 3, order placed and waiting to fill, filled, not placed and why, paused because it needs you.
 - **Receipt.** Its own printable page laid out like an invoice: billed to, work done by, items with payee and transaction hash, totals, the exchange order and its Arc fingerprint, the approval trail. Exports to CSV and JSON.
 - **Run again / Save.** A finished job can be repeated: the same move is re-checked against today's prices and limits and comes back as a fresh draft to approve.
@@ -108,7 +110,13 @@ Ask for several things at once ("check gold and Bitcoin fees, and separately pla
 - **A failure stays local.** A failed or cancelled step only skips the steps that depended on it. Everything else carries on.
 - **Results are handed over.** When a step starts it is told what the steps before it did.
 
-The plan is one card with one Start button, plus a plain list of what can't be done here (hotel and flight booking services on Circle's marketplace take mainnet only). Each step runs as its own job with its own approval limits and receipt. Stop cancels whatever is running and returns unspent funds. Plans pick up again after a restart.
+A plan (up to 12 steps) opens as a board: steps laid out in stages with arrows for what waits on what, plus a plain list of what can't be done here (hotel and flight booking services on Circle's marketplace take mainnet only). Before starting you can change it by hand: click a step to rewrite it in a sentence, remove it, change what it waits for, make it wait for a fill or spend an earlier sale's proceeds, or add a step (from the board, a quick option, or by typing "Add a step: …" in the chat). Every edit is re-checked, and refused with the reason if the plan would no longer hold together. Each step runs as its own job with its own approval limits and receipt, and shows what it actually read or ordered on the board. A failed step can be retried on its own. Stop cancels whatever is running and returns unspent funds. Plans pick up again after a restart.
+
+### What works today, and a showcase that only uses it
+
+The ask screen lists what really executes, grouped by where: on Arc testnet today (with each lookup's price and who is paid), with Gemini's test exchange connected, only on mainnet, and not at all. The same list lives in `src/lib/capabilities.ts`.
+
+**See it work** on the ask screen builds a ten-step plan from live data without the model, using only the first group: Chainlink prices, gas and Bitcoin network checks, a wallet read, a BotPay receipt, an odds history, a route, a small sale, and a bet that waits for the sale to fill and for two price sources to agree, sized to what the sale brought in. It costs about six cents, paid to three sellers, and takes under half a minute. A step that can't be built at that moment (a vendor is down, no contract is open) is left out and named.
 
 ### Trips
 
@@ -158,7 +166,7 @@ The app is also an MCP server at `/api/mcp`, so Claude Code, Claude Desktop, Cur
 | `look_up` | Run a free tool (market search, spot price, place, marketplace catalog) |
 | `ask_agent` | Chat with a built-in agent; it explores and may propose a move |
 | `propose_move` | Your AI's own move, validated against live data and priced as a draft work order |
-| `propose_plan` | Your AI's own plan: 2-5 moves for different agents, with what each waits for. Every move and the plan's shape are validated; the user starts it in the app |
+| `propose_plan` | Your AI's own plan: 2-12 moves for different agents, with what each waits for. Every move and the plan's shape are validated; the user starts it in the app |
 | `edit_work_order` | Change a draft by request; re-priced or refused with a reason |
 | `get_job`, `list_jobs` | Status, chat, cost, steps, what it is waiting for |
 | `get_job_data`, `get_receipt` | Results for your AI to analyse; itemized receipt |

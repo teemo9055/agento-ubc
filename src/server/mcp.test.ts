@@ -71,6 +71,6 @@ describe("plans for outside AIs (MCP)", () => {
     expect(wrongAgent.text).toMatch(/Step 1 \(travo\): This agent can't do prediction_order/);
     const noOrder = await call("propose_plan", { task: "x y z", title: "t", why: "w", steps: [{ agent: "travo", move: trip }, { agent: "inso", move: order, after: [1], gate: "filled" }] });
     expect(noOrder.error).toBe(true);
-    expect(noOrder.text).toMatch(/places no order/);
+    expect(noOrder.text).toMatch(/places an order/);
   });
 });

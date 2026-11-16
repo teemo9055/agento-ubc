@@ -300,6 +300,39 @@ body {
   animation: flow 0.8s linear infinite;
 }
 
+/* ---------- plan board: lines between steps ---------- */
+@keyframes edge-in {
+  to {
+    opacity: 1;
+  }
+}
+@keyframes edge-flow {
+  to {
+    stroke-dashoffset: -11;
+  }
+}
+/* Lines arrive after the blocks have settled into the steps they connect. */
+.plan-edge,
+.plan-edge-solid {
+  opacity: 0;
+  animation: edge-in 450ms 950ms ease-out forwards;
+}
+.plan-edge {
+  stroke-dasharray: 5 4;
+}
+.plan-edge-live {
+  stroke-dasharray: 6 5;
+  animation: edge-flow 0.7s linear infinite;
+}
+@media (prefers-reduced-motion: reduce) {
+  .plan-edge,
+  .plan-edge-solid,
+  .plan-edge-live {
+    opacity: 1;
+    animation: none;
+  }
+}
+
 /* ---------- moments: steps appearing, attention nudges ---------- */
 @keyframes node-in {
   from {
