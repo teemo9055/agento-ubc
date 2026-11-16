@@ -264,9 +264,10 @@ test("the work is drawn beside the chat, and the likeliest next step is one tap"
   await page.getByTestId("adopt-move").click();
   await expect(page.getByTestId("review-card")).toBeVisible({ timeout: 30_000 });
   await expect(page.getByTestId("stages").locator("[aria-current=step]")).toHaveText(/Review/);
-  // The chat stays beside the review, and its first option runs the job.
-  await expect(page.getByTestId("quick-primary")).toHaveText("Approve and start");
-  await page.getByTestId("quick-primary").click();
+  // The chat stays beside the review; the one approve button is on the review card.
+  await expect(page.getByTestId("quick-primary")).toHaveCount(0);
+  await expect(page.getByRole("button", { name: /Approve and start/ })).toHaveCount(1);
+  await page.getByTestId("open-approve").click();
   await finished(page);
   await expect(page.getByTestId("stages").locator("[aria-current=step]")).toHaveText(/Done/);
 });

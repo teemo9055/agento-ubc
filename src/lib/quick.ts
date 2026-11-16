@@ -2,10 +2,10 @@ import type { AgentId, ChatMsg, Plan, Run } from "./types";
 
 /**
  * The quick options above the chat box: the decisions a person most often makes next, one tap
- * each. The first is the likeliest. Each either says something to the agent, changes the plan
- * on the board directly, or presses the button for the stage the job is at.
+ * each. The first is the likeliest. Each either says something to the agent or changes the plan
+ * on the board directly. Approving a draft is the review card's button, not one of these.
  */
-export type QuickDo = { say: string } | { act: "start-plan" | "stop-plan" | "approve" } | { add: { agent: AgentId | "auto"; brief: string } } | { fill: string };
+export type QuickDo = { say: string } | { act: "start-plan" | "stop-plan" } | { add: { agent: AgentId | "auto"; brief: string } } | { fill: string };
 
 export interface Quick {
   label: string;
@@ -33,10 +33,10 @@ export function quickFor(run: Pick<Run, "status" | "chat" | "proposal" | "thinki
   if (run.thinking) return [];
 
   if (run.status === "draft") {
-    // The chips offered with the move that became this draft are still the likeliest changes.
+    // The chips offered with the move that became this draft are still the likeliest changes;
+    // approving is the review card's own button, so it isn't offered twice.
     const from = [...chat].reverse().find((m) => m.proposal && m.proposal.id === run.proposal?.id);
-    const tweaks = (from?.suggestions ?? []).filter((s) => !accept(s) && !decline(s)).slice(0, 3);
-    return [{ label: "Approve and start", primary: true, do: { act: "approve" } }, ...tweaks.map(say)];
+    return (from?.suggestions ?? []).filter((s) => !accept(s) && !decline(s)).slice(0, 4).map(say);
   }
   if (run.status !== "exploring" || last?.role !== "agent") return [];
   // A question is answered with its own options, not with these.

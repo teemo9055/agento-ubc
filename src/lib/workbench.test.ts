@@ -104,13 +104,10 @@ describe("quick options above the chat box", () => {
     expect(quickFor(run({ chat: [agent({})] }), { ...plan(3), status: "done" })).toEqual([]);
   });
 
-  it("on a draft, leads with approving and keeps the changes that were offered with the move", () => {
+  it("on a draft, keeps the changes that were offered with the move and leaves approving to the review card", () => {
     const p = move();
     const q = quickFor(run({ status: "draft", proposal: p, chat: [agent({ proposal: p, suggestions: ["Yes, set it up", "Make it 2 contracts", "Not now"] })] }));
-    expect(q.map((x) => [x.label, Boolean(x.primary)])).toEqual([
-      ["Approve and start", true],
-      ["Make it 2 contracts", false],
-    ]);
+    expect(q.map((x) => [x.label, Boolean(x.primary)])).toEqual([["Make it 2 contracts", false]]);
   });
 
   it("reads “Add a step: …” as a step for the board", () => {

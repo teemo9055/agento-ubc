@@ -364,7 +364,7 @@ export default function RunPage({ params }: { params: Promise<{ id: string }> })
           <div className="min-w-0 flex-1 text-[14px] font-semibold">{focus ? "Change this part" : `Conversation with ${theme.name}`}</div>
         </div>
       )}
-      <Chat run={run} focus={focus} onFocusClear={() => setFocus(null)} onAdopted={() => setTab("plan")} onShowPlan={() => setTab("plan")} plan={planOf(run)} onApprove={run.status === "draft" ? approveNow : undefined} prefill={prefill} drawn={Boolean(wide) && (exploring || run.status === "draft")} />
+      <Chat run={run} focus={focus} onFocusClear={() => setFocus(null)} onAdopted={() => setTab("plan")} onShowPlan={() => setTab("plan")} plan={planOf(run)} prefill={prefill} drawn={Boolean(wide) && (exploring || run.status === "draft")} />
     </div>
   );
 

@@ -321,7 +321,6 @@ export function Chat({
   onAdopted,
   onShowPlan,
   plan,
-  onApprove,
   prefill,
   drawn,
 }: {
@@ -332,7 +331,6 @@ export function Chat({
   onShowPlan?: () => void;
   /** The plan on the board, when there is one: quick options can change it directly. */
   plan?: Plan;
-  onApprove?: () => void;
   /** Text to put in the box for the user to send or change, e.g. an example from the workspace. */
   prefill?: { text: string; n: number } | null;
   /** The work is drawn beside the chat, so cards here stay short. */
@@ -434,7 +432,6 @@ export function Chat({
       return input.current?.focus();
     }
     if ("add" in d) return void planAct(q.label, "plan-edit", { op: "add", agent: d.add.agent, brief: d.add.brief }, `${q.label} added to the board`);
-    if (d.act === "approve") return onApprove?.();
     if (d.act === "stop-plan" && plan) return void planAct(q.label, "plan-stop", { planId: plan.id }, "Plan stopped · steps already running will finish");
     if (d.act === "start-plan" && proposedPlan) return void planAct(q.label, "plan-start", { planId: proposedPlan.id }, "Plan started · each step runs as its own job");
   }
@@ -454,7 +451,7 @@ export function Chat({
   }
 
   const proposedPlan = plan?.status === "proposed" && run.status === "exploring" ? plan : undefined;
-  const quick = quickFor(run, plan).filter((q) => !("act" in q.do && q.do.act === "approve") || Boolean(onApprove));
+  const quick = quickFor(run, plan);
   const placeholder = editing && focus ? (focus.kind === "card" ? CARD_HINT[focus.card] : focus.hint) : run.status === "draft" ? "Ask for something different" : proposedPlan ? "Say what to change, or “Add a step: …”" : last?.options?.length ? "Or type your own answer" : chat.length > 1 ? "Reply or ask something else" : `Ask ${THEMES[run.agent].name} anything`;
 
   return (
