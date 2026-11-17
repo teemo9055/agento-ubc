@@ -40,6 +40,7 @@ import { SELLERS } from "./sellers";
 import { PRODUCTS } from "./x402";
 
 import { limits } from "./settings";
+import { partsProgress } from "@/lib/parts";
 const BUFFER_PCT = 20n;
 const REAPPROVAL_TIMEOUT_MS = Number(process.env.REAPPROVAL_TIMEOUT_MS ?? 120_000);
 const FAULT_TIMEOUT_MS = Number(process.env.FAULT_TIMEOUT_MS ?? 8_000);
@@ -118,7 +119,7 @@ function emit(ctl: Ctl, e: RunEvent) {
     }
   }
   // A step of a plan changed: let the plan take its next step.
-  if (ctl.run.parentId && ["run.done", "run.cancelled", "order.updated", "failure.raised", "failure.resolved", "reapproval.requested", "reapproval.decided", "run.approved"].includes(e.type))
+  if (ctl.run.parentId && ["run.done", "run.cancelled", "order.updated", "failure.raised", "failure.resolved", "reapproval.requested", "reapproval.decided", "run.approved", "phase.started", "phase.done", "phase.skipped"].includes(e.type))
     void advancePlan(ctl.run.parentId);
   for (const w of watchers) w(ctl.run);
 }
@@ -1111,7 +1112,7 @@ export async function startPlan(runId: string, planId: string) {
   // The plan as the user last left it on the board, or as first proposed.
   const proposed = ctl.run.plan?.id === planId && ctl.run.plan.status === "proposed" ? ctl.run.plan : [...(ctl.run.chat ?? [])].reverse().find((m) => m.plan?.id === planId)?.plan;
   if (!proposed) throw new Error("plan not found");
-  const plan: Plan = { ...proposed, status: "running", steps: proposed.steps.map((s) => ({ ...s, status: "waiting", runId: undefined, note: undefined })) };
+  const plan: Plan = { ...proposed, status: "running", steps: proposed.steps.map((s) => ({ ...s, status: "waiting", runId: undefined, note: undefined, parts: undefined })) };
   emit(ctl, { type: "plan.updated", plan });
   log(ctl, { kind: "plan_approval", what: `Plan started: ${plan.title}`, why: `${plan.steps.length} steps, each approved for you when its turn comes, within the limits shown`, outcome: "approved", by: "user" });
   emit(ctl, { type: "chat.message", message: { id: id(), role: "agent", text: (() => {
@@ -1171,7 +1172,7 @@ export async function retryPlanStep(runId: string, stepId: string) {
   if (!plan || plan.status === "proposed") throw new Error("the plan hasn't started");
   const target = plan.steps.find((s) => s.id === stepId);
   if (!target || (target.status !== "failed" && target.status !== "skipped")) throw new Error("only a step that didn't go through can be retried");
-  const fresh = (s: PlanStep): PlanStep => ({ ...s, status: "waiting", runId: undefined, note: undefined });
+  const fresh = (s: PlanStep): PlanStep => ({ ...s, status: "waiting", runId: undefined, note: undefined, parts: undefined });
   const steps = plan.steps.map((s) => (s.id === stepId ? fresh(s) : s));
   // Anything downstream that was skipped is waiting again; it only runs if what it needs now succeeds.
   for (let changed = true; changed; ) {
@@ -1240,6 +1241,7 @@ async function advanceNow(parentId: string) {
   for (const s of steps) {
     if (s.status !== "running") continue;
     const child = s.runId ? runs.get(s.runId)?.run : undefined;
+    if (child) s.parts = partsProgress(child);
     if (!child) Object.assign(s, { status: "failed", note: "Its job was lost" });
     else if (child.status === "done") {
       const o = child.order;

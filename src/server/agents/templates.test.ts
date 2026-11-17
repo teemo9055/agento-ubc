@@ -30,3 +30,17 @@ describe("the steps follow the kind of task", () => {
     expect(ids({ ...base, research: [{ id: "r1", tool: "drive_route", args: { stops: "A|B" }, label: "Route", why: "w" }], action: { kind: "itinerary", stops: ["A", "B"], hoursPerDay: 6 } })).toEqual(["r1<>", "act<r1>"]);
   });
 });
+
+describe("the plan board's sub-tasks are the step's real phases", () => {
+  it("same ids and labels, in the same order, for every kind of move", async () => {
+    const { partsOf } = await import("@/lib/parts");
+    const cases: Proposal[] = [
+      { ...base, research: [look("r1"), look("r2")] },
+      { ...base, research: [look("r1")], action: order },
+      { ...base, research: [look("r1")], action: order, venue: "gemini-sandbox", condition: { metric: "yes_price", symbol: "GEMI-X", op: "<=", value: 0.4 } },
+      { ...base, action: { ...order, trade: "sell" as const } },
+      { ...base, research: [{ id: "r1", tool: "drive_route", args: { stops: "A|B" }, label: "Route", why: "w" }], action: { kind: "itinerary", stops: ["A", "B"], hoursPerDay: 6 } },
+    ];
+    for (const p of cases) expect(partsOf(p).map((x) => [x.id, x.label])).toEqual(planFromProposal(p).phases.map((x) => [x.id, x.label]));
+  });
+});

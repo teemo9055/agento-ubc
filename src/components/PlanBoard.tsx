@@ -10,6 +10,48 @@ import { Button, Spinner } from "./ui";
 import { Icon } from "./Icon";
 import { post } from "./useRun";
 import { toast } from "./Toaster";
+import { partsOf, type Part, type PartState } from "@/lib/parts";
+
+function PartMark({ state }: { state: PartState }) {
+  if (state === "active") return <span className="flex h-3.5 w-3.5 shrink-0 items-center justify-center text-agent-ink"><Spinner /></span>;
+  if (state === "done") return <Icon name="check" size={13} stroke={2.6} className="shrink-0 text-good" />;
+  if (state === "failed") return <Icon name="x" size={13} stroke={2.6} className="shrink-0 text-bad" />;
+  if (state === "skipped") return <span className="flex h-3.5 w-3.5 shrink-0 items-center justify-center" aria-hidden><span className="h-[1.5px] w-2 bg-ink-3" /></span>;
+  return <span className="flex h-3.5 w-3.5 shrink-0 items-center justify-center" aria-hidden><span className="h-2 w-2 rounded-[2px] border-[1.5px] border-ink-3/70" /></span>;
+}
+
+const PART_WORD: Record<PartState, string> = { planned: "to do", active: "under way", done: "done", failed: "didn't go through", skipped: "skipped" };
+
+/**
+ * The sub-tasks of one step, ticked off as its job runs. Compact on the card; with what each
+ * one is for and what it found in the step's details.
+ */
+function SubTasks({ step, full }: { step: PlanStep; full?: boolean }) {
+  const parts: Part[] = partsOf(step.proposal);
+  if (!parts.length) return null;
+  const at = (id: string): PartState => step.parts?.[id]?.state ?? (step.status === "skipped" ? "skipped" : "planned");
+  return (
+    <ol className={full ? "space-y-1.5" : "space-y-1"} data-testid="sub-tasks">
+      {parts.map((pt) => {
+        const st = at(pt.id);
+        const note = step.parts?.[pt.id]?.note;
+        return (
+          <li key={pt.id} className="flex gap-1.5" data-testid="sub-task" data-state={st} aria-label={`${pt.label}: ${PART_WORD[st]}`}>
+            <span className="mt-[2px]"><PartMark state={st} /></span>
+            <div className="min-w-0 flex-1">
+              <div className="flex items-baseline justify-between gap-2">
+                <span className={`${full ? "text-[13px]" : "truncate text-[12.5px]"} leading-snug ${st === "planned" || st === "skipped" ? "text-ink-2" : "text-ink"} ${st === "skipped" ? "line-through decoration-ink-3/60" : ""}`}>{pt.label}</span>
+                {pt.cost != null && pt.cost > 0 && <span className="num shrink-0 text-[11.5px] text-ink-3">${usdc(pt.cost)}</span>}
+              </div>
+              {full && pt.sub && <div className="text-[12px] leading-snug text-ink-3">{pt.sub}</div>}
+              {note && <div className={`text-[12px] leading-snug text-ink-2 ${full ? "" : "truncate"}`} title={note}>{note}</div>}
+            </div>
+          </li>
+        );
+      })}
+    </ol>
+  );
+}
 
 /** The plan the user is looking at: as edited on the board, or the latest one proposed in chat. */
 export function planOf(run: Run): Plan | undefined {
@@ -160,7 +202,7 @@ export function PlanBoard({ plan, run }: { plan: Plan; run: Run }) {
             ))}
           </svg>
           {stages.map((col, ci) => (
-            <div key={ci} className="relative flex flex-col gap-3 sm:w-[236px]">
+            <div key={ci} className="relative flex flex-col gap-3 sm:w-[256px]">
               <div className="text-[11.5px] font-semibold uppercase tracking-wide text-ink-3">{stages.length > 1 ? (ci === 0 ? "Starts right away" : `Stage ${ci + 1}`) : "Steps"}</div>
               {col.map((s) => {
                 const st = STATUS[s.status];
@@ -188,10 +230,22 @@ export function PlanBoard({ plan, run }: { plan: Plan; run: Run }) {
                         </div>
                         <div className="num mt-0.5 text-[12px] text-ink-3">
                           {THEMES[s.agent].name} · {money(cost)}
-                          {s.proposal.research.length ? ` · ${s.proposal.research.length} paid lookup${s.proposal.research.length > 1 ? "s" : ""}` : ""}
+                          {` · ${partsOf(s.proposal).length} sub-task${partsOf(s.proposal).length === 1 ? "" : "s"}`}
                         </div>
                       </div>
                     </div>
+                    <div className="mt-2 border-t border-[#f1f0ec] pt-2">
+                      <SubTasks step={s} />
+                    </div>
+                    {s.status === "running" && (() => {
+                      const all = partsOf(s.proposal).length || 1;
+                      const done = Object.values(s.parts ?? {}).filter((x) => x.state === "done" || x.state === "skipped").length;
+                      return (
+                        <div className="mt-2 h-1 overflow-hidden rounded-full bg-line/60" aria-hidden>
+                          <div className="h-full rounded-full bg-agent transition-[width] duration-500" style={{ width: `${Math.max(8, (done / all) * 100)}%` }} />
+                        </div>
+                      );
+                    })()}
                     {(s.after ?? []).length > 0 && (
                       <div className="mt-1.5 text-[12px] text-ink-3 sm:hidden">
                         After step {(s.after ?? []).map(n).join(" and ")}
@@ -232,8 +286,11 @@ export function PlanBoard({ plan, run }: { plan: Plan; run: Run }) {
               <p className="num mt-1 text-[12.5px] text-ink-3">
                 {THEMES[picked.agent].name} · {money(stepCost(picked.proposal))}
                 {picked.proposal.action ? ` · ${actionText(picked.proposal.action)}` : ""}
-                {picked.proposal.research.length ? ` · buys: ${picked.proposal.research.map((r) => r.label).join(", ")}` : ""}
               </p>
+              <div className="mt-2.5 max-w-[560px] rounded-xl border border-line bg-panel px-3 py-2.5">
+                <div className="mb-1.5 text-[11px] font-semibold uppercase tracking-wide text-ink-3">Sub-tasks</div>
+                <SubTasks step={picked} full />
+              </div>
             </div>
             <button type="button" onClick={() => setSel(null)} aria-label="Close" className="inline-flex h-8 w-8 items-center justify-center rounded-lg text-ink-3 hover:bg-ink/5 hover:text-ink">
               <Icon name="x" size={14} stroke={2} />

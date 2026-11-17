@@ -316,6 +316,8 @@ export interface PlanStep {
   runId?: string;
   status: "waiting" | "running" | "blocked" | "done" | "failed" | "skipped";
   note?: string;
+  /** Once it has started: where each of its sub-tasks stands, by the id of the job's phase. */
+  parts?: Record<string, { state: "planned" | "active" | "done" | "failed" | "skipped"; note?: string }>;
 }
 
 export interface Plan {
