@@ -3,9 +3,11 @@ import type { Plan, AgentId, ChatMsg, Proposal, ToolCall } from "@/lib/types";
 import { aiChat, aiEnabled, type AiUsage, type ChatTurn, type ToolSpec } from "./ai";
 import * as gemini from "./gemini";
 import { describeAction, tradingVenue, VENUE_NAME, VENUE_NOTE } from "./exchange";
+import { mainnetOn } from "@/lib/network";
+import type { Brief } from "@/lib/types";
 import { ACTIONS, FREE_TOOLS, PlanInput, ProposalInput, researchMenu, runFreeTool, TOOLKIT, validatePlan, validateProposal } from "./tools";
 import { checksText, conditionText } from "./agents/toolbox";
-import { lessonLines, PRIMERS } from "./knowledge";
+import { lessonLines, PLAYBOOKS, PRIMERS } from "./knowledge";
 import { providerDirectory } from "./providers";
 import { diffMoves } from "./move-diff";
 import { groundReply } from "./grounding";
@@ -66,6 +68,8 @@ function system(agent: AgentId) {
       ? "CHAINLINK: you CAN check crypto prices against Chainlink's oracle (BTC, ETH, SOL, LINK). It isn't a free lookup: add a research step {tool: oracle_price, args: {symbol: 'btcusd'}} to the move, and to make the order depend on it add condition {metric: 'oracle_price', symbol: 'btcusd', op, value}. It's bought for 0.0001 USDC right before the check. Never tell the user you can't access Chainlink."
       : "",
     `PAID RESEARCH you can attach to a move (bought after approval; Gemini data from the user's vault over x402 on Arc, everything else from vendors on Circle's Agent Marketplace with Gateway nanopayments):\n${researchMenu(agent)}\nAttach 1-2 lookups only when they could change the decision and say why in each; skip research the free tools already answered. Research symbols must be live markets with data.`,
+    `PROBLEMS: when the user describes a worry or a situation and not what to do about it ('my costs keep jumping', 'I get paid in crypto and it stresses me out', 'money is tight on this trip'), don't pick one thing for them. Look around first (markets, prices, services), then call propose_plan with \`understood\` (their problem in one sentence) and \`drivers\`: the 2-5 things behind it, each marked now or partly (a step handles it; give the step number), mainnet (a real service or market would, named in \`how\`, but it takes mainnet), or no (nothing here helps; say why). Write a step for every driver you can handle, for whichever agent owns it, sized small unless they gave an amount. Use \`leftOpen\` for what stays uncovered. Ask first (ask_user) only if you can't tell what the drivers are, and only offer answers you could act on. ${mainnetOn() ? "Mainnet is ON: anything search_services lists as payable can be a step now, so don't mark things mainnet." : "This runs on testnet. Crypto and commodity markets (oil, gold) CAN be ordered here, so cover on those is now. Mark mainnet ONLY for weather, sports or rates markets, or a service you actually found with search_services (name its provider); anything else you can't do is no."}`,
+    `KNOW-HOW for problems:\n- ${PLAYBOOKS.join("\n- ")}`,
     "PLANS: when a request has several parts (more than one move, or work for more than one agent), call propose_plan instead of propose_move. Break it into the steps that really make it up, one per thing to get done (as many as the task needs, up to 12; long workflows are fine), and for each write a brief the owning agent can act on alone (inso: prediction orders, hedges, sells; trado: spot orders and onchain checks like gas, Bitcoin fees or a wallet balance; travo: driving itineraries). Put real names and numbers in the brief; look them up first. Say what each step waits for in `after`: leave it empty for steps that don't depend on anything, so they run at the same time; use gate 'filled' when a step should only start once the order it waits for has filled, and useProceeds when it should spend what that sell brought in. Put anything no agent can do here in `unavailable` with the honest reason (hotels and flights: the booking services on Circle's marketplace take mainnet only). Never pretend a step books something.",
     `PROVIDERS YOU KNOW (say plainly what each sells and whether you can use it now):\n${providerDirectory()}`,
     "MARKETPLACE: Circle's Agent Marketplace lists thousands of paid services. You can buy from ANY listing with payableHere=true: find it with search_services (payable=true lists only those), then add a `service` research step with its url and the input it takes; code reads the seller's price and payee and the user approves it like any other step. Prefer your typed lookups (oracle_price, gas_price…) when one fits; use `service` for the rest. Be honest about the others: most listings charge on Arc mainnet or Base with real USDC, so say 'that one needs mainnet' instead of pretending.",
@@ -174,6 +178,7 @@ export interface TurnResult {
   tools: ToolCall[];
   proposal?: Proposal;
   plan?: Plan;
+  brief?: Brief;
   /** Tappable answers to the question in `text`. */
   options?: string[];
   suggestions: string[];
@@ -266,6 +271,7 @@ export async function exploreTurn(agent: AgentId, chat: ChatMsg[], onTool: (note
   const seen: unknown[] = [...chat.map((m) => m.facts).filter(Boolean), ...chat.filter((m) => m.role === "user").map((m) => m.text), onScreen ? toProposalInput(onScreen) : null].filter(Boolean);
   let proposal: Proposal | undefined;
   let plan: Plan | undefined;
+  let brief: Brief | undefined;
   for (let round = 0; round < MAX_ROUNDS; round++) {
     const last = round === MAX_ROUNDS - 1;
     const r = await aiChat(messages, last ? [] : toolSpecs(agent, opts.solo));
@@ -278,8 +284,8 @@ export async function exploreTurn(agent: AgentId, chat: ChatMsg[], onTool: (note
       if (g.usage) usage.push(g.usage);
       const text = tighten(g.text, Boolean(plan ?? proposal));
       // A plan replaces any single move drafted in the same turn: the card shown is the plan.
-      if (plan) return { unverified: g.unverified.length ? g.unverified : undefined, facts: facts.filter(Boolean).join(" || ").slice(0, 1500) || undefined, text: text || plan.why, tools, plan, suggestions: ["Yes, start the plan", ...suggestions.filter((x) => !/^yes/i.test(x))].slice(0, 3), usage };
-      return { unverified: g.unverified.length ? g.unverified : undefined, facts: facts.filter(Boolean).join(" || ").slice(0, 1500) || undefined, text: text || (proposal ? proposal.why : "Here's what I found."), tools, proposal, suggestions: proposal ? withAccept(suggestions, proposal) : suggestions, usage };
+      if (plan) return { unverified: g.unverified.length ? g.unverified : undefined, facts: facts.filter(Boolean).join(" || ").slice(0, 1500) || undefined, text: text || plan.why, tools, plan, brief, suggestions: ["Yes, start the plan", ...suggestions.filter((x) => !/^yes/i.test(x))].slice(0, 3), usage };
+      return { unverified: g.unverified.length ? g.unverified : undefined, facts: facts.filter(Boolean).join(" || ").slice(0, 1500) || undefined, text: text || (proposal ? proposal.why : brief ? brief.understood : "Here's what I found."), tools, proposal, brief, suggestions: proposal ? withAccept(suggestions, proposal) : suggestions, usage };
     }
     for (const c of r.calls) {
       let content: unknown;
@@ -292,12 +298,23 @@ export async function exploreTurn(agent: AgentId, chat: ChatMsg[], onTool: (note
       } else if (c.name === "propose_plan") {
         onTool("Drafting a plan");
         const args = c.args;
-        const v = await validatePlan(args, proposalId, (who, brief, id) => specialistMove(who, onlyStatedBudget(brief, chat), id, onTool, usage));
+        // "It would work on mainnet" has to be true: a market Gemini lists only on its real exchange, or a service that was actually found.
+        const loose = ((args as { drivers?: { what?: string; help?: string; how?: string }[] }).drivers ?? []).find(
+          (d) => d.help === "mainnet" && !/temperature|weather|heat|cold|sport|game|rate|fed\b|election/i.test(`${d.what} ${d.how}`) && !tools.some((t) => t.tool === "search_services" && t.ok),
+        );
+        const v = loose
+          ? { error: `"${loose.what}" is marked mainnet, but nothing shows a mainnet service or market for it. Look with search_services and name the provider you find, or mark it no.` }
+          : await validatePlan(args, proposalId, (who, brief, id) => specialistMove(who, onlyStatedBudget(brief, chat), id, onTool, usage));
         if ("error" in v) content = { ok: false, error: v.error, hint: "Rewrite that step's brief with what its agent needs (real names and amounts), ask the user with ask_user if something is missing, move it to `unavailable` with the reason, or explain why no plan fits." };
         else {
           plan = v.plan;
-          for (const s of plan.steps) seen.push(toProposalInput(s.proposal));
-          content = { ok: true, shown: "The plan card is now on screen. Reply with ONE short sentence on how the steps fit together; add a second only to name what's in `unavailable`. Don't repeat numbers or mention the card." };
+          brief = v.brief;
+          if (v.proposal) proposal = v.proposal;
+          for (const s of plan?.steps ?? []) seen.push(toProposalInput(s.proposal));
+          if (v.proposal) seen.push(toProposalInput(v.proposal));
+          content = brief
+            ? { ok: true, shown: "The brief is on screen: what you understood, each driver with what can be done, and the steps. Reply with ONE short sentence: the single most useful thing this does for them. Don't repeat the list or numbers." }
+            : { ok: true, shown: "The plan card is now on screen. Reply with ONE short sentence on how the steps fit together; add a second only to name what's in `unavailable`. Don't repeat numbers or mention the card." };
         }
       } else if (c.name === "propose_move") {
         onTool("Drafting a move");

@@ -1,4 +1,5 @@
 import type { AgentId } from "./types";
+import { mainnetOn } from "./network";
 
 /**
  * What this app can really do, and where. One list, used by the ask screen, the docs and the
@@ -52,7 +53,8 @@ export const CAPABILITIES: Capability[] = [
 
 export const WHERE_LABEL: Record<Where, string> = {
   now: "Works today",
-  exchange: "With a test exchange connected",
-  mainnet: "Needs mainnet",
+  exchange: mainnetOn() ? "With Gemini connected" : "With a test exchange connected",
+  // The same list reads as available once the app is switched to mainnet.
+  mainnet: mainnetOn() ? "On mainnet (now on)" : "Needs mainnet",
   never: "Not available",
 };

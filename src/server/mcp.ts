@@ -184,6 +184,7 @@ export function buildMcpServer(base: string) {
           (agent, _brief, id) => validateProposal(agent, steps[Number(id.split("-s").pop()) - 1].move, id),
         );
         if ("error" in v) return fail(v.error);
+        if (!v.plan) return fail("A plan needs at least 2 steps");
         const run = await createRun({ agent: "inso", task, mode: live ? "live" : "demo", plannedBy: "your AI (MCP)" }, { quiet: true });
         return text(view(offerPlan(run.id, v.plan), base));
       } catch (e) {

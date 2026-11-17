@@ -161,6 +161,24 @@ export interface ChatMsg {
   suggestions?: string[];
   /** A plan of several moves, possibly for different agents, run one after another. */
   plan?: Plan;
+  /** For an open-ended problem: what the agent understood, what drives it, and how much of each part it can take on. */
+  brief?: Brief;
+}
+
+export interface Brief {
+  /** The user's problem in one sentence. */
+  understood: string;
+  drivers: {
+    what: string;
+    /** now/partly: a step of the plan handles it. mainnet: a service exists but takes mainnet. no: nothing here helps. */
+    help: "now" | "partly" | "mainnet" | "no";
+    /** What would be done about it, or why not. */
+    how: string;
+    /** The plan step that handles it ("s2"), when there is one. */
+    step?: string;
+  }[];
+  /** What stays uncovered even if everything proposed is done. */
+  leftOpen?: string;
 }
 
 /** Paid research the move depends on. Tools come from the catalog; code prices them. */

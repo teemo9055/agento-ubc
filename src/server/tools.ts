@@ -262,7 +262,8 @@ const MAX_SERVICE = BigInt(process.env.MARKETPLACE_MAX_PER_REQUEST ?? 10_000);
 export const TOOLKIT: Record<AgentId, { free: string[]; research: string[] }> = {
   inso: { free: ["search_markets", "get_market", "browse_markets", "combo_quote", "my_positions", "spot_price", "search_services"], research: ["odds_history", "trade_tape", "oracle_price", "service"] },
   trado: { free: ["spot_price", "search_markets", "get_market", "browse_markets", "my_positions", "search_services"], research: ["spot_candles", "oracle_price", "odds_history", "gas_price", "btc_network", "wallet_balance", "service"] },
-  travo: { free: ["find_place", "find_nearby", "my_positions", "search_services"], research: ["drive_route", "oracle_price", "service"] },
+  // The trip agent can look at markets too, so a brief about a trip can name the fuel cover Inso would build.
+  travo: { free: ["find_place", "find_nearby", "search_markets", "my_positions", "search_services"], research: ["drive_route", "oracle_price", "service"] },
 };
 
 export const researchMenu = (agent?: AgentId) =>
@@ -340,6 +341,8 @@ export const ProposalInput = z.object({
 export type ProposalInput = z.infer<typeof ProposalInput>;
 
 import { limits } from "./settings";
+import { mainnetOn } from "@/lib/network";
+import type { Brief } from "@/lib/types";
 const round2 = (x: number) => Math.round(x * 100) / 100;
 /** An order needs time to rest; refuse contracts closing sooner than this. */
 const MIN_EXPIRY_MS = Number(process.env.MIN_ORDER_EXPIRY_MIN ?? 20) * 60_000;
@@ -660,8 +663,21 @@ export const PlanInput = z.object({
         useProceeds: z.boolean().describe("true when this step should spend what the sell it waits for brought in; its budget is set to that amount when it starts. Needs gate filled."),
       }),
     )
-    .min(2)
     .max(12),
+  understood: z.string().max(170).nullable().optional().describe("Set for a PROBLEM (they said what worries them, not what to do): the problem in one sentence. Then `drivers` is required and 0-12 steps are fine."),
+  drivers: z
+    .array(
+      z.object({
+        what: z.string().max(50).describe("One thing driving the problem, in a few words"),
+        help: z.enum(["now", "partly", "mainnet", "no"]).describe("now/partly: a step here handles it. mainnet: a real service does this but takes mainnet. no: nothing here helps."),
+        how: z.string().max(150).describe("What the step does about it; or the service that would; or why nothing can"),
+        step: z.number().int().min(1).max(12).nullable().optional().describe("Number of the step that handles it (now/partly only)"),
+      }),
+    )
+    .max(5)
+    .nullable()
+    .optional(),
+  leftOpen: z.string().max(160).nullable().optional().describe("What stays uncovered even after every step"),
   unavailable: z
     .array(z.object({ what: z.string().max(80), why: z.string().max(160) }))
     .max(4)
@@ -690,10 +706,24 @@ export function checkPlanShape(steps: Pick<PlanStep, "id" | "after" | "gate" | "
 }
 
 /** Every step is built by its own agent from the brief, then the plan's shape is checked. */
-export async function validatePlan(input: unknown, id: string, build: BuildStep): Promise<{ plan: Plan } | { error: string }> {
+export async function validatePlan(input: unknown, id: string, build: BuildStep): Promise<{ plan?: Plan; proposal?: Proposal; brief?: Brief } | { error: string }> {
   const parsed = PlanInput.safeParse(input);
   if (!parsed.success) return { error: `Invalid plan: ${parsed.error.issues.map((i) => `${i.path.join(".")} ${i.message}`).join("; ")}` };
   const p = parsed.data;
+  const drivers = p.understood ? (p.drivers ?? []) : [];
+  if (p.understood && drivers.length < 1) return { error: "`understood` needs `drivers`: the things behind the problem, each with how much of it can be handled" };
+  if (!p.understood && p.steps.length < 2) return { error: "A plan needs at least 2 steps. For one thing, use propose_move." };
+  for (const d of drivers) {
+    const handled = d.help === "now" || d.help === "partly";
+    if (handled && (d.step == null || d.step > p.steps.length)) return { error: `"${d.what}" is marked ${d.help}, so it needs \`step\`: the number of the step that handles it. If no step does, mark it mainnet or no.` };
+    if (!handled && d.step != null) return { error: `"${d.what}" is marked ${d.help} but points at a step. Either a step handles it (now/partly) or none does.` };
+    // With mainnet on, "needs mainnet" is no longer a reason: the service can be bought, so it becomes a step.
+    if (d.help === "mainnet" && mainnetOn()) return { error: `Mainnet is on, so "${d.what}" can be done now: find the service with search_services and make it a step, or mark it no with the real reason.` };
+  }
+  const brief: Brief | undefined = p.understood
+    ? { understood: p.understood, drivers: drivers.map((d) => ({ what: d.what, help: d.help, how: d.how, step: d.step != null ? `s${d.step}` : undefined })), leftOpen: p.leftOpen ?? undefined }
+    : undefined;
+  if (brief && !p.steps.length) return { brief };
   // Each agent works its own step. A few at a time, so a long plan doesn't flood the model.
   const built: Awaited<ReturnType<BuildStep>>[] = new Array(p.steps.length);
   let next = 0;
@@ -716,5 +746,7 @@ export async function validatePlan(input: unknown, id: string, build: BuildStep)
   }));
   const wrong = checkPlanShape(steps);
   if (wrong) return { error: wrong };
-  return { plan: { id, title: p.title, why: p.why, steps, unavailable: p.unavailable, status: "proposed" } };
+  // One step is just a move; the brief still says how it fits the problem.
+  if (brief && steps.length === 1) return { proposal: steps[0].proposal, brief };
+  return { plan: { id, title: p.title, why: p.why, steps, unavailable: p.unavailable, status: "proposed" }, brief };
 }

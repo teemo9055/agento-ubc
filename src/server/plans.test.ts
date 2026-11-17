@@ -129,8 +129,50 @@ describe("plans across agents", () => {
   const plan = async (steps: ReturnType<typeof step>[]) => {
     const v = await tools.validatePlan({ title: "A plan", why: "because", unavailable: [], steps }, `p${Math.random().toString(36).slice(2, 8)}`, (a, b, i) => build(a, b.trim(), i));
     if ("error" in v) throw new Error(v.error);
-    return v.plan;
+    return v.plan!;
   };
+
+  describe("a problem becomes a brief: what drives it, and what can be done about each part", () => {
+    const brief = (over: Record<string, unknown>) => tools.validatePlan({ title: "Steadier costs", why: "because", unavailable: [], understood: "Your costs swing with fuel and the weather.", ...over }, `b${Math.random().toString(36).slice(2, 8)}`, (a, b, i) => build(a, b.trim(), i));
+    const fuel = { what: "Fuel price", help: "now", how: "Cover against oil rising", step: 1 };
+    const cold = { what: "Cold days", help: "mainnet", how: "Temperature markets are on Gemini's real exchange" };
+    const beans = { what: "Bean prices", help: "no", how: "No market for coffee" };
+
+    it("several doable parts make a plan, with each driver tied to its step", async () => {
+      const v = await brief({ drivers: [fuel, { what: "The drive", help: "partly", how: "Plan the route", step: 2 }, cold, beans], steps: [step("inso", "order"), step("travo", "drive")], leftOpen: "Bean prices" });
+      if ("error" in v) throw new Error(v.error);
+      expect(v.plan?.steps).toHaveLength(2);
+      expect(v.brief).toMatchObject({ understood: "Your costs swing with fuel and the weather.", leftOpen: "Bean prices" });
+      expect(v.brief?.drivers.map((d) => [d.help, d.step])).toEqual([["now", "s1"], ["partly", "s2"], ["mainnet", undefined], ["no", undefined]]);
+    });
+
+    it("one doable part is a single move with the brief; none is the brief alone", async () => {
+      const one = await brief({ drivers: [fuel, beans], steps: [step("inso", "order")] });
+      expect(one).toMatchObject({ proposal: { title: "Buy YES: BTC A" }, brief: { drivers: [{ step: "s1" }, { help: "no" }] } });
+      expect("plan" in one && one.plan).toBeFalsy();
+      const none = await brief({ drivers: [cold, beans], steps: [] });
+      expect(none).toMatchObject({ brief: { drivers: [{ help: "mainnet" }, { help: "no" }] } });
+      expect("proposal" in none && none.proposal).toBeFalsy();
+    });
+
+    it("refuses a driver marked doable with no step, and one marked not doable that has one", async () => {
+      expect(await brief({ drivers: [{ ...fuel, step: null }], steps: [step("inso", "order")] })).toMatchObject({ error: expect.stringContaining("needs `step`") });
+      expect(await brief({ drivers: [{ ...beans, step: 1 }], steps: [step("inso", "order")] })).toMatchObject({ error: expect.stringContaining("points at a step") });
+      expect(await brief({ drivers: [], steps: [] })).toMatchObject({ error: expect.stringContaining("needs `drivers`") });
+      // Without a problem statement the old rule holds: a plan is two steps or more.
+      expect(await tools.validatePlan({ title: "x", why: "y", unavailable: [], steps: [step("inso", "order")] }, "p", (a, b, i) => build(a, b.trim(), i))).toMatchObject({ error: expect.stringContaining("at least 2 steps") });
+    });
+
+    it("with mainnet on, 'needs mainnet' stops being an answer", async () => {
+      vi.stubEnv("NEXT_PUBLIC_NETWORK_MODE", "mainnet");
+      try {
+        expect(await brief({ drivers: [fuel, cold], steps: [step("inso", "order")] })).toMatchObject({ error: expect.stringContaining("Mainnet is on") });
+      } finally {
+        vi.unstubAllEnvs();
+      }
+      expect(await brief({ drivers: [fuel, cold], steps: [step("inso", "order")] })).toHaveProperty("brief");
+    });
+  });
   const begin = async (p: Awaited<ReturnType<typeof plan>>) => {
     const r = await orch.createRun({ agent: "inso", task: "hello there, a plan please" });
     orch.offerPlan(r.id, p);
@@ -162,7 +204,7 @@ describe("plans across agents", () => {
     const noSell = await check([step("inso", "order"), step("inso", "order", [1], "filled", true)]);
     expect("error" in noSell && noSell.error).toMatch(/exactly one step that sells/);
     const ok = await check([step("trado", "sell"), step("inso", "order", [1], "filled", true), step("travo", "drive")]);
-    expect("plan" in ok && ok.plan.steps.map((s) => s.after)).toEqual([[], ["s1"], []]);
+    expect("plan" in ok && ok.plan!.steps.map((s) => s.after)).toEqual([[], ["s1"], []]);
   });
 
   it("steps that don't depend on each other run at the same time; the one that waits starts after both", async () => {

@@ -7,6 +7,7 @@ import { Assemble } from "./Assemble";
 import { Icon } from "./Icon";
 import { Spinner } from "./ui";
 import { LiveMarket } from "./Live";
+import { BriefCard, briefOf } from "./BriefCard";
 
 const STAGES = ["Shape it", "Review", "Run", "Done"] as const;
 
@@ -61,7 +62,11 @@ export function Workspace({ run, onExample }: { run: Run; onExample?: (text: str
   // What the agent has already read, so the sketch isn't empty while the talking happens.
   const found = [...new Map(chat.flatMap((m) => m.tools ?? []).filter((t) => t.ok).map((t) => [t.summary, t])).values()].slice(-5);
 
+  const b = briefOf(run);
+
   return (
+    <div className="space-y-4">
+    {b && <BriefCard {...b} />}
     <section className="rounded-2xl border border-line bg-panel" aria-label="Workspace" data-testid="workspace" data-kind={bp.kind} data-filled={move ? "" : undefined}>
       <div className="flex flex-wrap items-center justify-between gap-3 border-b border-[#f1f0ec] px-4 py-3">
         <div className="min-w-0">
@@ -162,5 +167,6 @@ export function Workspace({ run, onExample }: { run: Run; onExample?: (text: str
         )}
       </div>
     </section>
+    </div>
   );
 }

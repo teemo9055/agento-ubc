@@ -83,8 +83,8 @@ async function start() {
   );
   if ("error" in v) throw new Error(v.error);
   const r = await orch.createRun({ agent: "inso", task: "Sell A then buy B with the money" }, { quiet: true });
-  orch.offerPlan(r.id, v.plan);
-  await orch.startPlan(r.id, v.plan.id);
+  orch.offerPlan(r.id, v.plan!);
+  await orch.startPlan(r.id, v.plan!.id);
   return r.id;
 }
 const stepsOf = (id: string) => orch.getRun(id)!.plan!.steps;

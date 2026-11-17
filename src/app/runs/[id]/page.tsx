@@ -13,6 +13,7 @@ import { OrderStatus } from "@/components/OrderStatus";
 import { Details, ReviewCard, StatusCard } from "@/components/JobBrief";
 import { LiveMarket } from "@/components/Live";
 import { PlanBoard, planOf } from "@/components/PlanBoard";
+import { BriefCard, briefOf } from "@/components/BriefCard";
 import { Assemble } from "@/components/Assemble";
 import { Stages, Workspace } from "@/components/Workspace";
 import { FinishCard } from "@/components/Celebrate";
@@ -376,6 +377,7 @@ export default function RunPage({ params }: { params: Promise<{ id: string }> })
   );
 
   const boardPlan = exploring ? planOf(run) : undefined;
+  const briefed = briefOf(run);
   const talkBar = (
     <div className="mb-3 flex items-center justify-between gap-3">
       <div className="flex items-center gap-2.5">
@@ -413,7 +415,10 @@ export default function RunPage({ params }: { params: Promise<{ id: string }> })
           {talkBar}
           {wide ? (
             <div className="grid grid-cols-[minmax(0,1fr)_380px] items-start gap-6">
-              <PlanBoard plan={boardPlan} run={run} />
+              <div className="space-y-4">
+                {briefed?.plan?.id === boardPlan.id && <BriefCard {...briefed} />}
+                <PlanBoard plan={boardPlan} run={run} />
+              </div>
               <aside className="sticky top-[84px] h-[calc(100dvh-170px)] min-h-[460px]" aria-label="Chat">
                 {chatPanel}
               </aside>
@@ -434,7 +439,12 @@ export default function RunPage({ params }: { params: Promise<{ id: string }> })
                   </button>
                 ))}
               </div>
-              {(tab ?? "plan") === "plan" ? <PlanBoard plan={boardPlan} run={run} /> : <div className="h-[calc(100dvh-var(--tabbar-h)-200px)] min-h-[420px]">{chatPanel}</div>}
+              {(tab ?? "plan") === "plan" ? (
+                <div className="space-y-4">
+                  {briefed?.plan?.id === boardPlan.id && <BriefCard {...briefed} />}
+                  <PlanBoard plan={boardPlan} run={run} />
+                </div>
+              ) : <div className="h-[calc(100dvh-var(--tabbar-h)-200px)] min-h-[420px]">{chatPanel}</div>}
             </>
           )}
         </div>

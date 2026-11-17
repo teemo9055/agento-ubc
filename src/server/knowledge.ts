@@ -28,6 +28,20 @@ export const PRIMERS: Record<AgentId, string[]> = {
   ],
 };
 
+/**
+ * Domain know-how every agent gets for turning an everyday problem into something that can be
+ * done about it: which real-world cost follows which market, and what a hedge can and can't do.
+ */
+export const PLAYBOOKS: string[] = [
+  "Fuel, driving, delivery or generator costs follow oil (Brent, WTI) with a lag of a week or two: cover = YES on oil at or above a level a little over today's price.",
+  "Paid in crypto, or savings in it: the risk is the price on the day they need dollars. Cover = NO on '$X or above' closing near that day, sized to the part of the money they can't afford to lose; selling some to dollars now is the plain alternative.",
+  "Heating, cooling, outdoor trade and ride prices follow daily city temperature markets; loans and rent follow rate-decision markets. Both are listed only on Gemini's real exchange.",
+  "Costs in euros, pounds or yen: the rate can be read from Chainlink now, but there is no market here to hedge it.",
+  "Two worries that hurt most together (fuel up AND sales down) suit one combination: far cheaper, pays only if both happen.",
+  "A hedge pays a fixed $1 a contract: it offsets a cost, it doesn't remove it, and the premium is gone if the bad thing doesn't happen. Cover the case that would really hurt, not every case.",
+  "Trips: the route and where to stop are free to work out; fuel on a road trip is roughly miles / 25 × the pump price.",
+];
+
 export interface Lesson {
   id: string;
   agent: AgentId;

@@ -7,10 +7,13 @@ import { payRequest, quote } from "./nanopay";
  * our network can be bought by an agent through one generic path (callService).
  */
 const DISCOVERY = process.env.MARKETPLACE_URL ?? "https://api.circle.com/v2/x402/discovery/resources";
+import { mainnetOn } from "@/lib/network";
+
 export const ARC_TESTNET = "eip155:5042002";
 export const ARC_MAINNET = "eip155:5042";
 /** The network this app pays on. */
-export const PAY_NETWORK = process.env.MARKETPLACE_NETWORK ?? ARC_TESTNET;
+/** The network purchases settle on: Arc mainnet once the app is switched to mainnet, the testnet until then. */
+export const PAY_NETWORK = process.env.MARKETPLACE_NETWORK ?? (mainnetOn() ? ARC_MAINNET : ARC_TESTNET);
 
 export interface Service {
   name: string;
