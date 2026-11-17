@@ -7,7 +7,18 @@ export const lookupCost = (r: Proposal["research"][number]) => (r.tool === "serv
 export const usdc = (x: number) => (x < 0.01 ? x.toFixed(4) : x.toFixed(2));
 export const cents = (x: number) => `${Math.round(x * 100)}¢`;
 
+/** A leg of a combination in plain words: NO on "$65,000 or above" reads "Below $65,000". */
+export function legText(l: { label: string; side: "yes" | "no" }) {
+  if (l.side === "yes") return l.label;
+  const up = l.label.match(/^(.+?) or (above|higher|more)$/i);
+  if (up) return `Below ${up[1]}`;
+  const down = l.label.match(/^(.+?) or (below|lower|less)$/i);
+  if (down) return `Above ${down[1]}`;
+  return `Not: ${l.label}`;
+}
+
 export function actionText(a: MoveAction) {
+  if (a.kind === "prediction_order" && a.combo) return `${a.quantity} × one contract that pays only if all ${a.combo.legs.length} happen, at ≤ ${cents(a.maxPrice)}, resting until filled`;
   if (a.kind === "prediction_order" && a.trade === "sell") return `Sell ${a.quantity} × ${a.side.toUpperCase()} “${a.label}” at ≥ ${cents(a.maxPrice)}, resting until filled`;
   if (a.kind === "prediction_order")
     return a.orderType === "stop-limit"

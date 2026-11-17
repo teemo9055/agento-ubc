@@ -88,6 +88,14 @@ Measured network fee per `authorize` call, paid by the agent: about 0.0026 USDC.
 
 Prediction markets work as cheap insurance. Tell Inso what you'd lose and when ("a cold snap would cost me $20 in rides tomorrow in NYC", "I hold BTC, cover me for $30 if it drops below $60k"). It finds the Gemini market for that event and proposes buying the side that pays out if the bad thing happens. Code, not the model, sizes the order so the payout after its own cost covers the loss (or fits your budget), and the card states it like insurance: what you pay now, what you get back if it happens. If Gemini lists no market for the risk (there are no rain markets, only daily temperature by city), the agent says so.
 
+### Cover for several things at once
+
+Worried about two things going wrong together ("BTC ends the month under $65k and ETH is under $1,800")? Inso finds a contract for each and proposes one **combination**: a single Gemini contract that pays $1 only if every leg resolves as named. It costs roughly the legs' prices multiplied, so far less than buying each. The card reads like a policy: what it costs at most, what it pays if all of them happen, every leg with its own live price, and the plain warning that it pays nothing if any one doesn't. Every leg is read from the exchange by code, and legs that can't both happen are refused. Gemini's test exchange creates the combined contract when the order is placed; without keys the order is practice, priced from the live markets. Gemini has not switched combinations on for its real exchange yet.
+
+### Live prices and how it ended
+
+A prediction order shows its market live: what the side costs to buy and what selling it gets, and for a price contract a meter of how far the real price is from the line ("BTC is at $64,702, $298 below the $65,000 line"). The server follows Gemini's WebSocket book stream and falls back to reading the REST API every few seconds where WebSocket connections can't be made. When the market closes the job looks up how it resolved and says what the position paid ("Your cover paid $24" or "The thing you covered didn't happen"); for practice orders it says what it would have paid. Real outcomes become lessons the agents see next time.
+
 ### What you see
 
 - **Ask.** Say what you want done, or start from a goal (protect against a cost, bet on an outcome, plan a drive…). The agent that fits is picked for you.
@@ -131,6 +139,8 @@ Agents pay per request in USDC. Three kinds of seller, one approval and policy p
 | Agento's own x402 feed | Gemini odds history, trade flow, price candles; driving routes | x402 from the job's vault on Arc |
 | Quicknode, on Circle's Agent Marketplace | Typed onchain reads across chains: Chainlink prices (BTC, ETH, SOL, LINK, AVAX, BNB, USDC, gold, silver, EUR, GBP, JPY), gas price on Ethereum, Base, Arbitrum, Optimism and Polygon, Bitcoin fees and mempool, any wallet's USDC balance. 0.0001 USDC a request | Circle Gateway nanopayment from the agent's Arc balance |
 | Any other marketplace listing payable on our network | Whatever it sells. The agent finds it with a catalog search and adds a `service` step; code reads the price and payee from the listing and the seller's own 402 quote, never from the model | Circle Gateway nanopayment |
+
+**Agento sells, too.** The same x402 endpoints its own jobs pay are open to any agent with USDC on Arc, with no account or key: market search and history, new and settled markets, and `cover.quote`, which prices cover against 2-6 things happening together. `GET /api/x402` is the catalog with prices, `/api/x402/openapi.json` the spec an agent or a marketplace listing reads, and the Agents page shows what other agents have paid, apart from what the app's own jobs paid. `BUYER_PRIVATE_KEY=0x… node scripts/agent-buyer.mjs http://localhost:3000 cover.quote "legs=…"` plays an outside agent end to end: ask, get the price, sign, pay, get the answer.
 
 Before anything is signed the purchase is checked against the approved line: the price can't exceed it and the payee must match. Requests that would send or sign a transaction are refused; paid nodes are read-only. On Arc testnet 134 of the marketplace's 2,650 listings are payable today (Quicknode's 132 chains and BotPay); another 2,052 take Arc mainnet. They go through this same buyer, but paying them is not wired up yet: it needs the mainnet Gateway settings and real USDC. The Agents page shows these numbers live and searches the whole catalog.
 

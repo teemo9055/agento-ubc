@@ -6,6 +6,7 @@ import { usdc } from "@/lib/move";
 import { Assemble } from "./Assemble";
 import { Icon } from "./Icon";
 import { Spinner } from "./ui";
+import { LiveMarket } from "./Live";
 
 const STAGES = ["Shape it", "Review", "Run", "Done"] as const;
 
@@ -138,6 +139,12 @@ export function Workspace({ run, onExample }: { run: Run; onExample?: (text: str
                 <Icon name="chat" size={13} className="shrink-0" /> <span className="truncate">Try: “{kind.example}”</span>
               </button>
             )}
+          </div>
+        )}
+
+        {move?.action?.kind === "prediction_order" && move.action.trade !== "sell" && (
+          <div className="mt-4">
+            <LiveMarket action={move.action} hedge={move.hedge} venue={move.venue} />
           </div>
         )}
 

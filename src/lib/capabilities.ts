@@ -37,7 +37,11 @@ export const CAPABILITIES: Capability[] = [
   { what: "Live odds on every Gemini market (crypto, weather, rates, sports, commodities)", where: "now", who: ["inso", "trado"] },
   { what: "Live coin prices", where: "now", who: ["inso", "trado"] },
   { what: "Hotels, chargers, fuel and food near any stop", where: "now", who: ["travo"] },
+  { what: "What's new, opening soon or just settled on Gemini, and how each market resolved", where: "now", who: ["inso", "trado"] },
+  { what: "Live prices on any contract, and how far the real price is from its line", where: "now", who: ["inso", "trado"] },
+  { what: "Price cover against several things happening together (a combination)", where: "now", who: ["inso"] },
   // Orders.
+  { what: "One order on a combination of 2-6 outcomes that pays only if all happen", where: "exchange", who: ["inso"], note: "Gemini's test exchange; not yet on its real one" },
   { what: "Buy or sell prediction contracts on crypto and commodity markets: limits, stop-limits, conditions, hedges, positions", where: "exchange", who: ["inso", "trado"], note: "Gemini's test exchange lists only these markets" },
   { what: "Buy or sell coins with a limit price", where: "exchange", who: ["trado"] },
   // Not yet.

@@ -1,4 +1,4 @@
-import { actionText, cents, conditionLabel, lookupCost, maxCost } from "./move";
+import { legText, actionText, cents, conditionLabel, lookupCost, maxCost } from "./move";
 import type { Proposal } from "./types";
 
 /**
@@ -73,14 +73,18 @@ const money = (x: number) => `$${x < 0.01 && x > 0 ? x.toFixed(4) : x.toFixed(2)
 export function blueprintOf(p: Proposal): Blueprint {
   const a = p.action;
   const checks = [p.condition, ...(p.also ?? [])].filter((c): c is NonNullable<typeof c> => Boolean(c));
-  const kind: WorkKind = p.hedge ? "hedge" : a?.kind === "itinerary" ? "trip" : a ? (checks.length ? "conditional" : "order") : "lookup";
+  const kind: WorkKind = p.hedge || (a?.kind === "prediction_order" && a.combo) ? "hedge" : a?.kind === "itinerary" ? "trip" : a ? (checks.length ? "conditional" : "order") : "lookup";
   const reads: Block[] = p.research.map((r) => ({ label: r.label, detail: r.why, cost: lookupCost(r) }));
   const does: Block[] = [];
   const gets: Block[] = [];
-  if (a?.kind === "prediction_order") {
+  if (a?.kind === "prediction_order" && a.combo) {
+    does.push({ label: `Buy ${a.quantity} × combined contract`, detail: `one order at ≤ ${cents(a.maxPrice)} each`, cost: maxCost(a) });
+    if (p.hedge) gets.push({ label: `${money(p.hedge.payout)} if all ${a.combo.legs.length} happen`, detail: `Covers ${Math.round((p.hedge.covered / p.hedge.lossUsd) * 100)}% of a ${money(p.hedge.lossUsd)} loss on ${p.hedge.protects}` });
+    else gets.push({ label: `${money(a.quantity)} if all ${a.combo.legs.length} happen`, detail: "nothing if any one doesn't" });
+  } else if (a?.kind === "prediction_order") {
     const sell = a.trade === "sell";
     does.push({ label: `${sell ? "Sell" : "Buy"} ${a.quantity} × ${a.side.toUpperCase()}`, detail: `“${a.label}” at ${sell ? "≥" : "≤"} ${cents(a.maxPrice)}${a.orderType === "stop-limit" ? `, once it reaches ${cents(a.stopPrice ?? a.maxPrice)}` : ""}`, cost: maxCost(a) });
-    if (p.hedge) gets.push({ label: `${money(p.hedge.payout)} if it happens`, detail: `Covers ${Math.round(p.hedge.covered * 100)}% of a ${money(p.hedge.lossUsd)} loss on ${p.hedge.protects}` });
+    if (p.hedge) gets.push({ label: `${money(p.hedge.payout)} if it happens`, detail: `Covers ${Math.round((p.hedge.covered / p.hedge.lossUsd) * 100)}% of a ${money(p.hedge.lossUsd)} loss on ${p.hedge.protects}` });
     else if (sell) gets.push({ label: `About ${money(a.maxPrice * a.quantity)} back`, detail: "when the sale fills" });
     else gets.push({ label: `${money(a.quantity)} if ${a.side.toUpperCase()} wins`, detail: `$1 a contract; nothing if it doesn't` });
   } else if (a?.kind === "spot_order") {
@@ -93,9 +97,19 @@ export function blueprintOf(p: Proposal): Blueprint {
   } else {
     gets.push({ label: "The answer", detail: "with the numbers and who was paid" });
   }
+  const isCombo = a?.kind === "prediction_order" && Boolean(a.combo);
   return {
     kind,
-    lanes: lanes({ reads, checks: checks.map((c) => ({ label: conditionLabel(c), detail: "read fresh, right before" })), does, gets }),
+    lanes: lanes({
+      reads,
+      checks: [
+        // The legs are what has to come true, so they sit where the conditions do.
+        ...(a?.kind === "prediction_order" && a.combo ? a.combo.legs.map((l) => ({ label: legText(l), detail: `${l.event}${l.price != null ? ` · ${cents(l.price)} alone` : ""}` })) : []),
+        ...checks.map((c) => ({ label: conditionLabel(c), detail: "read fresh, right before" })),
+      ],
+      does,
+      gets,
+    }).map((l) => (isCombo && l.key === "checks" ? { ...l, title: "All must happen" } : l)),
     costUsd: p.research.reduce((s, r) => s + lookupCost(r), 0) + maxCost(a),
   };
 }

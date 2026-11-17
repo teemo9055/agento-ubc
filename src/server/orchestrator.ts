@@ -24,12 +24,14 @@ import { aiEnabled, type AiUsage } from "./ai";
 import { buildPlanStep, exploreTurn } from "./explore";
 import { editPlan, type PlanOp } from "./plan-edit";
 import { routeAgent } from "./route";
-import { cancelOrder, refreshOrder } from "./exchange";
+import { cancelOrder, marketBase, refreshOrder } from "./exchange";
+import * as gemini from "./gemini";
+import { settle } from "@/lib/settle";
 import { stillTradable, toProposalInput, validateProposal } from "./tools";
 import { ensureGatewayFunds, GatewayFundsError } from "./nanopay";
 import { anchorOrder, canAnchor } from "./anchor";
 import { suggestionsFor } from "./suggest";
-import { recordOrder } from "./knowledge";
+import { recordOrder, recordSettlement } from "./knowledge";
 import { aiEditMove } from "./edit-move";
 import { offVault, paidInUsdc, type ChatMsg, type Plan, type PlanStep, type Proposal } from "@/lib/types";
 import { PhaseFailure, type AgentCtx, type PlanDraft } from "./agents/types";
@@ -1060,6 +1062,7 @@ function trackOpenOrders() {
   const every = Number(process.env.ORDER_POLL_MS ?? 60_000);
   gg.__agentoOrderPoll = setInterval(() => {
     for (const ctl of runs.values()) {
+      if (dueToSettle(ctl.run)) void settleRun(ctl.run.id).catch((e) => console.warn(`settle ${ctl.run.id}:`, (e as Error).message));
       const o = ctl.run.order;
       if (o?.status !== "open" || o.venue === "paper") continue;
       void refreshRunOrder(ctl.run.id).then(
@@ -1075,6 +1078,32 @@ function trackOpenOrders() {
 }
 
 // ---------- the order after the job ----------
+
+/** A bought position whose market has closed and whose result isn't on record yet. */
+function dueToSettle(run: Run) {
+  const a = run.proposal?.action;
+  if (run.status !== "done" || run.settlement || !run.order || a?.kind !== "prediction_order" || a.trade === "sell") return false;
+  if (!["filled", "simulated", "open", "cancelled"].includes(run.order.status)) return false;
+  const closes = a.combo ? Math.min(...a.combo.legs.map((l) => (l.expiry ? Date.parse(l.expiry) : Infinity))) : run.proposal?.market?.closesAt ? Date.parse(run.proposal.market.closesAt) : NaN;
+  return Number.isFinite(closes) && closes <= Date.now();
+}
+
+/** Reads how the job's market resolved and records what the position paid. Safe to call any time. */
+export async function settleRun(runId: string) {
+  const ctl = ctlOf(runId);
+  const a = ctl.run.proposal?.action;
+  if (!dueToSettle(ctl.run) || a?.kind !== "prediction_order") return ctl.run;
+  const base = marketBase(ctl.run.order!.venue);
+  const tickers = [...new Set(a.combo ? a.combo.legs.map((l) => l.eventTicker) : [a.eventTicker])];
+  const events = await Promise.all(tickers.map((t) => gemini.getEvent(t, base).catch(() => null)));
+  const resolved = new Map(events.flatMap((e) => (e?.contracts ?? []).map((c) => [c.symbol, c.resolved] as const)));
+  const s = settle(a, ctl.run.order, (symbol) => resolved.get(symbol));
+  if (!s || ctl.run.settlement) return ctl.run;
+  emit(ctl, { type: "order.settled", settlement: s });
+  log(ctl, { kind: "failure", what: s.won ? `Resolved your way: ${s.practice ? "would have paid" : "paid"} $${s.paid.toFixed(2)}` : "Resolved the other way: no payout", why: `${s.quantity} contract${s.quantity === 1 ? "" : "s"} for $${s.cost.toFixed(2)}; the market settled ${s.resolved.toUpperCase()}`, outcome: "approved", by: "system" });
+  recordSettlement(ctl.run, s);
+  return ctl.run;
+}
 
 /** Re-reads the move's order from the exchange: open, partly filled, filled or cancelled. */
 export async function refreshRunOrder(runId: string) {

@@ -258,6 +258,8 @@ test("the work is drawn beside the chat, and the likeliest next step is one tap"
   await expect(space.locator("[data-lane=does] [data-block]")).toHaveCount(1);
   await expect(space.locator("[data-ghost]")).toHaveCount(0);
   await expect(page.getByTestId("workspace-cost")).toContainText("Up to $");
+  // The move's market is followed live: what it costs to buy right now.
+  await expect(page.getByTestId("live-price")).toContainText(/to buy|no seller|Resolved/, { timeout: 15_000 });
   await expect(page.getByTestId("stages").locator("[aria-current=step]")).toHaveText(/Shape it/);
   // Right: ways to change it, one tap each.
   await expect(page.getByTestId("quick").getByRole("button").first()).toBeVisible();
@@ -305,4 +307,20 @@ test("the showcase builds a long plan that can be changed before anything is pai
   await page.getByTestId("plan-remove").click();
   await expect(steps).toHaveCount(n - 1);
   await expect(page.getByTestId("quick-primary")).toHaveText(`Start all ${n - 1} steps`);
+});
+
+test("the agents page shows what Agento sells to other agents and what it earned", async ({ page }) => {
+  await prefs(page);
+  await page.goto("/agents");
+  const selling = page.getByTestId("selling");
+  await expect(selling).toBeVisible();
+  await expect(page.getByTestId("earned-outside")).toHaveText(/^\$/);
+  await page.getByTestId("selling-toggle").click();
+  await expect(page.getByTestId("selling-list")).toContainText("/api/x402/cover.quote");
+  // The catalog and the spec are what another agent reads before paying.
+  const spec = await (await page.request.get("/api/x402/openapi.json")).json();
+  expect(Object.keys(spec.paths)).toContain("/api/x402/cover.quote");
+  const unpaid = await page.request.get("/api/x402/markets.new?list=new");
+  expect(unpaid.status()).toBe(402);
+  expect((await unpaid.json()).accepts[0]).toMatchObject({ scheme: "exact", maxAmountRequired: "5000" });
 });

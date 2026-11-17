@@ -94,6 +94,41 @@ export const FREE_TOOLS: Record<string, FreeTool> = {
       };
     },
   },
+  browse_markets: {
+    description:
+      "Gemini's lists, no keyword needed: new = just listed, upcoming = opening soon, settled = just resolved (with how each contract resolved).",
+    params: z.object({ list: z.enum(["new", "upcoming", "settled"]), category: z.string().optional().describe("Only this category, e.g. Crypto, Sports, Weather"), limit: z.number().int().min(1).max(12).optional() }),
+    async run(a) {
+      const which = a.list as gemini.Listing;
+      const all = await gemini.listEvents(which, 20);
+      const cat = String(a.category ?? "").toLowerCase();
+      const events = all.filter((e) => !e.ticker.startsWith("CMB-") && (!cat || e.category.toLowerCase().includes(cat))).slice(0, Number(a.limit ?? 8));
+      const data = events.map((e) => ({
+        ticker: e.ticker,
+        title: e.title,
+        category: e.category,
+        closes: e.expiry,
+        contracts: e.contracts.slice(0, 6).map((c) => (which === "settled" ? { label: c.label, resolved: c.resolved ?? "pending" } : { symbol: c.symbol, label: c.label, bid: c.bid, ask: c.ask })),
+      }));
+      const word = which === "new" ? "newly listed" : which === "upcoming" ? "opening soon" : "just settled";
+      return { data: { list: which, markets: data }, summary: `${events.length} markets ${word}${cat ? ` in ${a.category}` : ""}` };
+    },
+  },
+  combo_quote: {
+    description:
+      "Price a combination: one contract paying $1 only if 2-6 different contracts ALL resolve as named. Returns each leg's price and the fair combined price.",
+    params: z.object({ legs: z.array(z.object({ eventTicker: z.string(), symbol: z.string(), side: z.enum(["yes", "no"]) })).min(2).max(6) }),
+    async run(a) {
+      const venue = tradingVenue();
+      const r = await comboLegs(a.legs as { eventTicker: string; symbol: string; side: "yes" | "no" }[], venue);
+      if ("error" in r) throw new Error(r.error);
+      const apart = r.apart;
+      return {
+        data: { venue: VENUE_NAME[venue], legs: r.legs.map((l) => ({ event: l.event, contract: l.label, needs: l.side, priceAlone: l.price, eventTicker: l.eventTicker, symbol: l.symbol })), fairPrice: r.fair, legsBoughtSeparately: apart, paysPerContract: 1, closes: r.closesAt, note: "fairPrice assumes the legs are independent; legs that tend to happen together are worth more than that." },
+        summary: r.fair != null ? `${r.legs.length} outcomes together: about ${Math.round(r.fair * 100)}¢ per $1 of cover${apart != null ? ` (${Math.round(apart * 100)}¢ bought separately)` : ""}` : `${r.legs.length} outcomes together: no sellers on one leg, so no fair price yet`,
+      };
+    },
+  },
   find_place: {
     description: "Look up a place by name (OpenStreetMap). Returns name and coordinates.",
     params: z.object({ query: z.string() }),
@@ -225,8 +260,8 @@ const MAX_SERVICE = BigInt(process.env.MARKETPLACE_MAX_PER_REQUEST ?? 10_000);
 
 /** Each agent's own harness: what it can look up for free, what it can buy, and what it can do. */
 export const TOOLKIT: Record<AgentId, { free: string[]; research: string[] }> = {
-  inso: { free: ["search_markets", "get_market", "my_positions", "spot_price", "search_services"], research: ["odds_history", "trade_tape", "oracle_price", "service"] },
-  trado: { free: ["spot_price", "search_markets", "get_market", "my_positions", "search_services"], research: ["spot_candles", "oracle_price", "odds_history", "gas_price", "btc_network", "wallet_balance", "service"] },
+  inso: { free: ["search_markets", "get_market", "browse_markets", "combo_quote", "my_positions", "spot_price", "search_services"], research: ["odds_history", "trade_tape", "oracle_price", "service"] },
+  trado: { free: ["spot_price", "search_markets", "get_market", "browse_markets", "my_positions", "search_services"], research: ["spot_candles", "oracle_price", "odds_history", "gas_price", "btc_network", "wallet_balance", "service"] },
   travo: { free: ["find_place", "find_nearby", "my_positions", "search_services"], research: ["drive_route", "oracle_price", "service"] },
 };
 
@@ -272,6 +307,13 @@ export const ProposalInput = z.object({
         maxPrice: z.number().min(0.01).max(0.99).describe("Buy: highest price per contract (0-1). Sell: lowest price accepted."),
         stopPrice: z.number().min(0.01).max(0.99).nullable().describe("stop-limit only: trigger price, at or above the last trade and at or below maxPrice"),
         quantity: z.number().int().min(1).max(500),
+        combo: z
+          .array(z.object({ eventTicker: z.string(), symbol: z.string(), side: z.enum(["yes", "no"]) }))
+          .min(2)
+          .max(6)
+          .nullable()
+          .optional()
+          .describe("One order that pays only if EVERY leg resolves as its side says (legs from combo_quote). With it: eventTicker and symbol 'COMBO', side yes, orderType limit."),
       }),
       z.object({ kind: z.literal("spot_order"), symbol: z.string(), side: z.enum(["buy", "sell"]), limitPrice: z.number().positive(), amountUsd: z.number().min(1).max(100) }),
       z.object({ kind: z.literal("itinerary"), stops: z.array(z.string().min(2).max(60)).min(2).max(6), hoursPerDay: z.number().int().min(2).max(12) }),
@@ -320,7 +362,14 @@ export async function validateProposal(agent: AgentId, input: unknown, id: strin
   if (raw && !ACTIONS[agent].includes(raw.kind)) return { error: `This agent can't do ${raw.kind}. Allowed: ${ACTIONS[agent].join(", ")}` };
   if (!raw && p.research.length === 0) return { error: "A move needs an action or at least one paid lookup" };
 
-  if (raw?.kind === "prediction_order") {
+  if (raw?.kind === "prediction_order" && raw.combo?.length) {
+    const built = await checkCombo(raw, venue, budget, p.hedge);
+    if ("error" in built) return built;
+    action = built.action;
+    adjustments.push(...built.notes);
+    eventContracts = built.action.kind === "prediction_order" ? (built.action.combo?.legs.map((l) => l.symbol) ?? []) : [];
+    market = { ask: null, bid: null, closesAt: built.closesAt };
+  } else if (raw?.kind === "prediction_order") {
     const ev = await gemini.getEvent(raw.eventTicker, marketBase(venue)).catch(() => null);
     const c = ev?.contracts.find((x) => x.symbol === raw.symbol);
     if (!ev || !c)
@@ -506,6 +555,44 @@ function hedgeOf(h: ProposalInput["hedge"], a: MoveAction | undefined): Proposal
 
 type RawPrediction = Extract<NonNullable<ProposalInput["action"]>, { kind: "prediction_order" }>;
 
+/** Reads each leg of a combination from the exchange it would trade on, with what that outcome costs alone. */
+export async function comboLegs(legs: { eventTicker: string; symbol: string; side: "yes" | "no" }[], venue: Proposal["venue"]) {
+  const r = await gemini.comboLegs(legs, marketBase(venue), MIN_EXPIRY_MS);
+  return "error" in r && /not found/.test(r.error) && venue === "gemini-sandbox" ? { error: `${r.error} on ${VENUE_NAME[venue]}; use contracts from search_markets' "tradable" list` } : r;
+}
+
+async function checkCombo(raw: RawPrediction, venue: Proposal["venue"], budget: number | undefined, hedge: ProposalInput["hedge"]): Promise<{ action: MoveAction; notes: string[]; closesAt?: string } | { error: string }> {
+  if (raw.trade === "sell") return { error: "A combination can only be bought here. To get out of one, sell it from my_positions like any other contract." };
+  if (raw.orderType !== "limit") return { error: "A combination is a plain limit order: set orderType limit." };
+  if (raw.side !== "yes") return { error: "Buy the YES side of a combination; say what each leg needs with that leg's own side." };
+  if (venue === "gemini") return { error: "Gemini hasn't switched on combinations on its real exchange yet; they work on the test exchange and in practice." };
+  const read = await comboLegs(raw.combo ?? [], venue);
+  if ("error" in read) return read;
+  const notes: string[] = [];
+  const maxPrice = round2(raw.maxPrice);
+  let quantity = raw.quantity;
+  if (hedge) {
+    const need = Math.min(500, Math.max(1, Math.ceil(hedge.lossUsd / (1 - maxPrice) - 1e-9)));
+    const fits = Math.max(1, Math.floor(limits().maxOrderUsd / maxPrice));
+    const sized = Math.min(need, fits);
+    if (sized !== quantity) notes.push(sized < need ? `Sized to ${sized} contracts, the most your $${limits().maxOrderUsd} order limit allows` : `Sized to ${sized} contracts so the payout covers your $${hedge.lossUsd}`);
+    quantity = sized;
+  }
+  if (budget != null && maxPrice * quantity > budget + 1e-9) {
+    quantity = Math.floor(budget / maxPrice + 1e-9);
+    if (quantity < 1) return { error: `Budget $${budget} can't buy one combined contract at ${Math.round(maxPrice * 100)}¢` };
+    notes.push(`Quantity cut to ${quantity} to stay within your $${budget}`);
+  }
+  if (maxPrice * quantity > limits().maxOrderUsd) return { error: `Order over the user's $${limits().maxOrderUsd} per-order limit (set in Settings). Make it smaller.` };
+  const apart = read.apart;
+  notes.push(`Pays $1 a contract only if all ${read.legs.length} happen; nothing if any one doesn't`);
+  if (read.fair != null) notes.push(`Worth about ${Math.round(read.fair * 100)}¢ if the legs move independently${apart != null ? `; the legs bought separately cost ${Math.round(apart * 100)}¢` : ""}`);
+  if (read.fair != null && maxPrice > Math.min(0.99, read.fair * 1.5 + 0.02)) notes.push(`Your limit of ${Math.round(maxPrice * 100)}¢ is well above that; a lower limit risks less`);
+  notes.push(venue === "paper" ? "Practice: the combination is priced from the live markets but not created" : "A new combination starts with an empty book, so the order waits for a seller");
+  const label = read.legs.map((l) => `${l.label}${l.side === "no" ? " (NO)" : ""}`).join(" + ").slice(0, 60);
+  return { action: { kind: "prediction_order", eventTicker: "COMBO", symbol: "COMBO", label, side: "yes", orderType: "limit", maxPrice, quantity, combo: { legs: read.legs, fair: read.fair } }, notes, closesAt: read.closesAt };
+}
+
 /** A sell must close contracts the user actually holds and has free, as a resting limit. */
 async function checkSell(raw: RawPrediction, c: gemini.MarketContract, price: number, venue: Proposal["venue"]): Promise<{ action: MoveAction; notes: string[]; bidNow: number | null } | { error: string }> {
   if (venue === "paper") return { error: "No exchange is connected, so the user holds nothing to sell. Say so; selling needs Gemini connected (New job → Exchange)." };
@@ -535,7 +622,7 @@ export function toProposalInput(p: Proposal): ProposalInput {
     why: p.why,
     ask: p.ask,
     research: p.research.map((r) => ({ tool: r.tool, args: r.args, label: r.label, why: r.why })),
-    action: !a ? null : a.kind === "prediction_order" ? { ...a, trade: a.trade ?? null, stopPrice: a.stopPrice ?? null } : a,
+    action: !a ? null : a.kind === "prediction_order" ? { ...a, trade: a.trade ?? null, stopPrice: a.stopPrice ?? null, combo: a.combo ? a.combo.legs.map((l) => ({ eventTicker: l.eventTicker, symbol: l.symbol, side: l.side })) : null } : a,
     condition: p.condition ?? null,
     alsoRequire: p.also?.length ? p.also : null,
     budgetUsd: p.budgetUsd ?? null,

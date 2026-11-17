@@ -157,6 +157,7 @@ export const notionalOf = (a: MoveAction) => (a.kind === "prediction_order" ? (a
 
 const cents = (x: number) => `${Math.round(x * 100)}¢`;
 export function describeAction(a: MoveAction) {
+  if (a.kind === "prediction_order" && a.combo) return `${a.quantity} × all of: ${a.combo.legs.map((l) => `${l.label}${l.side === "no" ? " (NO)" : ""}`).join(" + ")}, at ≤ ${cents(a.maxPrice)}`;
   if (a.kind === "prediction_order")
     return a.orderType === "stop-limit"
       ? a.trade === "sell"
@@ -209,6 +210,15 @@ export async function placeOrder(action: MoveAction, since = Date.now()): Promis
   if (action.kind === "prediction_order") {
     const terms = await priv<{ hasAcceptedLatest: boolean }>("/v1/prediction-markets/terms/status", {}, "GET");
     if (!terms.hasAcceptedLatest) throw new ExchangeError("Accept Gemini's prediction-market terms first (New job → Exchange)", "terms");
+    if (action.combo && action.symbol === "COMBO") {
+      // The exchange makes the combination a contract of its own (or hands back the one that exists); the order then goes to that.
+      const legs = action.combo.legs.map((l) => ({ contractId: l.contractId, requiredOutcome: l.side === "yes" ? "Yes" : "No" }));
+      if (legs.some((l) => !l.contractId)) throw new ExchangeError("One leg of the combination has no contract id on this exchange");
+      const made = await priv<{ contract?: { instrumentSymbol?: string }; instrumentSymbol?: string; combo?: { contract?: { instrumentSymbol?: string } } }>("/v1/prediction-markets/combos", { legs });
+      const symbol = made.contract?.instrumentSymbol ?? made.instrumentSymbol ?? made.combo?.contract?.instrumentSymbol;
+      if (!symbol) throw new ExchangeError("The exchange didn't return the combined contract");
+      return placeOrder({ ...action, symbol }, since);
+    }
     const dup = await alreadyPlaced(action, since).catch(() => undefined);
     if (!dup && action.trade === "sell") {
       // Never sell more than is held and free (not already on hold for another order).

@@ -88,7 +88,8 @@ async function geocodeAll(names: string[]) {
  */
 async function observe(c: MoveCondition, action: MoveAction | undefined, venue: Proposal["venue"]): Promise<{ value: number; source: string } | undefined> {
   if (c.metric === "spot_price") return { value: (await gemini.spotTicker(c.symbol)).last, source: "Gemini spot" };
-  const ticker = action?.kind === "prediction_order" ? action.eventTicker : undefined;
+  // A check on one leg of a combination reads that leg's own market.
+  const ticker = action?.kind === "prediction_order" ? (action.combo?.legs.find((l) => l.symbol === c.symbol)?.eventTicker ?? action.eventTicker) : undefined;
   if (!ticker) return undefined;
   const read = async (base: string) => {
     const ev = await gemini.getEvent(ticker, base).catch(() => null);

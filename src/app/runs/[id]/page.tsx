@@ -11,6 +11,7 @@ import { ApproveModal, Cards, CostTable } from "@/components/WorkOrder";
 import { Chat, stepTarget, targetKey, type EditTarget } from "@/components/Chat";
 import { OrderStatus } from "@/components/OrderStatus";
 import { Details, ReviewCard, StatusCard } from "@/components/JobBrief";
+import { LiveMarket } from "@/components/Live";
 import { PlanBoard, planOf } from "@/components/PlanBoard";
 import { Assemble } from "@/components/Assemble";
 import { Stages, Workspace } from "@/components/Workspace";
@@ -251,6 +252,9 @@ export default function RunPage({ params }: { params: Promise<{ id: string }> })
           <Assemble play={run.proposal ? `review-${run.proposal.id}` : null}>
             <ReviewCard run={run} />
           </Assemble>
+          {run.proposal?.action?.kind === "prediction_order" && run.proposal.action.trade !== "sell" && true && (
+            <LiveMarket action={run.proposal.action} hedge={run.proposal.hedge} venue={run.proposal.venue} settlement={run.settlement} held={undefined} />
+          )}
           <AnimatePresence>
             {run.editNote && (
               <motion.p initial={{ opacity: 0, y: 4 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0 }} className={`text-right text-[12.5px] ${run.editNote.ok ? "text-ink-2" : "text-bad"}`}>
@@ -308,6 +312,9 @@ export default function RunPage({ params }: { params: Promise<{ id: string }> })
           <Assemble play={live ? "status" : null}>
             <StatusCard run={run} onNeedsYou={pending.length > 0 && dismissed === head?.id ? () => setDismissed(null) : undefined} onCancel={() => setCancelling(true)} />
           </Assemble>
+          {run.proposal?.action?.kind === "prediction_order" && run.proposal.action.trade !== "sell" && run.status !== "cancelled" && (
+            <LiveMarket action={run.proposal.action} hedge={run.proposal.hedge} venue={run.proposal.venue} settlement={run.settlement} held={run.order?.status === "simulated" ? run.proposal.action.quantity : run.order?.filledQuantity || undefined} />
+          )}
           <div className="sr-only" aria-live="polite">
             {pending.length ? `${pending.length} needs your decision` : ""}
           </div>

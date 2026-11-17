@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { SELLERS, priceAt, type Seller } from "@/server/sellers";
+import { recordSale } from "@/server/sales";
 import { PRODUCTS, decodeHeader, encodeHeader, requirements, verifyAndSettle, type PaymentPayload } from "@/server/x402";
 
 export const dynamic = "force-dynamic";
@@ -23,7 +24,7 @@ export async function GET(req: NextRequest, ctx: { params: Promise<{ product: st
 
   const header = req.headers.get("x-payment");
   if (!header) {
-    return NextResponse.json({ x402Version: 1, error: "payment required", accepts: [reqs] }, { status: 402 });
+    return NextResponse.json({ x402Version: 1, error: "payment required", accepts: [reqs] }, { status: 402, headers: { "access-control-allow-origin": "*" } });
   }
 
   if (fault === "settle_fails") {
@@ -33,8 +34,9 @@ export async function GET(req: NextRequest, ctx: { params: Promise<{ product: st
   let data: unknown;
   try {
     data = await product.run(q);
-  } catch {
-    return NextResponse.json({ error: "upstream data unavailable" }, { status: 502 });
+  } catch (e) {
+    // Nothing has been charged yet: a bad request costs the buyer nothing.
+    return NextResponse.json({ error: id === "cover.quote" ? (e as Error).message : "upstream data unavailable" }, { status: id === "cover.quote" ? 400 : 502 });
   }
 
   let settled;
@@ -44,6 +46,8 @@ export async function GET(req: NextRequest, ctx: { params: Promise<{ product: st
     return NextResponse.json({ x402Version: 1, error: (e as Error).message, accepts: [reqs] }, { status: 402 });
   }
 
+  const payer = decodeHeader<PaymentPayload>(header).payload.authorization.from;
+  recordSale({ product: id, payer, amount: price.toString(), tx: settled.hash, own: req.headers.get("x-agento-buyer") === "job" });
   const res = NextResponse.json({ data });
   res.headers.set(
     "x-payment-response",

@@ -32,7 +32,7 @@ export interface Lesson {
   id: string;
   agent: AgentId;
   topic: string;
-  kind: "order" | "rejection";
+  kind: "order" | "rejection" | "outcome";
   data: Record<string, unknown>;
   createdAt: string;
 }
@@ -123,6 +123,13 @@ export function recordOrder(run: Run, o: OrderResult) {
   );
 }
 
+/** Records how a real position resolved, once per job. */
+export function recordSettlement(run: Run, s: { won: boolean; practice: boolean; cost: number; paid: number }) {
+  const a = run.proposal?.action;
+  if (!a || a.kind !== "prediction_order" || s.practice) return;
+  save({ id: randomUUID(), agent: run.agent, topic: a.combo ? "Combinations" : topicOf(a.eventTicker), kind: "outcome", data: { won: s.won, price: a.maxPrice, hedge: Boolean(run.proposal?.hedge) }, createdAt: new Date().toISOString() }, run.id);
+}
+
 /** Plain-language lessons for the agent's prompt, from aggregated outcomes. */
 export function lessonLines(agent: AgentId, max = 6): string[] {
   const all = allLessons(agent);
@@ -139,6 +146,9 @@ export function lessonLines(agent: AgentId, max = 6): string[] {
     if (mg.length) line += `; orders ${Math.min(...mg)}¢+ below the ask were cancelled unfilled`;
     out.push(line);
   }
+  const ends = new Map<string, Lesson[]>();
+  for (const l of all.filter((x) => x.kind === "outcome")) ends.set(l.topic, [...(ends.get(l.topic) ?? []), l]);
+  for (const [topic, ls] of ends) out.push(`${topic}: ${ls.filter((l) => l.data.won).length} of ${ls.length} past positions paid out at settlement`);
   const reasons = new Map<string, number>();
   for (const l of all.filter((x) => x.kind === "rejection")) reasons.set(`${l.topic}: ${l.data.reason}`, (reasons.get(`${l.topic}: ${l.data.reason}`) ?? 0) + 1);
   for (const [r, n] of reasons) out.push(`Exchange refused before (${n}×) — ${r}`);

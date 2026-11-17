@@ -186,9 +186,32 @@ export type MoveAction =
       maxPrice: number;
       stopPrice?: number;
       quantity: number;
+      /** Set when the order is for a combination: one contract that pays only if every leg resolves as named. */
+      combo?: Combo;
     }
   | { kind: "spot_order"; symbol: string; side: "buy" | "sell"; limitPrice: number; amountUsd: number }
   | { kind: "itinerary"; stops: string[]; hoursPerDay: number };
+
+export interface ComboLeg {
+  eventTicker: string;
+  symbol: string;
+  /** The contract, e.g. "$65,000 or above". */
+  label: string;
+  /** The question it belongs to, e.g. "BTC price today at 5pm". */
+  event: string;
+  /** The outcome this leg needs. */
+  side: "yes" | "no";
+  /** What that outcome costs on its own right now (0-1), when someone is selling. */
+  price: number | null;
+  contractId?: string;
+  expiry?: string;
+}
+
+export interface Combo {
+  legs: ComboLeg[];
+  /** The legs' prices multiplied: what the combination is worth if the legs don't move together. */
+  fair: number | null;
+}
 
 /** Condition checked on fresh data right before acting. */
 export interface MoveCondition {
@@ -297,6 +320,22 @@ export interface Run {
   /** The move this work order executes. */
   proposal?: Proposal;
   order?: OrderResult;
+  /** How the position ended once its market resolved. */
+  settlement?: Settlement;
+}
+
+export interface Settlement {
+  /** How the contract resolved (for a combination: yes only if every leg came in). */
+  resolved: "yes" | "no";
+  won: boolean;
+  quantity: number;
+  /** Dollars paid out: $1 a contract when it won, nothing otherwise. */
+  paid: number;
+  cost: number;
+  /** A practice order: these are the amounts it would have been. */
+  practice: boolean;
+  at: string;
+  legs?: { label: string; side: "yes" | "no"; resolved?: "yes" | "no" }[];
 }
 
 /** One step of a plan: a full move for the agent that does it. */

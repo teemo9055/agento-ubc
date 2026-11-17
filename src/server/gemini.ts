@@ -1,3 +1,5 @@
+import type { ComboLeg } from "@/lib/types";
+
 const BASE = process.env.GEMINI_API_BASE ?? "https://api.gemini.com";
 
 export interface MarketContract {
@@ -9,6 +11,12 @@ export interface MarketContract {
   expiry?: string;
   /** Contract is active and its book is open for trading. */
   open?: boolean;
+  /** The exchange's own id for the contract, used to name it as a leg of a combination. */
+  contractId?: string;
+  /** How it resolved, once settled. */
+  resolved?: "yes" | "no";
+  /** The level the contract is about ("$64,500 or above" → 64500), when it has one. */
+  strike?: number;
 }
 
 export interface MarketEvent {
@@ -17,6 +25,11 @@ export interface MarketEvent {
   category: string;
   volume: number;
   contracts: MarketContract[];
+  status?: string;
+  /** The price index the event settles against, e.g. LS-LRRR-XBTUSD. */
+  source?: string;
+  createdAt?: string;
+  expiry?: string;
 }
 
 export interface OddsPoint {
@@ -82,6 +95,10 @@ const toEvent = (e: any): MarketEvent => ({
   title: e.title,
   category: e.category,
   volume: Number(e.volume ?? 0),
+  status: e.status,
+  source: e.source,
+  createdAt: e.createdAt,
+  expiry: e.expiryDate,
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   contracts: (e.contracts ?? []).map((c: any) => ({
     symbol: c.instrumentSymbol,
@@ -91,8 +108,64 @@ const toEvent = (e: any): MarketEvent => ({
     ask: num(c.prices?.bestAsk),
     expiry: c.expiryDate,
     open: (c.status ?? "active") === "active" && (c.marketState ?? "open") === "open",
+    contractId: typeof c.id === "string" ? c.id.split("-").pop() : undefined,
+    resolved: c.resolutionSide === "yes" || c.resolutionSide === "no" ? c.resolutionSide : undefined,
+    strike: c.strike?.value != null && Number.isFinite(Number(c.strike.value)) ? Number(c.strike.value) : undefined,
   })),
 });
+
+/** What one outcome of a contract costs to buy right now: YES at the ask, NO at 1 − the YES bid. */
+export const buyPrice = (c: Pick<MarketContract, "bid" | "ask">, side: "yes" | "no") => (side === "yes" ? c.ask : c.bid != null ? Math.round((1 - c.bid) * 100) / 100 : null);
+
+export type LegAsk = { eventTicker: string; symbol: string; side: "yes" | "no" };
+
+/**
+ * Reads each leg of a combination (2-6 different contracts that must all resolve as named) with
+ * what that outcome costs alone, and the fair price of the lot: the legs' prices multiplied.
+ */
+export async function comboLegs(legs: LegAsk[], base = BASE, minLeftMs = 0): Promise<{ legs: ComboLeg[]; fair: number | null; apart: number | null; closesAt?: string } | { error: string }> {
+  if (legs.length < 2 || legs.length > 6) return { error: "A combination takes 2 to 6 legs" };
+  if (new Set(legs.map((l) => l.symbol)).size !== legs.length) return { error: "Each leg of a combination must be a different contract" };
+  const out: ComboLeg[] = [];
+  for (const l of legs) {
+    const ev = await getEvent(l.eventTicker, base).catch(() => null);
+    const c = ev?.contracts.find((x) => x.symbol === l.symbol);
+    if (!ev || !c) return { error: `Leg ${l.symbol} not found in event ${l.eventTicker}` };
+    if (c.open === false) return { error: `${c.label} (${ev.title}) isn't open for trading right now` };
+    const left = c.expiry ? Date.parse(c.expiry) - Date.now() : Infinity;
+    if (left < minLeftMs) return { error: `${c.label} (${ev.title}) closes too soon for an order to rest. Pick a later contract.` };
+    out.push({ eventTicker: ev.ticker, symbol: c.symbol, label: c.label, event: ev.title, side: l.side, price: buyPrice(c, l.side), contractId: c.contractId, expiry: c.expiry });
+  }
+  // Two answers to one question can't both be YES, unless they are rungs of a ladder ("$64k or above" and "$65k or above").
+  for (const a of out)
+    for (const b of out)
+      if (a !== b && a.eventTicker === b.eventTicker && a.side === "yes" && b.side === "yes" && !/above|below/i.test(`${a.label} ${b.label}`))
+        return { error: `${a.label} and ${b.label} are answers to the same question (${a.event}), so both can't be YES. Pick legs from different questions.` };
+  const priced = out.every((l) => l.price != null);
+  const cents2 = (x: number) => Math.round(x * 100) / 100;
+  const fair = priced ? Math.max(0.01, cents2(out.reduce((x, l) => x * (l.price as number), 1))) : null;
+  const apart = priced ? cents2(out.reduce((x, l) => x + (l.price as number), 0)) : null;
+  const ends = out.map((l) => (l.expiry ? Date.parse(l.expiry) : NaN)).filter(Number.isFinite);
+  return { legs: out, fair, apart, closesAt: ends.length ? new Date(Math.max(...ends)).toISOString() : undefined };
+}
+
+export type Listing = "new" | "upcoming" | "settled";
+const LISTING_PATH: Record<Listing, string> = { new: "newly-listed", upcoming: "upcoming", settled: "recently-settled" };
+
+/** What just opened, what opens soon, and what just resolved (Gemini's discovery lists). */
+export async function listEvents(which: Listing, limit = 8, base = BASE): Promise<MarketEvent[]> {
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const r = await get<{ data: any[] }>(`/v1/prediction-markets/events/${LISTING_PATH[which]}?limit=${Math.min(Math.max(1, limit), 20)}`, { data: [] }, base);
+  return (r.data ?? []).map(toEvent);
+}
+
+/** The spot symbol behind a settlement index: LS-LRRR-XBTUSD → btcusd. */
+export function spotOfSource(source?: string): string | undefined {
+  const m = source?.match(/^LS-LRRR-([A-Z0-9]+?)USD$/);
+  if (!m) return undefined;
+  const coin = m[1] === "XBT" ? "BTC" : m[1] === "SOLN" ? "SOL" : m[1].replace(/\d+$/, "");
+  return `${coin.toLowerCase()}usd`;
+}
 
 export async function searchEvents(query: string, limit = 5, base = BASE): Promise<MarketEvent[]> {
   // Gemini refuses larger pages on search.

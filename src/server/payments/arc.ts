@@ -17,6 +17,8 @@ const url = (req: X402Request) => {
 };
 
 const headers = (req: X402Request, extra: Record<string, string> = {}) => ({
+  // Marks the request as one of this app's own jobs, so sales to outside agents can be told apart.
+  "x-agento-buyer": "job",
   ...(req.fault ? { "x-agento-fault": req.fault } : {}),
   ...extra,
 });

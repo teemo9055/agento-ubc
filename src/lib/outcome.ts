@@ -39,6 +39,18 @@ export function outcomeOf(run: Run): Outcome {
   }
 
   // done
+  const s = run.settlement;
+  if (s) {
+    const would = s.practice ? "would have " : "";
+    const what = run.proposal?.hedge ? "Your cover" : "It";
+    return s.won
+      ? { tone: "good", headline: `${what} ${would}paid $${s.paid.toFixed(2)}`, detail: `The market resolved your way. ${s.quantity} contract${s.quantity === 1 ? "" : "s"} cost $${s.cost.toFixed(2)}${s.practice ? " (practice: no real money moved)" : ""}.` }
+      : {
+          tone: "warn",
+          headline: run.proposal?.hedge ? `The thing you covered didn't happen` : `It resolved the other way`,
+          detail: `${s.practice ? "It would have cost" : "It cost"} $${s.cost.toFixed(2)} and ${would}paid nothing${run.proposal?.hedge ? ", like insurance you didn't need" : ""}.${s.legs ? ` ${s.legs.filter((l) => l.resolved && l.resolved !== l.side).map((l) => `“${l.label}” didn't come in`).join("; ")}.` : ""}`,
+        };
+  }
   if (o && run.proposal?.action && run.proposal.action.kind !== "itinerary") {
     const of = o.quantity != null ? `${o.filledQuantity ?? 0} of ${o.quantity}` : "";
     switch (o.status) {

@@ -1,4 +1,4 @@
-import type { Plan, AiStats, ChatMsg, OrderResult, CostLine, Decision, Deliverable, Failure, FailureAction, Hex, Payment, ReapprovalRequest, Run } from "./types";
+import type { Plan, AiStats, ChatMsg, OrderResult, CostLine, Decision, Deliverable, Failure, FailureAction, Hex, Payment, ReapprovalRequest, Run, Settlement } from "./types";
 
 export type RunEvent =
   | { type: "workorder.updated"; run: Run }
@@ -7,6 +7,7 @@ export type RunEvent =
   | { type: "chat.message"; message: ChatMsg }
   | { type: "chat.thinking"; note?: string }
   | { type: "order.updated"; order: OrderResult }
+  | { type: "order.settled"; settlement: Settlement }
   | { type: "plan.updated"; plan: Plan }
   | { type: "run.saved"; saved: boolean }
   | { type: "run.approved"; planHash: Hex; vault?: Hex; fundingTx?: Hex; at: string }
