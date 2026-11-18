@@ -8,6 +8,7 @@ import { useAgentTheme } from "./useRun";
 import { useRuns } from "./runsStore";
 import { useStartJob } from "./useStartJob";
 import { TradeBoard } from "./AgentSheets";
+import { Band, Card } from "./JobCard";
 import { THEMES } from "@/lib/themes";
 import type { AgentId } from "@/lib/types";
 
@@ -27,10 +28,10 @@ const GLYPH: Record<string, string[]> = {
   pin: ["........", ".######.", "#......#", "#.####.#", "#......#", ".######.", "...##...", "...##..."],
 };
 
-function Glyph({ name }: { name: string }) {
+function Glyph({ name, size = 32 }: { name: string; size?: number }) {
   const rows = GLYPH[name] ?? GLYPH.coin;
   return (
-    <svg width="32" height="32" viewBox="0 0 8 8" shapeRendering="crispEdges" aria-hidden className="shrink-0">
+    <svg width={size} height={size} viewBox="0 0 8 8" shapeRendering="crispEdges" aria-hidden className="shrink-0">
       {rows.flatMap((r, y) => [...r].map((c, x) => (c === "#" ? <rect key={`${x}-${y}`} x={x} y={y} width="1" height="1" fill="var(--agent)" /> : null)))}
     </svg>
   );
@@ -96,60 +97,68 @@ export function AgentHome({ agent }: { agent: AgentId }) {
   const mine = (runs ?? []).filter((r) => r.agent === agent && !r.parentId).slice(0, 6);
 
   return (
-    <div className="space-y-7" data-agent={agent} data-testid={`agent-home-${agent}`}>
-      <section className="relative overflow-hidden rounded-2xl border-[1.5px] border-ink bg-agent-soft shadow-[4px_4px_0_0_var(--agent)]">
-        <div className="preview-blocks absolute inset-0 opacity-60" aria-hidden />
-        <div className="relative flex flex-col gap-5 p-5 sm:flex-row sm:items-center sm:p-7">
-          <div className="shrink-0 self-center">
-            <Mascot agent={agent} mood="happy" size={104} />
-          </div>
-          <div className="min-w-0 flex-1">
-            <div className="font-pixel text-[13px] text-agent-ink">{t.name} · {t.domain}</div>
-            <h1 className="mt-1 text-[24px] font-semibold leading-tight sm:text-[28px]">{s.ask}</h1>
-            <form
-              className="mt-4 flex gap-2"
-              onSubmit={(e) => {
-                e.preventDefault();
-                void start(agent, text, "ask");
-              }}
-            >
-              <label className="sr-only" htmlFor="agent-ask">
-                {s.ask}
-              </label>
-              <input id="agent-ask" value={text} onChange={(e) => setText(e.target.value)} placeholder={s.placeholder} maxLength={1000} className="h-12 min-w-0 flex-1 rounded-xl border-[1.5px] border-ink bg-panel px-4 text-[15px] outline-none focus:shadow-[0_0_0_3px_var(--agent-soft)]" data-testid="agent-ask" />
-              <Button type="submit" variant="agent" className="h-12 px-5" disabled={text.trim().length < 3 || Boolean(busy)}>
-                {busy === "ask" ? <Spinner /> : <Icon name="send" size={16} />} Ask
-              </Button>
-            </form>
-            {err && (
-              <p className="mt-2 text-[13px] text-bad" role="alert">
-                {err}
-              </p>
-            )}
+    <div className="flex flex-col gap-6" data-agent={agent} data-testid={`agent-home-${agent}`}>
+      <Band single />
+      <header className="flex flex-col gap-4 sm:flex-row sm:items-end sm:justify-between">
+        <div className="flex items-center gap-4">
+          <span className="pix-shadow inline-flex rounded-xl border-[1.5px] border-ink bg-agent-soft p-1.5">
+            <Mascot agent={agent} mood="happy" size={64} />
+          </span>
+          <div className="min-w-0">
+            <h1 className="font-pixel text-[30px] leading-tight text-agent-ink sm:text-[34px]">{t.name}</h1>
+            <p className="text-[14px] text-ink-2">{t.domain}</p>
           </div>
         </div>
-      </section>
+      </header>
+
+      <form
+        className="rounded-2xl border-[1.5px] border-ink bg-panel p-4 shadow-[4px_4px_0_0_var(--agent)] sm:p-5"
+        onSubmit={(e) => {
+          e.preventDefault();
+          void start(agent, text, "ask");
+        }}
+      >
+        <label htmlFor="agent-ask" className="block text-[20px] font-semibold leading-tight sm:text-[22px]">
+          {s.ask}
+        </label>
+        <div className="mt-3 flex gap-2">
+          <input id="agent-ask" value={text} onChange={(e) => setText(e.target.value)} placeholder={s.placeholder} maxLength={1000} className="h-12 min-w-0 flex-1 rounded-xl border border-line bg-surface px-4 text-[15px] outline-none focus:border-ink/50" data-testid="agent-ask" />
+          <Button type="submit" variant="agent" className="h-12 px-5" disabled={text.trim().length < 3 || Boolean(busy)}>
+            {busy === "ask" ? <Spinner /> : <Icon name="send" size={16} />} Ask
+          </Button>
+        </div>
+        {err && (
+          <p className="mt-2 text-[13px] text-bad" role="alert">
+            {err}
+          </p>
+        )}
+      </form>
 
       <section aria-labelledby="builds">
         <h2 id="builds" className="mb-3 text-[12px] font-semibold uppercase tracking-wide text-ink-3">
           {s.buildsTitle}
         </h2>
-        <ul className={`grid gap-3 sm:grid-cols-2 ${s.builds.length > 4 ? "lg:grid-cols-3" : "lg:grid-cols-3"}`}>
+        <ul className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3">
           {s.builds.map((b) => (
             <li key={b.title}>
-              <button type="button" onClick={() => void start(agent, b.say, b.title)} disabled={Boolean(busy)} className="pix-lift pressable flex h-full w-full items-start gap-3 rounded-2xl border border-line bg-panel p-4 text-left hover:border-ink disabled:opacity-60" data-testid="quick-build">
-                <span className="rounded-lg bg-agent-soft p-1.5">
-                  <Glyph name={b.glyph} />
-                </span>
-                <span className="min-w-0">
-                  <span className="block text-[14.5px] font-semibold leading-snug">{b.title}</span>
-                  <span className="mt-0.5 block text-[13px] leading-snug text-ink-2">{b.sub}</span>
-                </span>
-                {busy === b.title && (
-                  <span className="ml-auto text-agent-ink">
-                    <Spinner />
+              <button type="button" onClick={() => void start(agent, b.say, b.title)} disabled={Boolean(busy)} className="pix-lift pressable group flex h-full w-full flex-col rounded-2xl border border-line bg-panel p-2.5 text-left hover:border-ink disabled:opacity-60" data-testid="quick-build">
+                <span className="preview-blocks relative flex aspect-[16/7] w-full items-center justify-center rounded-xl border border-ink/10">
+                  <span className="pix-shadow inline-flex rounded-xl border-[1.5px] border-ink bg-panel p-2.5">
+                    <Glyph name={b.glyph} size={44} />
                   </span>
-                )}
+                  {busy === b.title && (
+                    <span className="absolute right-2 top-2 text-agent-ink">
+                      <Spinner />
+                    </span>
+                  )}
+                </span>
+                <span className="flex flex-1 items-end justify-between gap-3 px-1.5 pb-1 pt-2.5">
+                  <span className="min-w-0">
+                    <span className="block text-[14.5px] font-semibold leading-snug">{b.title}</span>
+                    <span className="mt-0.5 block text-[12.5px] leading-snug text-ink-3">{b.sub}</span>
+                  </span>
+                  <span className="inline-flex h-7 shrink-0 items-center rounded-full border border-line px-3 text-[12px] font-semibold text-ink-2 transition-colors group-hover:border-ink group-hover:text-ink">Start</span>
+                </span>
               </button>
             </li>
           ))}
@@ -175,18 +184,13 @@ export function AgentHome({ agent }: { agent: AgentId }) {
           </Link>
         </div>
         {mine.length ? (
-          <ul className="divide-y divide-line rounded-2xl border border-line bg-panel">
+          <ul className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3">
             {mine.map((r) => (
-              <li key={r.id}>
-                <Link href={r.project ? `/projects/${r.id}` : `/runs/${r.id}`} className="flex items-center justify-between gap-3 px-4 py-3 hover:bg-ink/[0.03]">
-                  <span className="min-w-0 truncate text-[14px] font-medium">{r.project?.title ?? r.move ?? r.task}</span>
-                  <span className="shrink-0 text-[12.5px] text-ink-3">{r.outcome.headline}</span>
-                </Link>
-              </li>
+              <Card key={r.id} r={r} />
             ))}
           </ul>
         ) : (
-          <p className="rounded-2xl border border-dashed border-[#d5d4ce] bg-panel/60 p-5 text-center text-[14px] text-ink-2">No jobs with {t.name} yet. Pick one above or ask in your own words.</p>
+          <p className="rounded-2xl border border-dashed border-[#d5d4ce] bg-panel/60 p-5 text-center text-[14px] text-ink-2">No jobs with {t.name} yet.</p>
         )}
       </section>
     </div>

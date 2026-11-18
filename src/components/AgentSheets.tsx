@@ -102,17 +102,40 @@ export function useBoard() {
   return b;
 }
 
-function Section({ title, tone, children, testid, empty }: { title: string; tone: string; children: React.ReactNode; testid: string; empty?: string }) {
+const KIND = {
+  buy: { mark: "+", bar: "bg-good", chip: "bg-good text-white", label: "Buy", hint: "Orders that buy" },
+  sell: { mark: "−", bar: "bg-bad", chip: "bg-bad text-white", label: "Sell", hint: "What you hold" },
+  pending: { mark: "…", bar: "bg-warn", chip: "bg-warn text-ink", label: "Pending", hint: "Waiting for your price" },
+  balance: { mark: "$", bar: "bg-ink", chip: "bg-ink text-white", label: "Balance", hint: "Your cash" },
+} as const;
+
+/** One column of the board: a coloured bar, a symbol and a plain hint, so the four never look alike. */
+function Section({ kind, children, testid, empty }: { kind: keyof typeof KIND; children: React.ReactNode; testid: string; empty?: string }) {
+  const k = KIND[kind];
   const has = Array.isArray(children) ? children.flat().filter(Boolean).length > 0 : Boolean(children);
   return (
-    <section className="flex min-w-0 flex-col rounded-xl border border-line bg-panel" data-testid={testid}>
-      <h3 className={`flex items-center gap-2 rounded-t-xl border-b border-[#f1f0ec] px-3.5 py-2 text-[12px] font-semibold uppercase tracking-wide ${tone}`}>{title}</h3>
-      <ul className="flex-1 space-y-1.5 px-3.5 py-2.5 text-[13px] leading-snug">{has ? children : <li className="text-ink-3">{empty ?? "Nothing yet"}</li>}</ul>
+    <section className={`flex min-w-0 flex-col ${kind === "balance" ? "bg-[#f6f5f1]" : "bg-panel"}`} data-testid={testid} aria-label={k.label}>
+      <span className={`h-1.5 w-full ${k.bar}`} aria-hidden />
+      <div className="flex items-center gap-2.5 px-4 pb-2 pt-3">
+        <span className={`inline-flex h-7 w-7 shrink-0 items-center justify-center rounded-md font-pixel text-[15px] leading-none ${k.chip}`} aria-hidden>
+          {k.mark}
+        </span>
+        <span className="min-w-0">
+          <h3 className="text-[14px] font-semibold leading-tight">{k.label}</h3>
+          <p className="truncate text-[11.5px] text-ink-3">{k.hint}</p>
+        </span>
+      </div>
+      <ul className="flex-1 space-y-2 px-4 pb-4 text-[13px] leading-snug">{has ? children : <li className="text-ink-3">{empty ?? "Nothing yet"}</li>}</ul>
     </section>
   );
 }
 
-const NEW = <span className="mr-1.5 rounded bg-agent px-1.5 py-px text-[10.5px] font-semibold text-agent-on">This order</span>;
+const NEW = <span className="mb-1 inline-block rounded bg-agent px-1.5 py-px text-[10.5px] font-semibold text-agent-on">This order</span>;
+
+/** The order being made, set apart from what already happened. */
+function Draft({ children }: { children: React.ReactNode }) {
+  return <li className="rounded-lg border-[1.5px] border-ink bg-agent-soft px-2.5 py-2 shadow-[2px_2px_0_0_var(--agent)]">{children}</li>;
+}
 
 /**
  * Trado: your trading at a glance, in four boxes: buy, sell, pending (orders waiting for their
@@ -128,60 +151,64 @@ export function TradeBoard({ p }: { p?: Proposal }) {
   const cost = a ? (a.kind === "spot_order" ? (sell ? 0 : a.amountUsd) : sell ? 0 : a.maxPrice * a.quantity) : 0;
   const practice = !b || b.venue === "paper";
   return (
-    <div className="grid gap-3 sm:grid-cols-2" aria-label="Your trading" data-testid="trade-board">
-      <Section title="Buy" tone="text-good" testid="board-buy" empty="No buys yet">
+    <div className="grid gap-px overflow-hidden rounded-2xl border-[1.5px] border-ink bg-line shadow-[3px_3px_0_0_var(--agent)] sm:grid-cols-2 xl:grid-cols-4" aria-label="Your trading" data-testid="trade-board">
+      <Section kind="buy" testid="board-buy" empty="No buys yet">
         {a && !sell && line && (
-          <li>
+          <Draft>
             {NEW}
-            <span className="font-medium">{line.label}</span> <span className="text-ink-2">{line.detail}</span>
-          </li>
+            <span className="block font-semibold">{line.label}</span>
+            <span className="block text-ink-2">{line.detail}</span>
+          </Draft>
         )}
         {b?.bought.map((o) => (
           <li key={o.runId}>
-            <Link href={`/runs/${o.runId}`} className="hover:underline">
+            <Link href={`/runs/${o.runId}`} className="font-medium hover:underline">
               {o.title}
             </Link>
-            {o.practice && <span className="text-ink-3"> · practice</span>}
+            {o.practice && <span className="block text-[12px] text-ink-3">practice</span>}
           </li>
         ))}
       </Section>
-      <Section title="Sell" tone="text-bad" testid="board-sell" empty={practice ? "Nothing held: no exchange is connected" : "Nothing held to sell"}>
+      <Section kind="sell" testid="board-sell" empty={practice ? "Nothing held: no exchange is connected" : "Nothing held to sell"}>
         {a && sell && line && (
-          <li>
+          <Draft>
             {NEW}
-            <span className="font-medium">{line.label}</span> <span className="text-ink-2">{line.detail}</span>
-          </li>
+            <span className="block font-semibold">{line.label}</span>
+            <span className="block text-ink-2">{line.detail}</span>
+          </Draft>
         )}
         {b?.holdings.map((h) => (
           <li key={h.label + h.outcome}>
-            <span className="font-medium">
+            <span className="block font-medium">
               {h.quantity} × {outcomeOf({ label: h.label, side: h.outcome })}
             </span>
-            <span className="text-ink-2"> · {h.event}</span>
-            {h.sellPrice != null && <span className="num block text-ink-3">sells for {Math.round(h.sellPrice * 100)}¢ each now</span>}
+            <span className="block text-[12px] text-ink-3">
+              {h.event}
+              {h.sellPrice != null ? ` · sells for ${Math.round(h.sellPrice * 100)}¢ each` : ""}
+            </span>
           </li>
         ))}
       </Section>
-      <Section title="Pending" tone="text-warn-ink" testid="board-pending" empty="No orders waiting">
+      <Section kind="pending" testid="board-pending" empty="No orders waiting">
         {a && waits && (
-          <li>
+          <Draft>
             {NEW}
-            <span className="text-ink-2">waits here until the price reaches your limit; cancel any time</span>
-          </li>
+            <span className="block text-ink-2">waits here until the price reaches your limit; cancel any time</span>
+          </Draft>
         )}
         {b?.pending.map((o) => (
-          <li key={o.runId}>
-            <Link href={`/runs/${o.runId}`} className="hover:underline">
+          <li key={o.runId} className="flex justify-between gap-2">
+            <Link href={`/runs/${o.runId}`} className="min-w-0 font-medium hover:underline">
               {o.title}
             </Link>
-            <span className="num text-ink-3"> · {money(o.notional)}</span>
+            <span className="num shrink-0 text-ink-2">{money(o.notional)}</span>
           </li>
         ))}
       </Section>
-      <Section title="Balance" tone="text-ink-2" testid="board-balance">
+      <Section kind="balance" testid="board-balance">
         {practice ? (
           <li className="text-ink-2">
-            Practice: no exchange is connected, so there's no cash here.{" "}
+            Practice: no exchange is connected, so there&apos;s no cash here.{" "}
             <Link href="/settings" className="underline underline-offset-2">
               Connect one
             </Link>
@@ -193,11 +220,11 @@ export function TradeBoard({ p }: { p?: Proposal }) {
               <span className="num font-semibold">{b?.cash != null ? money(b.cash) : "—"}</span>
             </li>
             <li className="flex justify-between gap-2">
-              <span className="text-ink-2">Held in open orders</span>
+              <span className="text-ink-2">In open orders</span>
               <span className="num font-semibold">{money(b?.inOrders ?? 0)}</span>
             </li>
             {a && cost > 0 && b?.cash != null && (
-              <li className="flex justify-between gap-2 border-t border-[#f1f0ec] pt-1.5">
+              <li className="flex justify-between gap-2 border-t border-line pt-2">
                 <span className="text-ink-2">After this order</span>
                 <span className="num font-semibold">{money(Math.max(0, b.cash - cost))}</span>
               </li>

@@ -4,7 +4,7 @@ import { prefs } from "./helpers";
 test("Inso's home starts from quick builds, and a pick opens a job that shapes the cover", async ({ page }) => {
   await prefs(page);
   await page.goto("/inso");
-  await expect(page.getByRole("heading", { name: "What do you want to protect?" })).toBeVisible();
+  await expect(page.getByLabel("What do you want to protect?")).toBeVisible();
   await expect(page.getByTestId("quick-build")).toHaveCount(6);
   await page.getByTestId("agent-ask").fill("What are BTC odds right now?");
   await page.getByRole("button", { name: "Ask" }).click();
@@ -20,7 +20,7 @@ test("Inso's home starts from quick builds, and a pick opens a job that shapes t
 test("Trado's home asks what to trade and shows buy, sell, pending and balance", async ({ page }) => {
   await prefs(page);
   await page.goto("/trado");
-  await expect(page.getByRole("heading", { name: "What are you trying to trade today?" })).toBeVisible();
+  await expect(page.getByLabel("What are you trying to trade today?")).toBeVisible();
   for (const box of ["board-buy", "board-sell", "board-pending", "board-balance"]) await expect(page.getByTestId(box)).toBeVisible();
   await expect(page.getByTestId("board-balance")).toContainText("Practice");
   // A coin order being shaped sits in its box, marked.

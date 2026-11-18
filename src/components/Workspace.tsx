@@ -178,7 +178,8 @@ export function Workspace({ run, onExample, onAdjust }: { run: Run; onExample?: 
               {stepper}
             </div>
           )}
-          {move && (
+          {/* Trado's board says it all; its chart added little while shaping. */}
+          {move && run.agent !== "trado" && (
             <div className="empty:hidden" data-testid="instrument">
               <AgentView p={move} />
             </div>
