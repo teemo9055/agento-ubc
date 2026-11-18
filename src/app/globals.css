@@ -484,3 +484,10 @@ body {
     animation: none !important;
   }
 }
+
+/* Home grid: a job's preview sits on a blocky pattern in its agent's colour. */
+.preview-blocks {
+  background-color: var(--agent-soft);
+  background-image: conic-gradient(color-mix(in srgb, var(--agent) 13%, transparent) 25%, transparent 0 50%, color-mix(in srgb, var(--agent) 13%, transparent) 0 75%, transparent 0);
+  background-size: 32px 32px;
+}

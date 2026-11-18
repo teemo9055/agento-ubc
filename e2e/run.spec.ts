@@ -183,15 +183,19 @@ test("dashboard lists jobs by folder and status, and opens them", async ({ page 
   await start(page, [], "BTC odds dashboard check", "Inso");
   await receipt(page);
   const url = page.url();
+  const card = page.getByTestId(`job-${url.split("/runs/")[1]}`);
   await page.goto("/home?folder=inso");
   await expect(page.getByRole("heading", { name: "Inso jobs" })).toBeVisible();
-  const card = page.getByText("BTC odds dashboard check").first();
+  // A card: the job's own title, a status badge, the agent handling it, and it opens the job.
   await expect(card).toBeVisible();
+  await expect(card.getByTestId("card-status")).toHaveText(/Complete/);
+  await expect(card).toContainText("Inso");
   await page.goto("/home?folder=travo");
-  await expect(page.getByText("BTC odds dashboard check")).toHaveCount(0);
+  await expect(card).toHaveCount(0);
   await page.goto("/home");
+  await expect(page.getByTestId("new-job-tile")).toBeVisible();
   await page.getByLabel("Search jobs").fill("dashboard check");
-  await page.getByText("BTC odds dashboard check").first().click();
+  await card.click();
   await expect(page).toHaveURL(url);
 });
 
@@ -253,8 +257,8 @@ test("a finished job can be saved and run again at today's prices", async ({ pag
   await page.getByTestId("run-again").click();
   await expect(page.getByTestId("review-card")).toBeVisible({ timeout: 30_000 });
   expect(page.url()).not.toBe(first);
-  await page.goto("/?status=saved");
-  await expect(page.getByText("BTC odds rerun check").first()).toBeVisible();
+  await page.goto("/home?folder=saved");
+  await expect(page.getByTestId(`job-${first.split("/runs/")[1]}`)).toBeVisible();
 });
 
 test("starting from a goal: the agent asks one question, then proposes", async ({ page }) => {

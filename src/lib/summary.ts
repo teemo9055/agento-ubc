@@ -37,6 +37,8 @@ export interface RunSummary {
   parentId?: string;
   /** Set when a plan was started from this job's chat. */
   plan?: { title: string; status: string; done: number; total: number };
+  /** Set when this job's conversation holds several jobs: it is a project. */
+  project?: { title: string; status: "proposed" | "running" | "done" | "stopped"; done: number; total: number };
 }
 
 export function summarize(r: Run): RunSummary {
@@ -68,6 +70,10 @@ export function summarize(r: Run): RunSummary {
     saved: Boolean(r.saved),
     parentId: r.parentId,
     plan: r.plan && r.plan.status !== "proposed" ? { title: r.plan.title, status: r.plan.status, done: r.plan.steps.filter((s) => s.status === "done").length, total: r.plan.steps.length } : undefined,
+    project: (() => {
+      const p = r.plan ?? [...(r.chat ?? [])].reverse().find((m) => m.plan)?.plan;
+      return p ? { title: p.title, status: p.status, done: p.steps.filter((s) => s.status === "done").length, total: p.steps.length } : undefined;
+    })(),
   };
 }
 

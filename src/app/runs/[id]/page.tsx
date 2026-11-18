@@ -16,6 +16,7 @@ import { LiveMarket } from "@/components/Live";
 import { PlanBoard, planOf } from "@/components/PlanBoard";
 import { BriefCard, briefOf } from "@/components/BriefCard";
 import { ProjectReview } from "@/components/ProjectReview";
+import { markOpened } from "@/lib/opened";
 import { usePathname, useRouter } from "next/navigation";
 import { Assemble } from "@/components/Assemble";
 import { Stages, Workspace } from "@/components/Workspace";
@@ -135,6 +136,8 @@ export default function RunPage({ params }: { params: Promise<{ id: string }> })
   useAgentTheme(run?.agent);
   const wide = useWide();
   const parentTitle = useParentTitle(run?.parentId);
+  // Remembered on this device so the home grid shows the most recently opened first.
+  useEffect(() => markOpened(id), [id]);
   const pathname = usePathname();
   const router = useRouter();
   const hasPlan = Boolean(run && planOf(run));
