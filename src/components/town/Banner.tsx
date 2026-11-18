@@ -90,7 +90,7 @@ export function Banner({ place, title, crumbs = [], slim = false, children }: { 
           <nav aria-label="Breadcrumbs" className="self-start">
             <ol className="flex flex-wrap items-center gap-1 rounded-md bg-white/85 px-2 py-1 text-[12.5px] font-medium text-ink-2 backdrop-blur">
               {crumbs.map((c, i) => (
-                <li key={c.href} className="flex items-center gap-1">
+                <li key={`${i}-${c.label}`} className="flex items-center gap-1">
                   {i > 0 && <span aria-hidden>›</span>}
                   <Link href={c.href} className="hover:text-ink hover:underline">
                     {c.label}
