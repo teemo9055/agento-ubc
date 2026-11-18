@@ -234,7 +234,7 @@ export default function NewJob() {
       <p className="text-center text-[12.5px] text-ink-3" data-testid="ask-status">
         {ready && cfg ? (
           <>
-            {mode === "live" ? "Pays in USDC on Arc testnet" : "Practice mode: vault and orders are simulated"}
+            {mode === "live" ? "Pays in USDC on Arc testnet" : "Practice: nothing real is paid or sent"}
             {venue ? ` · ${VENUE_LINE[venue]}` : ""}
             {prefs.faults.length > 0 ? ` · test mode (${prefs.faults.length})` : ""}
             {cfg.setup && cfg.setup.length > 0 ? ` · setup incomplete (${cfg.setup.length})` : ""} ·{" "}

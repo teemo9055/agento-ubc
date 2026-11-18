@@ -100,7 +100,7 @@ export function FinishCard({ run, kind, onClose }: { run: Run; kind: "done" | "c
                   {done && <DrawCheck size={20} />}
                   {done ? "Job done" : "Job stopped"}
                 </div>
-                <p className="mt-0.5 text-[13px] leading-snug text-ink-2">{done ? "Your receipt is ready." : "The vault is closed and the rest is back in your wallet."}</p>
+                <p className="mt-0.5 text-[13px] leading-snug text-ink-2">{done ? "Your receipt is ready." : "Its account is closed and the rest is back in your wallet."}</p>
                 <div className="num mt-2 flex flex-wrap gap-x-4 gap-y-1 text-[13px]">
                   <span>
                     Paid <b className="font-semibold">{fmt(paid)}</b> USDC

@@ -130,7 +130,7 @@ test("the safety page shows the loop, the limits in force and the delivery check
 
 test("vault runs dry: top up then finish", async ({ page }) => {
   await start(page, ["Vault runs dry"]);
-  await expect(page.getByRole("dialog", { name: "Not enough in the vault" })).toBeVisible({ timeout: 30_000 });
+  await expect(page.getByRole("dialog", { name: "Not enough set aside" })).toBeVisible({ timeout: 30_000 });
   await page.getByTestId("failure-topup").click();
   await receipt(page);
 });

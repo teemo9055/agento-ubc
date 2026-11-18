@@ -61,7 +61,7 @@ test("sheets swipe down to dismiss", async ({ page }) => {
 test("approve is instant with a toast, and a waiting job shows in the tab title", async ({ page }) => {
   await newDemoJob(page, "BTC odds title test", ["Seller raises price"]);
   await page.getByTestId("open-approve").click();
-  await expect(page.getByText(/Approved · funding vault/)).toBeVisible();
+  await expect(page.getByText(/Approved · setting aside/)).toBeVisible();
   await expect(page.getByRole("dialog", { name: "Needs your OK" })).toBeVisible({ timeout: 30_000 });
   await expect(page).toHaveTitle(/^\(\d+\) agento$/);
 });

@@ -77,7 +77,7 @@ export function ReapprovalModal({ run, req, onClose }: { run: Run; req: Reapprov
       </div>
       <div className="mt-3 text-[12.5px] text-ink-2">
         For: {req.to.service}. Budget left after this:{" "}
-        {BigInt(req.budgetLeft) >= 0n ? <b className="num">{fmt(req.budgetLeft)} USDC</b> : <b className="num">tops up vault by {fmt(-BigInt(req.budgetLeft))} USDC</b>}
+        {BigInt(req.budgetLeft) >= 0n ? <b className="num">{fmt(req.budgetLeft)} USDC</b> : <b className="num">adds {fmt(-BigInt(req.budgetLeft))} USDC</b>}
       </div>
       <div className="mt-1 text-[12px] text-ink-3">
         This step waits; independent steps keep going. No answer in <Countdown until={req.expiresAt} /> counts as deny.
@@ -123,7 +123,7 @@ const ACTION: Record<FailureAction, { label: string; hint: string }> = {
   retry: { label: "Retry", hint: "Same step again. Paid requests aren't paid twice." },
   skip: { label: "Skip", hint: "Optional step. Its cost is released." },
   edit: { label: "Edit", hint: "Change the plan." },
-  topup: { label: "Top up vault", hint: "Add USDC to the vault, then retry." },
+  topup: { label: "Add money", hint: "Add a little to this job's budget, then try again." },
   cancel: { label: "Cancel job", hint: "Stop here. Unspent funds return to you." },
 };
 
@@ -131,7 +131,7 @@ const TITLE: Record<string, string> = {
   seller_402_timeout: "Seller didn't answer",
   payment_rejected: "Payment rejected",
   settle_fails: "Settlement failed",
-  insufficient_balance: "Not enough in the vault",
+  insufficient_balance: "Not enough set aside",
   policy_block: "Change denied",
   price_increase: "Price went up",
   model_error: "Analysis crashed",
@@ -221,7 +221,7 @@ export function CancelModal({ run, open, onClose }: { run: Run; open: boolean; o
           <Amount value={run.status === "draft" ? 0n : BigInt(run.cap) - spent} className="mt-1 block text-lg font-semibold" />
         </div>
       </div>
-      <p className="mt-3 text-[12.5px] text-ink-3">The vault closes; pending authorizations become invalid.</p>
+      <p className="mt-3 text-[12.5px] text-ink-3">The job's account closes and nothing more can be paid from it.</p>
       <div className="mt-5 flex justify-end gap-2">
         <Button variant="ghost" onClick={onClose}>
           Keep going
@@ -236,7 +236,7 @@ export function CancelModal({ run, open, onClose }: { run: Run; open: boolean; o
             post(`/api/runs/${run.id}/cancel`).catch((e) => toast(`Cancel failed: ${(e as Error).message}`, "bad"));
           }}
         >
-          {busy ? "Closing vault…" : "Cancel job"}
+          {busy ? "Closing…" : "Cancel job"}
         </Button>
       </div>
     </Modal>

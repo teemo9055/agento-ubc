@@ -20,7 +20,7 @@ export function outcomeOf(run: Run): Outcome {
 
   if (run.status === "exploring") return { tone: "info", headline: "Chatting: nothing has been spent" };
   if (run.status === "draft") return { tone: "info", headline: "Waiting for your approval", detail: "Nothing runs or is spent until you approve." };
-  if (run.status === "funding") return { tone: "info", headline: "Setting aside the budget…", detail: "Opening a vault that can only pay what you approved." };
+  if (run.status === "funding") return { tone: "info", headline: "Setting aside the budget…", detail: "Putting it in a locked account that can only pay what you approved." };
 
   if (run.status === "running") {
     if (needs) {

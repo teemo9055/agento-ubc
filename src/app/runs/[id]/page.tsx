@@ -193,7 +193,7 @@ export default function RunPage({ params }: { params: Promise<{ id: string }> })
     return (
       <div className="mx-auto max-w-md pt-16 text-center">
         <div className="text-lg font-semibold">This job isn&apos;t on this server anymore</div>
-        <p className="mt-1 text-sm text-ink-2">Jobs live in server memory. If it had a vault, the client wallet can still close it to recover funds.</p>
+        <p className="mt-1 text-sm text-ink-2">It may have been cleared when the server restarted. Any money set aside for it can still be taken back from your wallet.</p>
         <Link className="pix-press mt-4 inline-flex h-10 items-center rounded-lg border-[1.5px] border-ink bg-ink px-4 text-sm font-semibold text-white" href="/new">
           Start a new job
         </Link>
@@ -233,7 +233,7 @@ export default function RunPage({ params }: { params: Promise<{ id: string }> })
   const needsSignature = run.payer === "passkey" && run.mode === "live" && BigInt(run.cap) > 0n;
   function approveNow() {
     if (needsSignature) return setApproving(true);
-    toast(BigInt(run!.cap) === 0n ? "Approved · starting" : `Approved · funding vault with ${fmt(run!.cap)} USDC`, "good");
+    toast(BigInt(run!.cap) === 0n ? "Approved · starting" : `Approved · setting aside $${fmt(run!.cap)}`, "good");
     post(`/api/runs/${run!.id}/approve`).catch((e) => toast((e as Error).message, "bad"));
   }
 
