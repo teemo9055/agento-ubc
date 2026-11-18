@@ -94,6 +94,7 @@ const SWAPS: [RegExp, string][] = [
   [/\bupside\b/gi, "gain"],
   [/\bbinary (floor|contract|option)s?\b/gi, "cover"],
   [/\bresting (limit )?orders?\b/gi, "waiting order"],
+  [/\ba limit order\b/gi, "an order at your price"],
   [/\blimit orders?\b/gi, "order at your price"],
   [/\bliquidity\b/gi, "buyers and sellers"],
   [/\bslippage\b/gi, "price drift"],
