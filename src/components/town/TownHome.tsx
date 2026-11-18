@@ -1,4 +1,5 @@
 "use client";
+import { usePrefs } from "@/lib/prefs";
 import Link from "next/link";
 import { useEffect, useState } from "react";
 import { Mascot } from "@/components/Mascot";
@@ -39,15 +40,17 @@ function Profile({ compact = false }: { compact?: boolean }) {
 
 /** Top-right: money in the app's wallet (live) or a plain practice label, and Town Hall's inbox. */
 function Purse({ t, compact = false }: { t: TownSummary; compact?: boolean }) {
+  const [prefs] = usePrefs();
+  const live = t.mode === "live" && prefs.mode === "live";
   const pad = compact ? "px-2 py-1.5" : "px-3 py-2";
   return (
     <div className="pix-frame flex shrink-0 items-stretch divide-x divide-line bg-panel/95 text-[12.5px] leading-tight backdrop-blur" data-testid={compact ? undefined : "town-purse"}>
       <div className={pad}>
         <div className="text-[11px] font-semibold uppercase tracking-wide text-ink-3">Balance</div>
-        {t.mode === "live" ? (
+        {live ? (
           <div className="num mt-0.5 text-[15px] font-semibold">{t.balance == null ? "—" : `$${fmt(t.balance)}`}</div>
         ) : (
-          <div className="mt-0.5 font-semibold" title="No wallets are set up on this server, so nothing here moves real money">
+          <div className="mt-0.5 font-semibold" title="Practice: nothing here moves real money. Choose Arc testnet in Settings to use real test money.">
             Practice{!compact && <span className="font-normal text-ink-3"> · no real money</span>}
           </div>
         )}

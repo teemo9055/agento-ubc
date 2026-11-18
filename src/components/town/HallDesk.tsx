@@ -1,4 +1,5 @@
 "use client";
+import { usePrefs } from "@/lib/prefs";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useEffect, useState } from "react";
@@ -62,7 +63,10 @@ export function HallFlow() {
 }
 
 /** The form: what kind, what you want to say, and the $1 deposit. */
-export function HallForm({ mode }: { mode: "live" | "practice" }) {
+export function HallForm({ mode: serverMode }: { mode: "live" | "practice" }) {
+  const [prefs] = usePrefs();
+  // Real money only when this server can pay and you chose Arc testnet in Settings.
+  const mode = serverMode === "live" && prefs.mode === "live" ? "live" : "practice";
   const router = useRouter();
   const [kind, setKind] = useState<keyof typeof KIND_LABEL>("request");
   const [text, setText] = useState("");
@@ -75,7 +79,7 @@ export function HallForm({ mode }: { mode: "live" | "practice" }) {
     setBusy(true);
     setErr("");
     try {
-      const r = await fetch("/api/town/hall", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ kind, text, from: from || undefined, contact: contact || undefined }) });
+      const r = await fetch("/api/town/hall", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ kind, text, from: from || undefined, contact: contact || undefined, mode: mode === "live" ? "live" : "demo", accessCode: prefs.accessCode }) });
       const j = await r.json();
       if (!r.ok) return setErr(j.error ?? "Couldn't send it");
       rememberSent(j.item.id);

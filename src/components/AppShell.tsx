@@ -97,6 +97,7 @@ export function MainNav() {
   const items: { href: string; label: string; icon: IconName; active: boolean }[] = [
     { href: "/home", label: "Jobs", icon: "jobs", active: path === "/home" || path.startsWith("/runs") || path.startsWith("/projects") },
     { href: "/agents", label: "Agents", icon: "agents", active: path.startsWith("/agents") },
+    { href: "/town", label: "Town", icon: "graph", active: path.startsWith("/town") },
     { href: "/settings", label: "Settings", icon: "shield", active: path.startsWith("/settings") },
   ];
   return (
@@ -124,11 +125,12 @@ function TabBar() {
     { href: "/home", label: "Jobs", icon: "jobs", active: path === "/home" || path.startsWith("/runs") || path.startsWith("/projects") },
     { href: "/new", label: "New job", icon: "plus", active: path === "/new", primary: true },
     { href: "/agents", label: "Agents", icon: "agents", active: path.startsWith("/agents") },
+    { href: "/town", label: "Town", icon: "graph", active: path.startsWith("/town") },
     { href: "/settings", label: "Settings", icon: "shield", active: path.startsWith("/settings") },
   ];
   return (
     <nav aria-label="Main" className="fixed inset-x-0 bottom-0 z-40 border-t border-line bg-surface/95 pb-[env(safe-area-inset-bottom)] backdrop-blur-md sm:hidden">
-      <div className="grid h-[60px] grid-cols-4">
+      <div className="grid h-[60px] grid-cols-5">
         {tabs.map((t) =>
           t.primary ? (
             <Link key={t.href} href={t.href} aria-label={t.label} aria-current={t.active ? "page" : undefined} className="pressable flex items-center justify-center">

@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
-import { timingSafeEqual } from "node:crypto";
+import { liveAllowed } from "@/server/access";
 import { z } from "zod";
 import { createRun, listRuns, offerPlan } from "@/server/orchestrator";
 import { buildShowcase } from "@/server/showcase";
@@ -22,15 +22,6 @@ const Body = z.object({
   template: z.enum(["showcase"]).optional(),
   payerAddress: z.string().regex(/^0x[0-9a-fA-F]{40}$/).optional(),
 });
-
-/** Live (Arc testnet) jobs spend the funded wallets, so a public deployment gates them with a code. */
-function liveAllowed(code?: string) {
-  const want = process.env.LIVE_ACCESS_CODE;
-  if (!want) return true;
-  const a = Buffer.from(code ?? "");
-  const b = Buffer.from(want);
-  return a.length === b.length && timingSafeEqual(a, b);
-}
 
 export async function GET(req: NextRequest) {
   const runs = listRuns();

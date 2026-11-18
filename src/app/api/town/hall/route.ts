@@ -3,10 +3,11 @@ import { z } from "zod";
 import { HallInput, getItem, publicView } from "@/server/town/hall";
 import { sendFromApp } from "@/server/town/deposit";
 import { townMode } from "@/server/town";
+import { liveAllowed } from "@/server/access";
 
 export const dynamic = "force-dynamic";
 
-const Body = HallInput.extend({ practice: z.boolean().optional() });
+const Body = HallInput.extend({ mode: z.enum(["live", "demo"]).optional(), accessCode: z.string().max(200).optional() });
 
 /**
  * A person sends something to Town Hall from the app. Practice mode (no wallets set up, or asked
@@ -16,8 +17,10 @@ const Body = HallInput.extend({ practice: z.boolean().optional() });
 export async function POST(req: NextRequest) {
   const parsed = Body.safeParse(await req.json().catch(() => null));
   if (!parsed.success) return NextResponse.json({ error: parsed.error.issues[0]?.message ?? "Check what you sent" }, { status: 400 });
-  const { practice, ...input } = parsed.data;
-  const live = townMode() === "live" && !practice;
+  const { mode, accessCode, ...input } = parsed.data;
+  // Like a job: real money only when you chose Arc testnet in Settings, the wallets are set up, and (on a public server) with the access code.
+  if (mode === "live" && townMode() === "live" && !liveAllowed(accessCode)) return NextResponse.json({ error: "Live deposits need the access code. Use practice, or ask the owner for the code." }, { status: 403 });
+  const live = mode === "live" && townMode() === "live";
   const r = await sendFromApp(input, { live });
   if (!r.ok) return NextResponse.json({ error: r.reason }, { status: r.status });
   return NextResponse.json({ item: publicView(r.item), statusUrl: `/town/hall/${r.item.id}` }, { status: 201 });
