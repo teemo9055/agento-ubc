@@ -61,7 +61,7 @@ export function BriefCard({ brief, plan, proposal }: { brief: Brief; plan?: Plan
       <div className="border-t border-[#f1f0ec] px-4 py-3 sm:px-5">
         <p className="num text-[13.5px] text-ink" data-testid="brief-total">
           {steps.length
-            ? `${steps.length} job${steps.length === 1 ? "" : "s"} for ${handled} of ${brief.drivers.length} · at most ${money(total)} · nothing is spent until you approve`
+            ? `${steps.length} job${steps.length === 1 ? "" : "s"} for ${handled} of ${brief.drivers.length} · at most ${money(total)}`
             : "Nothing here would change this, so there is nothing to set up."}
         </p>
         {brief.leftOpen && (

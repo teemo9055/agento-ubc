@@ -341,7 +341,7 @@ function Dashboard() {
           </AnimatePresence>
         </ul>
       )}
-      {runs && visible.length === 0 && <p className="text-center text-[14px] text-ink-2">{q ? "No jobs match that search." : "No jobs here yet. Start one: the agent prices it before it spends anything."}</p>}
+      {runs && visible.length === 0 && <p className="text-center text-[14px] text-ink-2">{q ? "No jobs match that search." : "No jobs here yet."}</p>}
     </div>
   );
 }

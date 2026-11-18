@@ -174,8 +174,8 @@ export function Workspace({ run, onExample, onAdjust }: { run: Run; onExample?: 
 
           {move ? (
             <p className="num border-t border-[#f1f0ec] pt-3 text-[12.5px] text-ink-3" data-testid="workspace-cost">
-              Up to ${usdc(bp.costUsd ?? 0)} · nothing is spent until you approve
-              {move.venue === "paper" && move.action && move.action.kind !== "itinerary" ? " · practice, nothing is sent" : ""}
+              Up to ${usdc(bp.costUsd ?? 0)}
+              {move.venue === "paper" && move.action && move.action.kind !== "itinerary" ? " · practice order" : ""}
             </p>
           ) : (
             <div className="border-t border-[#f1f0ec] pt-3">

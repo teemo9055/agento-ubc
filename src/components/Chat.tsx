@@ -172,7 +172,7 @@ function Bubble({ m, run, onChoose, busy, onShowPlan, drawn }: { m: ChatMsg; run
   );
 }
 
-export const CARD_LABEL: Record<Card["kind"], string> = { price: "Price", deliverable: "What you get", method: "How it's done", risk: "Limits" };
+export const CARD_LABEL: Record<Card["kind"], string> = { price: "Cost", deliverable: "Outcome", method: "Execution", risk: "Risk & safeguards" };
 const CARD_HINT: Record<Card["kind"], string> = {
   price: "e.g. big-spend threshold 0.5",
   deliverable: "e.g. make it 5 contracts",
@@ -437,7 +437,7 @@ export function Chat({
     try {
       await post(`/api/runs/${run.id}/adopt`, { proposalId });
       setEdits([]);
-      toast("Ready to review · nothing is spent until you approve", "good");
+      toast("Ready to review", "good");
       onAdopted?.();
     } catch (e) {
       toast((e as Error).message, "bad");

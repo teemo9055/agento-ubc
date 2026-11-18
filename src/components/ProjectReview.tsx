@@ -17,9 +17,10 @@ export function ProjectReview({ plan }: { plan: Plan }) {
   const data = lookups.reduce((a, l) => a + l.cost, 0);
   const orders = steps.reduce((a, s) => a + maxCost(s.proposal.action), 0);
   const waits = steps.filter((s) => (s.after ?? []).length > 0);
-  const cards: { title: string; body: React.ReactNode }[] = [
+  const cards: { title: string; sub: string; body: React.ReactNode }[] = [
     {
-      title: "What you get",
+      title: "Outcome",
+      sub: "What you receive",
       body: (
         <ol className="space-y-1 text-[13px] leading-snug">
           {steps.map((s) => (
@@ -32,7 +33,8 @@ export function ProjectReview({ plan }: { plan: Plan }) {
       ),
     },
     {
-      title: "How (pay per request)",
+      title: "Execution",
+      sub: "Paid per request",
       body: (
         <ul className="space-y-1 text-[13px] leading-snug">
           {steps.map((s) => (
@@ -47,7 +49,8 @@ export function ProjectReview({ plan }: { plan: Plan }) {
       ),
     },
     {
-      title: "Limits",
+      title: "Risk & safeguards",
+      sub: "If something goes wrong",
       body: (
         <ul className="space-y-1.5 text-[13px] leading-snug" data-testid="project-limits">
           {waits.map((s) => (
@@ -65,7 +68,8 @@ export function ProjectReview({ plan }: { plan: Plan }) {
       ),
     },
     {
-      title: "Price",
+      title: "Service cost",
+      sub: "The jobs' own fees",
       body: (
         <>
           <p className="num text-[18px] font-semibold">{data > 0 ? money(data) : "Free"}</p>
@@ -76,17 +80,24 @@ export function ProjectReview({ plan }: { plan: Plan }) {
   ];
   return (
     <section className="space-y-3" aria-label="Review the project" data-testid="project-review">
-      <ul className="grid gap-3 sm:grid-cols-2">
-        {cards.map((c) => (
-          <li key={c.title} className={`rounded-2xl border border-line p-3.5 ${c.title === "Price" ? "bg-agent-soft" : "bg-panel"}`}>
-            <h3 className="mb-1.5 text-[12px] font-semibold uppercase tracking-wide text-ink-3">{c.title}</h3>
-            {c.body}
+      <ol className="grid gap-x-3 gap-y-4 sm:grid-cols-2 xl:grid-cols-4">
+        {cards.map((c, i) => (
+          <li key={c.title} className="flex min-w-0 flex-col">
+            <div className="mb-2 flex items-center gap-2" aria-hidden>
+              <span className={`num inline-flex h-[22px] w-[22px] shrink-0 items-center justify-center rounded-[5px] text-[11px] font-semibold ${c.title === "Service cost" ? "bg-agent text-agent-on" : "border-[1.5px] border-[#d5d4ce] bg-panel text-ink-2"}`}>{i + 1}</span>
+              <span className="whitespace-nowrap text-[11.5px] font-semibold uppercase tracking-wide text-ink-3">{c.sub}</span>
+              {i < cards.length - 1 && <span className="hidden h-px flex-1 border-t border-dashed border-[#c9c8c2] xl:block" />}
+            </div>
+            <div className={`flex-1 rounded-2xl border border-line p-3.5 ${c.title === "Service cost" ? "bg-agent-soft" : "bg-panel"}`}>
+              <h3 className="mb-2 text-[15px] font-semibold leading-tight">{c.title}</h3>
+              {c.body}
+            </div>
           </li>
         ))}
-      </ul>
+      </ol>
       <div className="flex flex-wrap items-baseline justify-between gap-2 rounded-2xl border border-line bg-panel px-4 py-3">
         <div>
-          <div className="text-[11px] font-semibold uppercase tracking-wide text-ink-3">Total for {steps.length} jobs</div>
+          <div className="text-[11px] font-semibold uppercase tracking-wide text-ink-3">Maximum total for {steps.length} jobs</div>
           <div className="num text-[20px] font-semibold" data-testid="project-most">
             At most {money(data + orders)}
           </div>

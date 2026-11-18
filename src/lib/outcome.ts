@@ -19,7 +19,7 @@ export function outcomeOf(run: Run): Outcome {
   const selling = run.proposal?.action?.kind === "prediction_order" ? run.proposal.action.trade === "sell" : run.proposal?.action?.kind === "spot_order" && run.proposal.action.side === "sell";
 
   if (run.status === "exploring") return { tone: "info", headline: "Chatting: nothing has been spent" };
-  if (run.status === "draft") return { tone: "info", headline: "Waiting for your approval", detail: "Nothing runs or is spent until you approve." };
+  if (run.status === "draft") return { tone: "info", headline: "Waiting for your approval" };
   if (run.status === "funding") return { tone: "info", headline: "Setting aside the budget…", detail: "Putting it in a locked account that can only pay what you approved." };
 
   if (run.status === "running") {

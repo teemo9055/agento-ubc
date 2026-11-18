@@ -10,12 +10,11 @@ test("explore is free, then the approved move runs with no popup", async ({ page
   await page.fill("#task", "What are BTC odds right now?");
   await page.getByRole("button", { name: /Ask/ }).click();
   await expect(page.getByTestId("msg-agent")).toBeVisible({ timeout: 30_000 });
-  await expect(page.getByTestId("free-note")).toBeVisible();
   await page.getByTestId("adopt-move").click();
   await expect(page.getByTestId("review-cost")).toContainText("order");
   // The four answers sit under the review, with the total below them.
   await expect(page.getByTestId("card-price")).toBeVisible();
-  await expect(page.getByTestId("review-most")).toContainText("At most $");
+  await expect(page.getByTestId("review-most")).toContainText("$");
   await page.getByTestId("open-approve").click();
   await receipt(page);
   await expect(page.getByRole("dialog")).toHaveCount(0);
@@ -37,7 +36,7 @@ test("back to chat from the work order keeps the conversation", async ({ page })
 test("card edit happens in the chat: explains why it can't, offers alternatives, applies one", async ({ page }) => {
   await draft(page, [], "BTC odds");
   await page.getByTestId("edit-deliverable").click();
-  await expect(page.getByTestId("chat-focus")).toContainText("What you get");
+  await expect(page.getByTestId("chat-focus")).toContainText("Outcome");
   await expect(page.getByTestId("edit-deliverable")).toHaveAttribute("aria-pressed", "true");
   await page.getByTestId("chat-input").fill("place a real bet on yes");
   await page.keyboard.press("Enter");
@@ -386,7 +385,7 @@ test("quick changes are applied at once: the drawing and the cost follow without
   await expect(page.getByTestId("review-steps").getByTestId("brief-step").first()).toBeVisible();
   for (const card of ["deliverable", "method", "risk", "price"]) await expect(page.getByTestId(`card-${card}`)).toBeVisible();
   await expect(page.getByTestId("review-risk").first()).toBeVisible();
-  await expect(page.getByTestId("review-most")).toContainText("At most $");
+  await expect(page.getByTestId("review-most")).toContainText("$");
   // While reviewing, the same changes rebuild the work order and its total.
   const most = await page.getByTestId("review-most").innerText();
   await page.getByTestId("quick-option").filter({ hasText: /more|instead/ }).first().click();

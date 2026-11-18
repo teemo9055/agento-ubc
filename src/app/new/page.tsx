@@ -95,7 +95,7 @@ export default function NewJob() {
     <div className="mx-auto flex w-full min-w-0 max-w-2xl flex-col gap-6 pt-2 sm:pt-8">
       <div className="text-center">
         <h1 className="font-pixel text-[26px] leading-tight sm:text-[32px]">What do you want done?</h1>
-        <p className="mt-2 text-[15px] text-ink-2">Say it in your own words. Asking is free; nothing is spent until you approve.</p>
+        <p className="mt-2 text-[15px] text-ink-2">Say it in your own words. Asking is free.</p>
       </div>
 
       <form

@@ -291,7 +291,7 @@ export default function RunPage({ params }: { params: Promise<{ id: string }> })
             <Mascot agent={run.agent} outfit={runOutfit(run)} mood="working" size={64} />
             <div>
               <div className="font-pixel text-[15px] text-agent-ink">Building the plan</div>
-              <p className="mt-1 text-sm text-ink-2">Pricing each step. Nothing is spent until you approve.</p>
+              <p className="mt-1 text-sm text-ink-2">Pricing each step.</p>
             </div>
           </div>
           <div className="h-40 animate-pulse rounded-2xl border border-line bg-panel/60 motion-reduce:animate-none" />
@@ -308,8 +308,7 @@ export default function RunPage({ params }: { params: Promise<{ id: string }> })
               focusedStep={focus?.kind === "step" ? focus.step : null}
               actions={
                 <div className="flex flex-wrap items-center justify-between gap-3">
-                  <p className="hidden min-w-0 text-[13px] text-ink-2 sm:block">Nothing runs or is spent until you approve.</p>
-                  <div className="flex flex-1 items-center justify-end gap-1.5 whitespace-nowrap sm:flex-none sm:gap-2">
+                  <div className="flex flex-1 items-center justify-end gap-1.5 whitespace-nowrap sm:gap-2">
                     {run.status === "draft" && (
                       <Button variant="quiet" onClick={() => post(`/api/runs/${run.id}/back`).catch((e) => toast((e as Error).message, "bad"))} data-testid="back-to-chat">
                         <Icon name="back" size={14} /> Change it
@@ -342,10 +341,7 @@ export default function RunPage({ params }: { params: Promise<{ id: string }> })
             )}
           </AnimatePresence>
           <ReviewCards run={run} onEdit={run.status === "draft" ? editCard : undefined} focused={focus?.kind === "card" ? focus.card : null} />
-          <ReviewTotal run={run} />
-          <Details label="Every cost line" open={details} onToggle={() => setDetails((v) => !v)}>
-            <CostTable run={run} />
-          </Details>
+          <ReviewTotal run={run} onEdit={run.status === "draft" ? () => editCard("price") : undefined} focused={focus?.kind === "card" && focus.card === "price"} />
         </>
       )}
 
@@ -463,9 +459,6 @@ export default function RunPage({ params }: { params: Promise<{ id: string }> })
         {tags}
       </div>
       {wide && boardPlan && <Stages run={run} plan={boardPlan} />}
-      <span className="text-[12.5px] text-ink-3" data-testid="free-note">
-        {boardPlan && boardPlan.status !== "proposed" ? "Each step is approved within the limits on its card" : "Free until you approve something"}
-      </span>
     </div>
   );
 

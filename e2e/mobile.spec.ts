@@ -37,7 +37,7 @@ test("Edit on a card opens the chat focused on that card", async ({ page }) => {
   // Tap it where it is (a scripted click scrolls it under the tab bar on this small screen).
   await edit.evaluate((e) => (e as HTMLElement).click());
   await expect(page.getByRole("tab", { name: /Chat/ })).toHaveAttribute("aria-selected", "true");
-  await expect(page.getByTestId("chat-focus")).toContainText("Price");
+  await expect(page.getByTestId("chat-focus")).toContainText("Cost");
   await expect(page.getByRole("dialog")).toHaveCount(0);
 });
 

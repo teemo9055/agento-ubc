@@ -197,7 +197,6 @@ export function CostTable({ run, compact = false }: { run: Run; compact?: boolea
                 >
                   <td className="px-4 py-2.5">
                     <div className="font-medium">{l.purpose}</div>
-                    {l.rail === "exchange" && <span className="mt-0.5 block text-[11px] text-ink-3">Order limit · paid on the exchange, not from your vault</span>}
                     {l.bigSpend && l.rail !== "exchange" && <span className="mt-0.5 inline-block rounded-md bg-warn/20 px-1.5 py-px text-[10.5px] font-medium text-warn-ink">Big spend · approved up front</span>}
                   </td>
                   <td className="px-2 py-2.5 text-ink-2">
@@ -208,7 +207,7 @@ export function CostTable({ run, compact = false }: { run: Run; compact?: boolea
                       </a>
                     )}
                   </td>
-                  {!compact && <td className="hidden px-2 py-2.5 text-ink-3 sm:table-cell">{l.rail === "exchange" ? "exchange · not from vault" : l.rail === "gateway" ? "Gateway nanopayment" : l.rail === "x402" ? "x402 from vault" : l.rail}</td>}
+                  {!compact && <td className="hidden px-2 py-2.5 text-ink-3 sm:table-cell">{l.rail === "exchange" ? "Order" : l.rail === "gateway" || l.rail === "x402" ? "Per request" : l.rail}</td>}
                   <td className="num px-4 py-2.5 text-right">
                     {st === "planned" && <span>{fmt(l.approved)}</span>}
                     {st === "progress" && (
