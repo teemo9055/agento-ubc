@@ -24,7 +24,7 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
       <body className="min-h-screen font-sans antialiased">
         <header className="sticky top-0 z-30 border-b border-line bg-surface/85 backdrop-blur-md">
           <div className="mx-auto flex min-h-16 max-w-6xl items-center gap-4 px-4 pt-[env(safe-area-inset-top)] sm:px-6">
-            <Link href="/" className="group flex items-center gap-2.5 text-[16px] font-bold tracking-tight">
+            <Link href="/home" aria-label="Agento home" className="group flex items-center gap-2.5 text-[16px] font-bold tracking-tight">
               <span className="relative inline-flex h-7 w-7 items-center justify-center rounded-[7px] bg-ink font-pixel text-[14px] text-white transition-transform group-hover:-rotate-6">
                 a
                 <span className="absolute -right-[3px] -top-[3px] h-[9px] w-[9px] rounded-[2px] border-2 border-surface bg-agent" />
