@@ -404,6 +404,7 @@
   overflow-x: auto;
 }
 .md table {
+  overflow-wrap: normal;
   border-collapse: collapse;
   font-size: 13px;
   min-width: 100%;

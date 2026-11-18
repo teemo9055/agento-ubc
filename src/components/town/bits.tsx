@@ -38,19 +38,9 @@ const STATUS_STYLE: Record<string, string> = {
 };
 
 export function StatusPill({ status }: { status: string }) {
-  return <span className={`inline-flex h-6 items-center rounded-md px-2 text-[12px] font-semibold ${STATUS_STYLE[status] ?? STATUS_STYLE.received}`}>{status[0].toUpperCase() + status.slice(1)}</span>;
+  return <span className={`inline-flex h-6 items-center whitespace-nowrap rounded-md px-2 text-[12px] font-semibold ${STATUS_STYLE[status] ?? STATUS_STYLE.received}`}>{status[0].toUpperCase() + status.slice(1)}</span>;
 }
 
 export const KIND_LABEL: Record<string, string> = { request: "Request", feedback: "Feedback", need: "Need", offer: "Feature offer" };
 
 export const inputCls = "w-full rounded-lg border border-line bg-panel px-3 py-2 text-[14px] outline-none focus:border-ink/50";
-
-/** For developers and agents: the API and MCP way in. Kept out of the main text. */
-export function DevNote({ children }: { children: ReactNode }) {
-  return (
-    <details className="rounded-xl border border-dashed border-[#d5d4ce] px-4 py-3 text-[13px] text-ink-2">
-      <summary className="cursor-pointer font-medium text-ink">For developers and agents</summary>
-      <div className="mt-2 space-y-1.5 [&_code]:rounded [&_code]:bg-[#f1f0ec] [&_code]:px-1 [&_code]:py-0.5 [&_code]:text-[12px]">{children}</div>
-    </details>
-  );
-}

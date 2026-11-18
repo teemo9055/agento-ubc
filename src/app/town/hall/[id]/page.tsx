@@ -4,8 +4,8 @@ import { getItem, publicView, ROUTE_LABEL } from "@/server/town/hall";
 import { readEntry } from "@/server/town/library";
 import { getListing } from "@/server/town/listings";
 import { txUrl } from "@/lib/format";
-import { TownBar } from "@/components/town/TownNav";
-import { PlaceIcon } from "@/components/town/places";
+import { TownHeader } from "@/components/town/TownNav";
+import { TwoForms } from "@/components/town/TwoForms";
 import { KIND_LABEL, StatusPill, when } from "@/components/town/bits";
 import { CopyLink } from "@/components/town/CopyLink";
 
@@ -29,18 +29,23 @@ export default async function HallItemPage({ params }: { params: Promise<{ id: s
   const listing = i.answer?.listingId ? getListing(i.answer.listingId) : undefined;
   const awaiting = i.deposit.state === "awaiting";
   const practice = i.deposit.mode === "practice";
+  const title = awaiting ? "Not sent yet" : i.status[0].toUpperCase() + i.status.slice(1);
   return (
-    <div className="mx-auto max-w-2xl space-y-6">
-      <TownBar variant="strip" />
-      <article className="space-y-5" data-testid="hall-status">
-        <header className="space-y-2">
-          <Link href="/town/hall" className="inline-flex items-center gap-1.5 text-[13px] font-medium text-ink-2 hover:text-ink">
-            <PlaceIcon place="hall" size={16} /> Town Hall
-          </Link>
-          <div className="flex flex-wrap items-center gap-3">
-            <h1 className="font-pixel text-[24px] leading-tight sm:text-[28px]">{awaiting ? "Not sent yet" : i.status[0].toUpperCase() + i.status.slice(1)}</h1>
-            {!awaiting && <StatusPill status={i.status} />}
-          </div>
+    <div className="space-y-5">
+      <TownHeader
+        place="hall"
+        slim
+        title={title}
+        crumbs={[
+          { href: "/town", label: "Town" },
+          { href: "/town/hall", label: "Town Hall" },
+          { href: `/town/hall/${i.id}`, label: `#${i.id}` },
+        ]}
+      />
+      <TwoForms agent={{ api: `/api/town/hall/${i.id}`, mcp: `hall_status { id: "${i.id}" }` }}>
+      <article className="mx-auto max-w-3xl space-y-5" data-testid="hall-status">
+        <header className="flex flex-wrap items-center gap-3">
+          {!awaiting && <StatusPill status={i.status} />}
           <p className="text-[15px] text-ink-2">{awaiting ? "It will reach Town Hall once its deposit arrives." : MEANS[i.status]}</p>
         </header>
 
@@ -70,7 +75,7 @@ export default async function HallItemPage({ params }: { params: Promise<{ id: s
               <div className="flex flex-wrap justify-between gap-2 px-4 py-3">
                 <dt className="text-ink-3">Answer</dt>
                 <dd>
-                  <Link href="/town/store" className="font-medium underline underline-offset-2">
+                  <Link href={`/town/store/listing-${listing.id}`} className="font-medium underline underline-offset-2">
                     {listing.name}
                   </Link>{" "}
                   is listed in the Store
@@ -82,7 +87,7 @@ export default async function HallItemPage({ params }: { params: Promise<{ id: s
                 <dt className="text-ink-3">Sent to</dt>
                 <dd className="flex gap-3">
                   {i.routes.map((r) => (
-                    <Link key={r} href={`/town/${r}`} className="font-medium underline underline-offset-2">
+                    <Link key={r} href={`/town/${r}/${i.id}`} className="font-medium underline underline-offset-2">
                       The {ROUTE_LABEL[r]}
                     </Link>
                   ))}
@@ -102,11 +107,16 @@ export default async function HallItemPage({ params }: { params: Promise<{ id: s
           <h2 id="hist" className="mb-2 text-[13px] font-semibold uppercase tracking-wide text-ink-3">
             What happened
           </h2>
-          <ol className="space-y-1.5 border-l-2 border-line pl-4 text-[14px]">
+          <ol className="relative space-y-3 pl-7 text-[14px] before:absolute before:bottom-2 before:left-[9px] before:top-2 before:w-[2px] before:bg-line" data-testid="hall-timeline">
             {i.history.map((h, k) => (
               <li key={k} className="relative">
-                <span aria-hidden className="absolute -left-[21px] top-1.5 h-2 w-2 bg-ink" />
-                {h.what} <span className="text-[12.5px] text-ink-3" suppressHydrationWarning>· {when(h.at)}</span>
+                <span aria-hidden className={`absolute -left-7 top-0.5 flex h-5 w-5 items-center justify-center rounded-[4px] border-[1.5px] border-ink font-pixel text-[9px] ${k === i.history.length - 1 ? "bg-warn" : "bg-panel"}`}>
+                  {k + 1}
+                </span>
+                <span className="block font-medium">{h.what}</span>
+                <span className="text-[12.5px] text-ink-3" suppressHydrationWarning>
+                  {when(h.at)}
+                </span>
               </li>
             ))}
           </ol>
@@ -132,6 +142,7 @@ export default async function HallItemPage({ params }: { params: Promise<{ id: s
           <CopyLink />
         </div>
       </article>
+      </TwoForms>
     </div>
   );
 }

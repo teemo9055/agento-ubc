@@ -5,7 +5,6 @@ import { useRouter } from "next/navigation";
 import { useEffect, useState } from "react";
 import { Button, Spinner } from "@/components/ui";
 import type { PublicItem } from "@/server/town/hall";
-import { PLACES, PlaceIcon, type PlaceId } from "./places";
 import { KIND_LABEL, StatusPill, inputCls, when } from "./bits";
 
 const SENT_KEY = "agento:hall-sent";
@@ -17,50 +16,6 @@ export const rememberSent = (id: string) => {
     /* private mode: the status link still works */
   }
 };
-
-/** Where a request can go after Town Hall: two roads, as on the map. */
-export function HallFlow() {
-  const step = (id: PlaceId, what: string) => (
-    <li className="flex min-w-0 items-center gap-2">
-      <Link href={PLACES[id].href} className="pressable flex items-center gap-2 rounded-lg border border-line bg-panel px-2.5 py-2 hover:border-[#c9c8c2]">
-        <PlaceIcon place={id} size={22} />
-        <span className="leading-tight">
-          <span className="block font-pixel text-[11.5px]">{PLACES[id].name}</span>
-          <span className="block text-[12px] text-ink-2">{what}</span>
-        </span>
-      </Link>
-    </li>
-  );
-  const arrow = (
-    <li aria-hidden className="text-ink-3">
-      <svg width="22" height="12" viewBox="0 0 22 12" shapeRendering="crispEdges">
-        <path d="M0 5h16v2H0zM14 2h2v8h-2zM16 3h2v6h-2zM18 4h2v4h-2zM20 5h2v2h-2z" fill="currentColor" />
-      </svg>
-    </li>
-  );
-  return (
-    <section className="rounded-2xl border border-line bg-panel p-4 sm:p-5" aria-labelledby="flow" data-testid="hall-flow">
-      <h2 id="flow" className="text-[16px] font-semibold">
-        Where what you send can go
-      </h2>
-      <p className="mt-0.5 text-[13.5px] text-ink-2">An admin reads everything. Real requests are sent on, along one road or both.</p>
-      <ol className="mt-3 flex flex-wrap items-center gap-2" aria-label="Research road">
-        {step("hall", "you send it")}
-        {arrow}
-        {step("lab", "people and agents look into it")}
-        {arrow}
-        {step("library", "the answer is written down")}
-      </ol>
-      <ol className="mt-2 flex flex-wrap items-center gap-2" aria-label="Market road">
-        {step("hall", "you send it")}
-        {arrow}
-        {step("forum", "others offer a fix or a service")}
-        {arrow}
-        {step("store", "a trusted vendor is listed")}
-      </ol>
-    </section>
-  );
-}
 
 /** The form: what kind, what you want to say, and the $1 deposit. */
 export function HallForm({ mode: serverMode }: { mode: "live" | "practice" }) {
@@ -198,6 +153,59 @@ export function SentList() {
           </li>
         ))}
       </ul>
+    </section>
+  );
+}
+
+const QUEUE_FILTERS = ["all", "received", "routed", "answered", "refunded", "kept as spam", "abandoned"] as const;
+
+/** Everything Town Hall received, newest first, with where each one is now. Spam keeps its status but not its text. */
+export function HallQueue({ items }: { items: PublicItem[] }) {
+  const [f, setF] = useState<(typeof QUEUE_FILTERS)[number]>("all");
+  const shown = items.filter((i) => f === "all" || i.status === f);
+  const count = (x: (typeof QUEUE_FILTERS)[number]) => items.filter((i) => x === "all" || i.status === x).length;
+  return (
+    <section className="rounded-2xl border border-line bg-panel" aria-labelledby="queue" data-testid="hall-queue">
+      <div className="space-y-2.5 border-b border-[#f1f0ec] px-4 py-3 sm:px-5">
+        <div className="flex flex-wrap items-baseline justify-between gap-2">
+          <h2 id="queue" className="font-pixel text-[15px]">
+            The queue
+          </h2>
+          <span className="text-[12.5px] text-ink-3">Public. Contact details are never shown.</span>
+        </div>
+        <div className="flex flex-wrap gap-1.5" role="group" aria-label="Filter by status">
+          {QUEUE_FILTERS.filter((x) => x === "all" || count(x) > 0).map((x) => (
+            <button key={x} type="button" aria-pressed={f === x} onClick={() => setF(x)} className={`pressable h-7 rounded-md border px-2 text-[12.5px] font-medium ${f === x ? "border-ink bg-ink text-white" : "border-line text-ink-2 hover:text-ink"}`}>
+              {x === "all" ? "Everything" : x[0].toUpperCase() + x.slice(1)} <span className="num opacity-70">{count(x)}</span>
+            </button>
+          ))}
+        </div>
+      </div>
+      {shown.length ? (
+        <ul className="divide-y divide-[#f1f0ec]">
+          {shown.map((i) => (
+            <li key={i.id}>
+              <Link href={`/town/hall/${i.id}`} className="flex items-start gap-3 px-4 py-3 hover:bg-ink/[0.02] sm:px-5">
+                <span className="mt-0.5 w-[104px] shrink-0">
+                  <StatusPill status={i.status} />
+                </span>
+                <span className="min-w-0 flex-1">
+                  <span className={`line-clamp-2 block text-[14px] ${i.status === "kept as spam" ? "italic text-ink-3" : ""}`}>{i.text}</span>
+                  <span className="mt-0.5 block text-[12px] text-ink-3" suppressHydrationWarning>
+                    {KIND_LABEL[i.kind]}
+                    {i.from ? ` · ${i.from}` : ""}
+                    {i.by === "agent" ? " · an agent" : ""} · {when(i.createdAt)}
+                    {i.routes.length ? ` · to the ${i.routes.map((r) => (r === "lab" ? "Lab" : "Forum")).join(" and ")}` : ""}
+                  </span>
+                </span>
+                <span className="hidden font-mono text-[11.5px] text-ink-3 sm:block">#{i.id}</span>
+              </Link>
+            </li>
+          ))}
+        </ul>
+      ) : (
+        <p className="px-5 py-8 text-center text-[13.5px] text-ink-2">{items.length ? "Nothing with that status." : "Nothing yet. What you send will show here, with where it is."}</p>
+      )}
     </section>
   );
 }

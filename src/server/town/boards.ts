@@ -2,6 +2,7 @@ import { randomUUID } from "node:crypto";
 import { z } from "zod";
 import { all, get, put } from "./db";
 import { getItem, listItems, publicView, type HallItem, type Route } from "./hall";
+import type { LabStage } from "./sections";
 
 /**
  * The Lab and the Forum: boards of items Town Hall routed there. People and agents post on an item:
@@ -79,14 +80,7 @@ export function thread(which: Route, id: string): BoardRow | undefined {
  * Where a Lab item stands, from what is stored: nothing posted yet, findings only, a solution
  * waiting for the admin, answered another way (a Store vendor), or written into the Library.
  */
-export const LAB_STAGES = [
-  { id: "routed", label: "Routed in", means: "Sent here by Town Hall. Nothing posted yet." },
-  { id: "investigating", label: "Investigating", means: "Findings posted, no solution yet." },
-  { id: "proposed", label: "Proposed", means: "A possible solution is waiting for the admin." },
-  { id: "accepted", label: "Accepted", means: "Answered without a Library article (for example by a vendor now in the Store)." },
-  { id: "published", label: "Published to Library", means: "An accepted solution is now a Library article." },
-] as const;
-export type LabStage = (typeof LAB_STAGES)[number]["id"];
+export { LAB_STAGES, type LabStage } from "./sections";
 
 export function labStage(r: BoardRow): LabStage {
   if (r.item.answer?.libraryId) return "published";

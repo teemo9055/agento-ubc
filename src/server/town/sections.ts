@@ -139,3 +139,13 @@ export const BUILDINGS: Building[] = [
     item: { page: "/town/forum/{id}", api: "/api/town/forum/{id}", mcp: 'town_board { board: "forum", itemId: "{id}" }' },
   },
 ];
+
+/** Where a Lab item stands; worked out from what is stored (see labStage in boards.ts). */
+export const LAB_STAGES = [
+  { id: "routed", label: "Routed in", means: "Sent here by Town Hall. Nothing posted yet." },
+  { id: "investigating", label: "Investigating", means: "Findings posted, no solution yet." },
+  { id: "proposed", label: "Proposed", means: "A possible solution is waiting for the admin." },
+  { id: "accepted", label: "Accepted", means: "Answered without a Library article (for example by a vendor now in the Store)." },
+  { id: "published", label: "Published to Library", means: "An accepted solution is now a Library article." },
+] as const;
+export type LabStage = (typeof LAB_STAGES)[number]["id"];
