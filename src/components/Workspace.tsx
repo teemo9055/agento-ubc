@@ -10,6 +10,7 @@ import { Spinner } from "./ui";
 import { LiveMarket } from "./Live";
 import { PriceSketch, TripSketch } from "./Sketches";
 import { BriefCard, briefOf } from "./BriefCard";
+import { CoverSheet, TradeBoard, TripSheet, tripParts } from "./AgentSheets";
 
 const STAGES = ["Shape it", "Review", "Run", "Done"] as const;
 
@@ -38,7 +39,7 @@ const LANE_DOT: Record<LaneKey, string> = { reads: "bg-ink-3", checks: "bg-warn"
 function Stepper({ onAdjust, busy, canLess, canMore }: { onAdjust: (k: AdjustKind) => void; busy: boolean; canLess: boolean; canMore: boolean }) {
   const btn = "pressable inline-flex h-8 w-8 items-center justify-center rounded-lg border border-line bg-panel text-[16px] font-semibold leading-none text-ink hover:border-ink/50 disabled:opacity-40";
   return (
-    <div className="mt-2 flex items-center gap-1.5" data-testid="stepper">
+    <div className="flex items-center gap-1.5 [[data-block]_&]:mt-2" data-testid="stepper">
       <button type="button" className={btn} disabled={busy || !canLess} onClick={() => onAdjust("less")} aria-label="Less" data-testid="step-less">
         −
       </button>
@@ -124,6 +125,26 @@ export function Workspace({ run, onExample, onAdjust }: { run: Run; onExample?: 
   const kind = KINDS[bp.kind];
   const b = briefOf(run);
   const size = move ? sizeOf(move) : undefined;
+  const said = [run.task, ...chat.filter((m) => m.role === "user").map((m) => m.text)].join(" ");
+  // An agent's own sheet already says what the move does and gets, so the drawing keeps only what it looks up first.
+  const sheet =
+    Boolean(move) &&
+    (run.agent === "trado" ||
+      (run.agent === "inso" && move?.action?.kind === "prediction_order" && move.action.trade !== "sell") ||
+      (run.agent === "travo" && (move?.action?.kind === "itinerary" || Object.values(tripParts(said)).some(Boolean))));
+  const lanes = sheet ? { ...bp, lanes: bp.lanes.filter((l) => l.key === "reads" || l.key === "checks") } : bp;
+  const stepper =
+    move && onAdjust && size && !run.thinking ? (
+      <Stepper
+        busy={stepping}
+        canLess={size.down != null}
+        canMore={size.up > size.now}
+        onAdjust={(k) => {
+          setStepping(true);
+          void onAdjust(k).finally(() => setStepping(false));
+        }}
+      />
+    ) : null;
 
   return (
     <div className="space-y-4">
@@ -147,30 +168,27 @@ export function Workspace({ run, onExample, onAdjust }: { run: Run; onExample?: 
         </div>
 
         <div className="space-y-4 p-4">
+          {/* Each agent's own view of the work: Inso the cover, Trado the trading board, Travo the trip. */}
+          {run.agent === "inso" && move && <CoverSheet p={move} />}
+          {run.agent === "trado" && <TradeBoard p={move} />}
+          {run.agent === "travo" && <TripSheet p={move} task={said} />}
+          {sheet && stepper && (
+            <div className="flex items-center justify-between gap-3 rounded-xl border border-line bg-panel px-4 py-2" data-testid="size-row">
+              <span className="text-[13px] text-ink-2">{size?.unit === "hours" ? "Hours of driving a day" : size?.unit === "cover" ? "How much to cover" : "Size of the order"}</span>
+              {stepper}
+            </div>
+          )}
           {move && (
             <div className="empty:hidden" data-testid="instrument">
               <AgentView p={move} />
             </div>
           )}
 
-          <Assemble play={move ? `move-${move.id}` : `outline-${bp.kind}`}>
-            <BlueprintView
-              bp={bp}
-              extra={(l, j) =>
-                move && onAdjust && size && l === "does" && j === 0 && !run.thinking ? (
-                  <Stepper
-                    busy={stepping}
-                    canLess={size.down != null}
-                    canMore={size.up > size.now}
-                    onAdjust={(k) => {
-                      setStepping(true);
-                      void onAdjust(k).finally(() => setStepping(false));
-                    }}
-                  />
-                ) : null
-              }
-            />
-          </Assemble>
+          {lanes.lanes.length > 0 && (
+            <Assemble play={move ? `move-${move.id}` : `outline-${bp.kind}`}>
+              <BlueprintView bp={lanes} extra={(l, j) => (!sheet && l === "does" && j === 0 ? stepper : null)} />
+            </Assemble>
+          )}
 
           {move ? (
             <p className="num border-t border-[#f1f0ec] pt-3 text-[12.5px] text-ink-3" data-testid="workspace-cost">

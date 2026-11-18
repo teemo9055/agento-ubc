@@ -178,6 +178,18 @@ export default function NewJob() {
         {busy === "showcase" ? <Spinner /> : <Icon name="arrow" size={17} className="shrink-0 transition-transform group-hover:translate-x-0.5" />}
       </button>
 
+      <nav aria-label="Agent homes" className="grid grid-cols-3 gap-2" data-testid="agent-homes">
+        {(Object.keys(THEMES) as AgentId[]).map((a) => (
+          <Link key={a} href={`/${a}`} data-agent={a} className="pressable flex items-center gap-2 rounded-xl border border-line bg-panel px-3 py-2.5 hover:border-ink">
+            <AgentIcon agent={a} size={28} />
+            <span className="min-w-0">
+              <span className="block font-pixel text-[12px] text-agent-ink">{THEMES[a].name}</span>
+              <span className="block truncate text-[12px] text-ink-3">{THEMES[a].domain}</span>
+            </span>
+          </Link>
+        ))}
+      </nav>
+
       <section aria-label="Start from a goal">
         <h2 className="mb-2 text-[13px] font-semibold text-ink-2">Or start from a goal</h2>
         <div className="grid gap-2 sm:grid-cols-2" data-testid="goals">

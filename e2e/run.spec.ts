@@ -291,7 +291,7 @@ test("the work is drawn beside the chat, and the likeliest next step is one tap"
   // Left: the move as a drawing, with what it reads and does and the most it can cost.
   const space = page.getByTestId("workspace");
   await expect(space).toHaveAttribute("data-filled", "");
-  await expect(space.locator("[data-lane=does] [data-block]")).toHaveCount(1);
+  await expect(space.getByTestId("cover-sheet")).toBeVisible();
   await expect(space.locator("[data-ghost]")).toHaveCount(0);
   await expect(page.getByTestId("workspace-cost")).toContainText("Up to $");
   // The move's market is followed live: what it costs to buy right now.
@@ -366,7 +366,7 @@ test("quick changes are applied at once: the drawing and the cost follow without
   await page.fill("#task", "What are BTC odds right now?");
   await page.getByRole("button", { name: /Ask/ }).click();
   await expect(page.getByTestId("move-card")).toBeVisible({ timeout: 30_000 });
-  const does = page.locator("[data-lane=does] [data-block]").first();
+  const does = page.getByTestId("cover-pay");
   const before = await does.innerText();
   // More, right on the thing it changes.
   await page.getByTestId("step-more").click();

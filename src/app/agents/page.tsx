@@ -84,8 +84,8 @@ export default function AgentDirectory() {
                   <Link href={`/agents/${a}`} className="inline-flex h-10 flex-1 items-center justify-center rounded-lg border border-line bg-panel text-sm font-medium hover:border-[#c9c8c2]">
                     View profile
                   </Link>
-                  <Link href={`/new?agent=${a}`} className="pix-press inline-flex h-10 flex-1 items-center justify-center gap-1.5 rounded-lg border-[1.5px] border-ink bg-agent text-sm font-semibold text-agent-on">
-                    Hire {THEMES[a].name}
+                  <Link href={`/${a}`} className="pix-press inline-flex h-10 flex-1 items-center justify-center gap-1.5 rounded-lg border-[1.5px] border-ink bg-agent text-sm font-semibold text-agent-on">
+                    Open {THEMES[a].name}
                   </Link>
                 </div>
               </div>
