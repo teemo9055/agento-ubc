@@ -6,6 +6,8 @@ import { InMemoryTransport } from "@modelcontextprotocol/sdk/inMemory.js";
 vi.mock("../marketplace", async (orig) => ({ ...(await orig<typeof import("../marketplace")>()), searchServices: async () => [] }));
 
 const { registerTownTools } = await import("./mcp");
+const { articleMarkdown } = await import("./format");
+const { readEntry } = await import("./library");
 let client: Client;
 beforeAll(async () => {
   const server = new McpServer({ name: "town", version: "0" });
@@ -22,11 +24,19 @@ const call = async (name: string, args: Record<string, unknown>) => {
 
 it("agents reach every building over MCP", async () => {
   const names = (await client.listTools()).tools.map((t) => t.name);
-  expect(names).toEqual(expect.arrayContaining(["library_search", "library_read", "store_search", "store_submit", "hall_request", "hall_status", "town_board", "town_post"]));
+  expect(names).toEqual(expect.arrayContaining(["library_search", "library_read", "store_search", "store_read", "store_submit", "hall_request", "hall_status", "town_board", "town_post"]));
 
   const hits = (await call("library_search", { query: "x402" })).json();
   expect(hits[0].url).toMatch(/^http:\/\/app\.test\/town\/library\//);
-  expect((await call("library_read", { id: "read-arc" })).json().tool).toMatch(/read_arc/);
+  // library_read returns the same Markdown as the article's "For agents" view.
+  const read = await call("library_read", { id: "read-arc" });
+  expect(read.text).toBe(articleMarkdown(readEntry("read-arc")!, "http://app.test"));
+  expect(read.text).toMatch(/^# Read Arc with read_arc/);
+  expect(read.text).toMatch(/read_arc/);
+
+  const item = await call("store_read", { id: "agento-cover.quote" });
+  expect(item.text).toContain("# cover.quote");
+  expect((await call("store_read", { id: "agento-nope" })).error).toBe(true);
 
   // Practice mode (no wallets here): recorded with a practice deposit.
   const sent = (await call("hall_request", { kind: "need", text: "A cheaper weather feed", from: "bot" })).json();

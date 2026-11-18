@@ -4,6 +4,7 @@ import { HallInput, getItem, publicView } from "@/server/town/hall";
 import { sendFromApp } from "@/server/town/deposit";
 import { townMode } from "@/server/town";
 import { liveAllowed } from "@/server/access";
+import { formatOf, hallDoc, originOf, reply } from "@/server/town/format";
 
 export const dynamic = "force-dynamic";
 
@@ -26,8 +27,9 @@ export async function POST(req: NextRequest) {
   return NextResponse.json({ item: publicView(r.item), statusUrl: `/town/hall/${r.item.id}` }, { status: 201 });
 }
 
-/** The status of a few items at once, for "what I sent": `?ids=a,b,c`. */
+/** The public queue for agents (`format=md|json`), or the status of a few items at once, for "what I sent": `?ids=a,b,c`. */
 export async function GET(req: NextRequest) {
+  if (!req.nextUrl.searchParams.has("ids")) return reply(formatOf(req), hallDoc(originOf(req)));
   const ids = (req.nextUrl.searchParams.get("ids") ?? "").split(",").filter(Boolean).slice(0, 20);
   const items = ids.map((id) => getItem(id)).filter((i) => i !== undefined && i.deposit.state !== "awaiting");
   return NextResponse.json({ items: items.map((i) => publicView(i!)) });

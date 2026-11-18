@@ -121,3 +121,11 @@ export function publicView(i: HallItem) {
   };
 }
 export type PublicItem = ReturnType<typeof publicView>;
+
+/** The public queue: everything Town Hall received, newest first. Spam keeps its status but not its text. */
+export function publicQueue(): PublicItem[] {
+  return listItems().map((i) => {
+    const v = publicView(i);
+    return v.status === "kept as spam" ? { ...v, text: "(hidden: marked as spam)", from: undefined } : v;
+  });
+}

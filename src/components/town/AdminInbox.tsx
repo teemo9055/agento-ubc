@@ -8,6 +8,7 @@ import type { Post } from "@/server/town/boards";
 import type { Listing } from "@/server/town/listings";
 import type { LogEntry } from "@/server/town/admin";
 import { KIND_LABEL, Panel, StatusPill, inputCls, usd, when } from "./bits";
+import { SECTIONS as TOWN_SECTIONS } from "@/server/town/sections";
 
 const KEY = "agento:admin-key";
 const NAME = "agento:admin-name";
@@ -22,7 +23,7 @@ interface Inbox {
   listings: Listing[];
   log: LogEntry[];
 }
-const SECTIONS: Record<string, string> = { basics: "Basic actions", combos: "Combined actions", tools: "Tools and prices", practices: "Best practices", limits: "Limits and gotchas", updates: "What's new" };
+const SECTIONS: Record<string, string> = TOWN_SECTIONS;
 
 const statusWord = (i: HallItem) =>
   i.state === "answered" ? "answered" : i.state === "abandoned" ? "abandoned" : i.state === "spam" ? "kept as spam" : i.state === "routed" ? "routed" : i.deposit.state === "refunded" ? "refunded" : "received";

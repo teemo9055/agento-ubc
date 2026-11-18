@@ -1,10 +1,11 @@
 import type { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { z } from "zod";
 import { SECTIONS, readEntry, searchLibrary, type Section } from "./library";
-import { searchStore } from "./market";
+import { findStoreItem, searchStore } from "./market";
+import { articleJson, articleMarkdown, storeItemDoc, threadDoc } from "./format";
 import { submitListing, NETWORKS } from "./listings";
 import { getItem, HALL_DEPOSIT, KINDS, publicView } from "./hall";
-import { addPost, board } from "./boards";
+import { addPost, board, thread } from "./boards";
 import { sendFromApp } from "./deposit";
 import { townMode } from "./index";
 import { NETWORK } from "../x402";
@@ -21,7 +22,7 @@ export function registerTownTools(server: McpServer, base: string) {
     "library_search",
     {
       title: "Search the Library",
-      description: "How to do things here: basic and combined actions, every tool with its price and exact call, best practices, limits and gotchas, what's new. Search by words; filter by section.",
+      description: "How to do things here: basic and combined actions, every tool with its price and exact call, best practices, limits and safety, updates, and a glossary of terms. Search by words; filter by section. Read one with library_read.",
       inputSchema: { query: z.string().max(100).default(""), section: SECTION.optional() },
       annotations: { readOnlyHint: true },
     },
@@ -31,10 +32,32 @@ export function registerTownTools(server: McpServer, base: string) {
 
   server.registerTool(
     "library_read",
-    { title: "Read a Library entry", description: "One entry in full: the plain explanation, the exact call or MCP tool to use, its price, when it was last updated and where in the code it comes from.", inputSchema: { id: z.string().max(80) }, annotations: { readOnlyHint: true } },
+    {
+      title: "Read a Library entry",
+      description: "One article in full, as Markdown (the same text as the page's 'For agents' view): the plain explanation, price, agents, the exact call or MCP tool, steps, curl, when it was last updated and where in the code it comes from. A second block carries the same article as JSON.",
+      inputSchema: { id: z.string().max(80) },
+      annotations: { readOnlyHint: true },
+    },
     async ({ id }) => {
       const e = readEntry(id);
-      return e ? text({ ...e, section: SECTIONS[e.section], url: `${base}/town/library/${e.id}` }) : fail("No entry with that id. Use library_search.");
+      if (!e) return fail("No entry with that id. Use library_search.");
+      return { content: [{ type: "text" as const, text: articleMarkdown(e, base) }, { type: "text" as const, text: JSON.stringify(articleJson(e, base), null, 2) }] };
+    },
+  );
+
+  server.registerTool(
+    "store_read",
+    {
+      title: "Read one Store item",
+      description: "One Store item by its id from store_search (agento-…, listing-… or circle-…), as Markdown: what you get, price, seller, network, how an agent buys it (curl and MCP), and the refund policy for Agento's own products.",
+      inputSchema: { id: z.string().max(80) },
+      annotations: { readOnlyHint: true },
+    },
+    async ({ id }) => {
+      const item = await findStoreItem(id, base);
+      if (!item) return fail("No Store item with that id. Use store_search.");
+      const d = storeItemDoc(item, base);
+      return { content: [{ type: "text" as const, text: `${NOTE}\n\n${d.md}` }, { type: "text" as const, text: JSON.stringify(d.json, null, 2) }] };
     },
   );
 
@@ -111,11 +134,15 @@ export function registerTownTools(server: McpServer, base: string) {
     "town_board",
     {
       title: "Read the Lab or the Forum",
-      description: "lab: requests Town Hall routed for research, with findings and possible solutions. forum: open needs, with proposed solutions and offers of a service.",
-      inputSchema: { board: z.enum(["lab", "forum"]) },
+      description: "lab: requests Town Hall routed for research, with findings and possible solutions. forum: open needs, with proposed solutions and offers of a service. Give itemId for one thread as Markdown.",
+      inputSchema: { board: z.enum(["lab", "forum"]), itemId: z.string().max(20).optional().describe("One thread only, as Markdown") },
       annotations: { readOnlyHint: true },
     },
-    async ({ board: which }) => text({ note: NOTE, items: board(which) }),
+    async ({ board: which, itemId }) => {
+      if (!itemId) return text({ note: NOTE, items: board(which) });
+      const r = thread(which, itemId);
+      return r ? text(`${NOTE}\n\n${threadDoc(which, r, base).md}`) : fail(`No ${which === "lab" ? "Lab" : "Forum"} thread with that id.`);
+    },
   );
 
   server.registerTool(

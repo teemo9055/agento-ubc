@@ -67,3 +67,34 @@ export function board(which: Route) {
     .filter((i) => open(i, which))
     .map((i) => ({ item: publicView(i), posts: posts.filter((p) => p.itemId === i.id).reverse() }));
 }
+
+export type BoardRow = ReturnType<typeof board>[number];
+
+/** One item on a board, with its posts: a thread. */
+export function thread(which: Route, id: string): BoardRow | undefined {
+  return board(which).find((r) => r.item.id === id);
+}
+
+/**
+ * Where a Lab item stands, from what is stored: nothing posted yet, findings only, a solution
+ * waiting for the admin, answered another way (a Store vendor), or written into the Library.
+ */
+export const LAB_STAGES = [
+  { id: "routed", label: "Routed in", means: "Sent here by Town Hall. Nothing posted yet." },
+  { id: "investigating", label: "Investigating", means: "Findings posted, no solution yet." },
+  { id: "proposed", label: "Proposed", means: "A possible solution is waiting for the admin." },
+  { id: "accepted", label: "Accepted", means: "Answered without a Library article (for example by a vendor now in the Store)." },
+  { id: "published", label: "Published to Library", means: "An accepted solution is now a Library article." },
+] as const;
+export type LabStage = (typeof LAB_STAGES)[number]["id"];
+
+export function labStage(r: BoardRow): LabStage {
+  if (r.item.answer?.libraryId) return "published";
+  if (r.item.status === "answered") return "accepted";
+  if (r.posts.some((p) => p.kind === "solution" && p.state === "open")) return "proposed";
+  if (r.posts.length) return "investigating";
+  return "routed";
+}
+
+/** The newest thing that happened on a thread. */
+export const lastActivity = (r: BoardRow) => [r.item.createdAt, ...r.item.history.map((h) => h.at), ...r.posts.map((p) => p.createdAt)].sort().at(-1)!;

@@ -1,12 +1,16 @@
 import { NextRequest, NextResponse } from "next/server";
 import { ZodError } from "zod";
 import { addPost, board } from "@/server/town/boards";
+import { boardDoc, formatOf, originOf, reply } from "@/server/town/format";
 
 export const dynamic = "force-dynamic";
 
-/** The Forum: open needs routed here, with proposed solutions and offers of a service. */
-export async function GET() {
-  return NextResponse.json({ board: board("forum") }, { headers: { "access-control-allow-origin": "*" } });
+/** The Forum: open needs routed here, with proposed solutions and offers of a service. `format=md|json` for the agent document (threads). */
+export async function GET(req: NextRequest) {
+  const rows = board("forum");
+  const doc = boardDoc("forum", originOf(req), rows);
+  if (req.nextUrl.searchParams.has("format") || /text\/markdown/.test(req.headers.get("accept") ?? "")) return reply(formatOf(req), doc);
+  return NextResponse.json({ board: rows, ...doc.json }, { headers: { "access-control-allow-origin": "*" } });
 }
 
 /** Propose a solution or offer a service on a need: { itemId, kind: "solution" | "offer", text, url? (https, for offers), priceUsd?, from?, by? }. */
