@@ -3,8 +3,13 @@ import { addresses, publicClient, send, USDC, usdcAbi } from "./chain";
 import * as gemini from "./gemini";
 import * as geo from "./geo";
 import { TEST_LABEL, type DeliveryPromise } from "./delivery";
+import type { Sale } from "./sales";
+import { createItem, depositPaid, HALL_DEPOSIT, HallInput, KINDS } from "./town/hall";
 
 export const NETWORK = "eip155:5042002";
+
+/** Thrown by a product when the buyer's own request is wrong: answered 400, and nothing is charged. */
+export class BadInput extends Error {}
 
 export interface Product {
   id: string;
@@ -17,6 +22,8 @@ export interface Product {
   /** What every answer is promised to contain; a paid answer that breaks it is refunded. */
   promise: DeliveryPromise;
   run: (q: URLSearchParams) => Promise<unknown>;
+  /** Called once the payment settled and the sale was recorded. */
+  settled?: (sale: Sale, data: unknown) => void;
 }
 
 /** How long after a sale a refund can be claimed. */
@@ -143,6 +150,24 @@ export const PRODUCTS: Record<string, Product> = {
     example: "list=new&limit=5",
     promise: { list: true },
     run: (q) => gemini.listEvents((["new", "upcoming", "settled"].includes(q.get("list") ?? "") ? q.get("list") : "new") as gemini.Listing, Number(q.get("limit") ?? 8)),
+  },
+  "hall.request": {
+    id: "hall.request",
+    description: "Send Agento's Town Hall a request, feedback, a need or a feature offer. The 1 USDC is a deposit against spam: refunded when an admin finds it isn't spam",
+    price: HALL_DEPOSIT,
+    params: { kind: KINDS.join(", "), text: "What you want to say, 5 to 1000 characters", from: "Your name or your agent's (optional)", contact: "How to reach you (optional)" },
+    example: "kind=feedback&text=Please%20list%20more%20Arc%20testnet%20services&from=my-agent",
+    promise: { fields: ["id", "status", "statusUrl"] },
+    run: async (q) => {
+      const v = HallInput.safeParse({ kind: q.get("kind") ?? "", text: q.get("text") ?? "", from: q.get("from") ?? undefined, contact: q.get("contact") ?? undefined });
+      if (!v.success) throw new BadInput(v.error.issues[0]?.message ?? "Check kind and text");
+      const item = createItem(v.data, "agent", "live");
+      return { id: item.id, status: "received", statusUrl: `/town/hall/${item.id}`, deposit: "1 USDC, refunded if it isn't spam" };
+    },
+    settled: (sale, data) => {
+      const id = (data as { id?: unknown } | null)?.id;
+      if (typeof id === "string") depositPaid(id, sale);
+    },
   },
 };
 

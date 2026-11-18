@@ -12,6 +12,6 @@ export default defineConfig({
     url: "http://localhost:3100/api/config",
     reuseExistingServer: true,
     timeout: 240_000,
-    env: { DEMO_DELAY_SCALE: "0.2", FAULT_TIMEOUT_MS: "1500", AI_DISABLED: "true", PERSIST: "false", MARKET_DATA: process.env.MARKET_DATA === "live" ? "" : (process.env.MARKET_DATA ?? "replay") },
+    env: { DEMO_DELAY_SCALE: "0.2", FAULT_TIMEOUT_MS: "1500", AI_DISABLED: "true", PERSIST: "false", ADMIN_KEY: "e2e-admin-key", MARKET_DATA: process.env.MARKET_DATA === "live" ? "" : (process.env.MARKET_DATA ?? "replay") },
   },
 });

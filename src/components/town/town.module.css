@@ -1,0 +1,179 @@
+/* The town map. Motion has a cause (people walking, smoke rising, the bell swinging) and stops under reduced motion. */
+
+.scroller {
+  overscroll-behavior: contain;
+  scrollbar-width: thin;
+}
+
+/* A building's link box covers its drawing's bounds; only the painted shapes and the sign take the pointer. */
+.building {
+  display: block;
+  pointer-events: none;
+  outline: none;
+  color: inherit;
+}
+.art {
+  position: absolute;
+  inset: 0;
+  overflow: visible;
+  pointer-events: none;
+  transition: transform 140ms steps(3);
+}
+.art * {
+  pointer-events: visiblePainted;
+  cursor: pointer;
+}
+.building:hover .art,
+.building:focus-visible .art {
+  transform: translateY(-6px);
+}
+
+.sign {
+  position: absolute;
+  left: 50%;
+  translate: -50% -50%;
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  height: 30px;
+  padding: 0 10px 0 4px;
+  white-space: nowrap;
+  pointer-events: auto;
+  cursor: pointer;
+  background: #0b0b0b;
+  color: #ffffff;
+  font-size: 13px;
+  line-height: 1;
+  border: 2px solid #0b0b0b;
+  border-radius: 3px;
+  box-shadow: 3px 3px 0 0 rgb(11 11 11 / 0.28);
+  transition:
+    transform 140ms steps(3),
+    background 140ms steps(2),
+    box-shadow 140ms steps(2);
+}
+/* The sign's chain to the roof. */
+.sign::before,
+.sign::after {
+  content: "";
+  position: absolute;
+  bottom: -12px;
+  width: 2px;
+  height: 10px;
+  background: #0b0b0b;
+}
+.sign::before {
+  left: 14px;
+}
+.sign::after {
+  right: 14px;
+}
+.signIcon {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 22px;
+  height: 22px;
+  background: #ffffff;
+  border-radius: 2px;
+}
+.building:hover .sign,
+.building:focus-visible .sign {
+  transform: translateY(-6px);
+  background: #26252b;
+  color: #fff6d6;
+  box-shadow: 3px 3px 0 0 var(--accent);
+}
+.building:focus-visible .sign {
+  outline: 2px solid var(--accent);
+  outline-offset: 3px;
+}
+
+.walker {
+  will-change: transform;
+}
+.walker :global(.mascot) {
+  animation: step 0.5s steps(1) infinite;
+}
+@keyframes step {
+  50% {
+    transform: translateY(-2px);
+  }
+}
+
+.smoke {
+  animation: rise 3.2s steps(4) infinite;
+}
+@keyframes rise {
+  0% {
+    transform: translateY(6px);
+    opacity: 0;
+  }
+  25% {
+    opacity: 1;
+  }
+  100% {
+    transform: translateY(-14px);
+    opacity: 0;
+  }
+}
+.flag {
+  transform-box: fill-box;
+  transform-origin: left center;
+  animation: wave 1.6s steps(2) infinite;
+}
+@keyframes wave {
+  50% {
+    transform: scaleX(0.82);
+  }
+}
+.bell {
+  transform-box: fill-box;
+  transform-origin: center top;
+  animation: swing 2.4s steps(4) infinite;
+}
+@keyframes swing {
+  0%,
+  60%,
+  100% {
+    transform: rotate(0);
+  }
+  70% {
+    transform: rotate(-14deg);
+  }
+  85% {
+    transform: rotate(14deg);
+  }
+}
+.hand {
+  animation: tick 12s steps(12) infinite;
+}
+@keyframes tick {
+  to {
+    transform: rotate(360deg);
+  }
+}
+.lamp {
+  animation: glowlamp 3s steps(1) infinite;
+}
+@keyframes glowlamp {
+  50% {
+    fill: #fab219;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .walker,
+  .walker :global(.mascot),
+  .smoke,
+  .flag,
+  .bell,
+  .hand,
+  .lamp {
+    animation: none !important;
+  }
+  .art,
+  .sign {
+    transition: none;
+  }
+}

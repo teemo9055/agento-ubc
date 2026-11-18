@@ -1,7 +1,7 @@
 import type { Hex } from "viem";
 import { addresses, send, USDC, usdcAbi } from "./chain";
 import { answerHash, checkDelivery, type DeliveryVerdict } from "./delivery";
-import { finishRefund, findSale, lockRefund, type Sale } from "./sales";
+import { finishRefund, findSale, isPractice, lockRefund, type Sale } from "./sales";
 import { PRODUCTS, REFUND_WINDOW_MIN } from "./x402";
 
 export type ClaimResult =
@@ -29,6 +29,31 @@ export async function claimRefund(c: { tx: string; payer: string; answer: unknow
     const refundTx = await (opts.pay ?? payBack)(sale.payer as Hex, BigInt(sale.amount));
     finishRefund(sale.id, { tx: refundTx });
     return { ok: true, amount: sale.amount, refundTx, verdict };
+  } catch (e) {
+    finishRefund(sale.id, null);
+    return { ok: false, status: 502, reason: `Refund couldn't be sent: ${(e as Error).message.slice(0, 120)}` };
+  }
+}
+
+export type AdminRefund = { ok: true; amount: string; refundTx?: string; practice: boolean; reason: string } | { ok: false; status: number; reason: string };
+
+/**
+ * A refund decided by a person (e.g. a Town Hall deposit that wasn't spam) rather than claimed by
+ * evidence: no delivery check, but the same once-only lock and the same transfer from the seller's
+ * wallet back to the payer. A practice sale is marked refunded with no transfer.
+ */
+export async function refundSale(saleId: string, reason: string, opts: { pay?: (to: Hex, amount: bigint) => Promise<string | undefined> } = {}): Promise<AdminRefund> {
+  const sale = findSale({ id: saleId });
+  if (!sale) return { ok: false, status: 404, reason: "No sale with that id" };
+  if (sale.refunded || !lockRefund(sale.id)) return { ok: false, status: 409, reason: "This sale was already refunded" };
+  if (isPractice(sale)) {
+    finishRefund(sale.id, {});
+    return { ok: true, amount: sale.amount, practice: true, reason };
+  }
+  try {
+    const refundTx = await (opts.pay ?? payBack)(sale.payer as Hex, BigInt(sale.amount));
+    finishRefund(sale.id, { tx: refundTx });
+    return { ok: true, amount: sale.amount, refundTx, practice: false, reason };
   } catch (e) {
     finishRefund(sale.id, null);
     return { ok: false, status: 502, reason: `Refund couldn't be sent: ${(e as Error).message.slice(0, 120)}` };

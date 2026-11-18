@@ -2,7 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { SELLERS, priceAt, type Seller } from "@/server/sellers";
 import { recordSale } from "@/server/sales";
 import { answerHash } from "@/server/delivery";
-import { PRODUCTS, decodeHeader, encodeHeader, requirements, verifyAndSettle, type PaymentPayload } from "@/server/x402";
+import { BadInput, PRODUCTS, decodeHeader, encodeHeader, requirements, verifyAndSettle, type PaymentPayload } from "@/server/x402";
 
 export const dynamic = "force-dynamic";
 
@@ -37,7 +37,8 @@ export async function GET(req: NextRequest, ctx: { params: Promise<{ product: st
     data = await product.run(q);
   } catch (e) {
     // Nothing has been charged yet: a bad request costs the buyer nothing.
-    return NextResponse.json({ error: id === "cover.quote" ? (e as Error).message : "upstream data unavailable" }, { status: id === "cover.quote" ? 400 : 502 });
+    const theirs = id === "cover.quote" || e instanceof BadInput;
+    return NextResponse.json({ error: theirs ? (e as Error).message : "upstream data unavailable" }, { status: theirs ? 400 : 502 });
   }
 
   let settled;
@@ -53,7 +54,7 @@ export async function GET(req: NextRequest, ctx: { params: Promise<{ product: st
   const payer = auth.from;
   const params = Object.fromEntries([...q.entries()].filter(([k]) => k !== "seller"));
   const kept = JSON.stringify(data ?? null);
-  recordSale({
+  const sale = recordSale({
     product: id,
     payer,
     amount: price.toString(),
@@ -65,6 +66,7 @@ export async function GET(req: NextRequest, ctx: { params: Promise<{ product: st
     // Kept so a lost answer can be sent again; very large answers are only fingerprinted.
     answer: kept.length <= 200_000 ? kept : undefined,
   });
+  product.settled?.(sale, data);
   const res = NextResponse.json({ data });
   res.headers.set(
     "x-payment-response",

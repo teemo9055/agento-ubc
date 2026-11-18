@@ -29,7 +29,8 @@ export interface Sale {
 
 type Db = import("node:sqlite").DatabaseSync;
 let db: Db | null | undefined;
-const memory: Sale[] = [];
+// On globalThis so every route of the server sees the same sales when nothing is persisted.
+const memory: Sale[] = ((globalThis as unknown as { __agentoSales?: Sale[] }).__agentoSales ??= []);
 
 function open(): Db | null {
   if (db !== undefined) return db;
@@ -89,13 +90,15 @@ export function allSales(): Sale[] {
   }
 }
 
-/** One sale, by its settlement transaction or by its authorization nonce. */
-export function findSale(by: { tx?: string; nonce?: string }): Sale | undefined {
+/** One sale, by its id, its settlement transaction or its authorization nonce. */
+export function findSale(by: { id?: string; tx?: string; nonce?: string }): Sale | undefined {
   const d = open();
-  const match = (s: Sale) => (by.tx ? s.tx.toLowerCase() === by.tx.toLowerCase() : by.nonce ? s.nonce?.toLowerCase() === by.nonce.toLowerCase() : false);
+  const match = (s: Sale) => (by.id ? s.id === by.id : by.tx ? s.tx.toLowerCase() === by.tx.toLowerCase() : by.nonce ? s.nonce?.toLowerCase() === by.nonce.toLowerCase() : false);
   if (!d) return memory.find(match);
   try {
-    const r = by.tx
+    const r = by.id
+      ? d.prepare(`SELECT ${COLS} FROM sales WHERE id = ?`).get(by.id)
+      : by.tx
       ? d.prepare(`SELECT ${COLS} FROM sales WHERE lower(tx) = lower(?)`).get(by.tx)
       : by.nonce
         ? d.prepare(`SELECT ${COLS} FROM sales WHERE lower(nonce) = lower(?)`).get(by.nonce)
@@ -132,12 +135,17 @@ export function finishRefund(id: string, outcome: { tx?: string } | null) {
   d.prepare("UPDATE sales SET refunded = ?, refundTx = ? WHERE id = ?").run(at, outcome?.tx ?? null, id);
 }
 
+/** A practice sale (Town Hall deposit in practice mode): recorded so it follows the same refund path, but no money moved. */
+export const PRACTICE_TX = "practice";
+export const isPractice = (s: Pick<Sale, "tx">) => s.tx.startsWith(PRACTICE_TX);
+
 /** For tests: forget every sale kept in memory. */
 export const resetSales = () => void memory.splice(0);
 
 /** Totals for the selling panel: what outside agents paid, what the app's own jobs paid, and the latest sales. */
 export function salesSummary() {
-  const all = allSales();
+  // Practice deposits moved no money, so they aren't earnings.
+  const all = allSales().filter((s) => !isPractice(s));
   const sum = (xs: Sale[]) => xs.reduce((a, s) => a + BigInt(s.amount), 0n).toString();
   const outside = all.filter((s) => !s.own);
   const refunds = all.filter((s) => s.refunded && s.refunded !== "pending");
