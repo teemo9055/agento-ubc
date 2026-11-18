@@ -211,7 +211,7 @@ test("a plan across agents runs step by step and says what it can't do", async (
   await expect(page).toHaveURL(/\/projects\//);
   await expect(page.getByTestId("project-title")).not.toBeEmpty();
   await expect(page.getByTestId("project-review")).toBeVisible();
-  await expect(page.getByTestId("project-most")).toContainText("At most $");
+  await expect(page.getByTestId("project-most")).toContainText("$");
   await page.getByTestId("start-all").click();
   await expect(card.getByTestId("plan-status")).toHaveText("Finished", { timeout: 60_000 });
   await expect(card.getByTestId("plan-step-status")).toHaveText(["Done", "Done"]);

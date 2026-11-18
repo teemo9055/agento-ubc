@@ -42,7 +42,6 @@ export function ProjectReview({ plan }: { plan: Plan }) {
               <span className="min-w-0">
                 <span className="font-medium" style={{ color: `var(--${s.agent}-ink, inherit)` }}>{THEMES[s.agent].name}</span> <span className="text-ink-2">{s.proposal.title}</span>
               </span>
-              <span className="num shrink-0 text-ink-2">{maxCost(s.proposal.action) + s.proposal.research.reduce((a, r) => a + lookupCost(r), 0) > 0 ? `up to ${money(maxCost(s.proposal.action) + s.proposal.research.reduce((a, r) => a + lookupCost(r), 0))}` : "free"}</span>
             </li>
           ))}
         </ul>
@@ -67,45 +66,47 @@ export function ProjectReview({ plan }: { plan: Plan }) {
         </ul>
       ),
     },
-    {
-      title: "Service cost",
-      sub: "The jobs' own fees",
-      body: (
-        <>
-          <p className="num text-[18px] font-semibold">{data > 0 ? money(data) : "Free"}</p>
-          <p className="mt-0.5 text-[13px] leading-snug text-ink-2">{data > 0 ? `for ${lookups.length} paid ${lookups.length === 1 ? "lookup" : "lookups"} across the jobs. What isn't used comes back.` : "The jobs buy no data."}</p>
-        </>
-      ),
-    },
   ];
   return (
     <section className="space-y-3" aria-label="Review the project" data-testid="project-review">
-      <ol className="grid gap-x-3 gap-y-4 sm:grid-cols-2 xl:grid-cols-4">
+      <ol className="grid gap-x-3 gap-y-4 md:grid-cols-3">
         {cards.map((c, i) => (
           <li key={c.title} className="flex min-w-0 flex-col">
             <div className="mb-2 flex items-center gap-2" aria-hidden>
-              <span className={`num inline-flex h-[22px] w-[22px] shrink-0 items-center justify-center rounded-[5px] text-[11px] font-semibold ${c.title === "Service cost" ? "bg-agent text-agent-on" : "border-[1.5px] border-[#d5d4ce] bg-panel text-ink-2"}`}>{i + 1}</span>
+              <span className={`num inline-flex h-[22px] w-[22px] shrink-0 items-center justify-center rounded-[5px] text-[11px] font-semibold border-[1.5px] border-[#d5d4ce] bg-panel text-ink-2`}>{i + 1}</span>
               <span className="whitespace-nowrap text-[11.5px] font-semibold uppercase tracking-wide text-ink-3">{c.sub}</span>
-              {i < cards.length - 1 && <span className="hidden h-px flex-1 border-t border-dashed border-[#c9c8c2] xl:block" />}
+              {i < cards.length - 1 && <span className="hidden h-px flex-1 border-t border-dashed border-[#c9c8c2] md:block" />}
             </div>
-            <div className={`flex-1 rounded-2xl border border-line p-3.5 ${c.title === "Service cost" ? "bg-agent-soft" : "bg-panel"}`}>
+            <div className="flex-1 rounded-2xl border border-line bg-panel p-3.5">
               <h3 className="mb-2 text-[15px] font-semibold leading-tight">{c.title}</h3>
               {c.body}
             </div>
           </li>
         ))}
       </ol>
-      <div className="flex flex-wrap items-baseline justify-between gap-2 rounded-2xl border border-line bg-panel px-4 py-3">
-        <div>
-          <div className="text-[11px] font-semibold uppercase tracking-wide text-ink-3">Maximum total for {steps.length} jobs</div>
-          <div className="num text-[20px] font-semibold" data-testid="project-most">
-            At most {money(data + orders)}
+      {/* The cost, itemized per job, with the maximum total: each number once. */}
+      <section className="rounded-2xl border border-line bg-panel px-4 py-3" aria-label="Cost">
+        <h3 className="text-[15px] font-semibold">Cost</h3>
+        <div className="mt-1 divide-y divide-[#f1f0ec]">
+          {steps.map((s) => {
+            const cost = maxCost(s.proposal.action) + s.proposal.research.reduce((a, r) => a + lookupCost(r), 0);
+            return (
+              <div key={s.id} className="flex items-baseline justify-between gap-3 py-1.5 text-[13.5px]">
+                <span className="min-w-0 text-ink-2">
+                  {num(s.id)}. {s.proposal.title} <span className="text-ink-3">· {THEMES[s.agent].name}</span>
+                </span>
+                <span className="num shrink-0">{cost > 0 ? money(cost) : "Free"}</span>
+              </div>
+            );
+          })}
+          <div className="flex items-baseline justify-between gap-3 pt-2.5">
+            <span className="text-[13px] font-semibold uppercase tracking-wide text-ink-3">Maximum total</span>
+            <span className="num text-[20px] font-semibold" data-testid="project-most">
+              {money(data + orders)}
+            </span>
           </div>
         </div>
-        <p className="num text-[13px] text-ink-2">
-          {money(data)} for data{orders > 0 ? ` + ${money(orders)} in orders` : ""}
-        </p>
-      </div>
+      </section>
     </section>
   );
 }
