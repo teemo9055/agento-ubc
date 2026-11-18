@@ -2,6 +2,7 @@
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { PLACE_ORDER, PLACES, PlaceIcon, type PlaceId } from "./places";
+import { Banner } from "./Banner";
 
 /**
  * The town's icon bar: every place by name, so the town works without the map (keyboard, screen
@@ -70,24 +71,18 @@ export function TownBar({ variant = "game", counts = {}, className = "" }: { var
   );
 }
 
-/** A building's page header: back to the map, the place's sign, its title and one line on what it's for. */
-export function TownHeader({ place, title, sub, children }: { place: PlaceId; title?: string; sub: string; children?: React.ReactNode }) {
-  const p = PLACES[place];
+/** A building's page header: the town bar, the building's banner with its nameplate, and one line on what it's for. */
+export function TownHeader({ place, title, sub, children, crumbs, slim }: { place: PlaceId; title?: string; sub?: string; children?: React.ReactNode; crumbs?: { href: string; label: string }[]; slim?: boolean }) {
   return (
-    <header className="space-y-4">
+    <header className="space-y-3">
       <TownBar variant="strip" />
-      <div className="flex flex-wrap items-end justify-between gap-4">
-        <div className="flex items-center gap-3.5">
-          <span className="pix-frame flex h-14 w-14 shrink-0 items-center justify-center" style={{ background: p.soft }}>
-            <PlaceIcon place={place} size={36} />
-          </span>
-          <div>
-            <h1 className="font-pixel text-[28px] leading-tight sm:text-[32px]">{title ?? p.name}</h1>
-            <p className="mt-0.5 text-[15px] text-ink-2">{sub}</p>
-          </div>
+      <Banner place={place} title={title ?? PLACES[place].name} crumbs={crumbs} slim={slim} />
+      {(sub || children) && (
+        <div className="flex flex-wrap items-center justify-between gap-3">
+          {sub && <p className="max-w-[70ch] text-[15px] text-ink-2">{sub}</p>}
+          {children}
         </div>
-        {children}
-      </div>
+      )}
     </header>
   );
 }

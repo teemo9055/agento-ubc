@@ -367,6 +367,15 @@ const TOOL_TITLE: Record<string, string> = {
 };
 
 const AGENT_IDS: AgentId[] = ["inso", "trado", "travo"];
+/** A short title from a sentence: up to the first ": " or ". ", cut at a word, never mid-word. */
+const short = (text: string, max = 64) => {
+  const first = text
+    .replace(/\s*\([^)]*\)/g, "")
+    .split(/: |\. /)[0]
+    .replace(/\.$/, "");
+  if (first.length <= max) return first;
+  return `${first.slice(0, max).replace(/\s+\S*$/, "")}…`;
+};
 const usedBy = (tool: string, kind: "free" | "research") => AGENT_IDS.filter((a) => TOOLKIT[a][kind].includes(tool));
 
 function toolEntries(): LibraryEntry[] {
@@ -418,7 +427,7 @@ function toolEntries(): LibraryEntry[] {
     (p): LibraryEntry => ({
       id: `sold-${p.id}`,
       section: "tools",
-      title: `Sold by Agento: ${p.description}`,
+      title: `Agento sells: ${short(/^[A-Z][a-z]/.test(p.description) ? p.description[0].toLowerCase() + p.description.slice(1) : p.description, 56)}`,
       body: `Any agent can buy this per request with USDC on Arc, no account. Asks: ${Object.entries(p.params)
         .map(([k, v]) => `${k} (${v})`)
         .join(", ")}.`,
@@ -443,7 +452,7 @@ function practiceEntries(): LibraryEntry[] {
   const playbooks = PLAYBOOKS.map((text, i) => ({
     id: `playbook-${i + 1}`,
     section: "practices" as const,
-    title: text.split(/[:.]/)[0].slice(0, 70),
+    title: short(text),
     body: text,
     updated: SEEDED,
     source: "src/server/knowledge.ts (PLAYBOOKS)",
@@ -453,7 +462,7 @@ function practiceEntries(): LibraryEntry[] {
     list.map((text, i) => ({
       id: `primer-${agent}-${i + 1}`,
       section: "practices" as const,
-      title: `${agent[0].toUpperCase()}${agent.slice(1)}: ${text.split(/[:.;]/)[0].slice(0, 60)}`,
+      title: `${agent[0].toUpperCase()}${agent.slice(1)}: ${short(text.split(/; /)[0], 56)}`,
       body: text,
       updated: SEEDED,
       source: `src/server/knowledge.ts (PRIMERS.${agent})`,
@@ -463,7 +472,7 @@ function practiceEntries(): LibraryEntry[] {
   const where = Object.entries(WHERE_LABEL).map(([w, label]) => ({
     id: `works-${w}`,
     section: "practices" as const,
-    title: `What works: ${label.toLowerCase()}`,
+    title: `Where things stand: ${label.toLowerCase()}`,
     body: CAPABILITIES.filter((c) => c.where === w)
       .map((c) => `${c.what}${c.cost ? ` (${c.cost} USDC)` : ""}${c.note ? `: ${c.note}` : ""}`)
       .join(". "),

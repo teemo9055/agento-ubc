@@ -7,13 +7,14 @@ import { formatOf, originOf, reply, SCHEMA_VERSION, storeDoc } from "@/server/to
 export const dynamic = "force-dynamic";
 
 /**
- * Search both groups: `?q=weather`. `pending=1` also lists services still waiting for a check; `circle=0` skips Circle's catalog.
+ * Search both groups: `?q=weather`. `limit` (1-40, Circle's results), `pending=1` also lists services still waiting for a check; `circle=0` skips Circle's catalog.
  * `format=md|json` gives the agent document; without it, the shape the Store page reads.
  */
 export async function GET(req: NextRequest) {
   const q = (req.nextUrl.searchParams.get("q") ?? "").slice(0, 80);
   const origin = originOf(req);
-  const r = await searchStore(q, { origin, includePending: req.nextUrl.searchParams.get("pending") === "1", circle: req.nextUrl.searchParams.get("circle") !== "0" });
+  const limit = Math.max(1, Math.min(40, Number(req.nextUrl.searchParams.get("limit")) || 12));
+  const r = await searchStore(q, { origin, limit, includePending: req.nextUrl.searchParams.get("pending") === "1", circle: req.nextUrl.searchParams.get("circle") !== "0" });
   if (req.nextUrl.searchParams.has("format") || /text\/markdown/.test(req.headers.get("accept") ?? "")) return reply(formatOf(req), storeDoc(origin, r));
   return NextResponse.json({ schemaVersion: SCHEMA_VERSION, updatedAt: r.readAt, ...r }, { headers: { "access-control-allow-origin": "*" } });
 }
