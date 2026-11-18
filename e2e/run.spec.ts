@@ -112,6 +112,23 @@ for (const [label, title] of [
   });
 }
 
+test("seller sends an empty answer: it isn't used, the money comes back, retry finishes", async ({ page }) => {
+  await start(page, ["Seller sends an empty answer"]);
+  const dlg = page.getByRole("dialog", { name: "The seller didn't deliver" });
+  await expect(dlg).toBeVisible({ timeout: 30_000 });
+  await expect(dlg.getByTestId("failure-refunded")).toContainText("Sent back");
+  await page.getByTestId("failure-retry").click();
+  await receipt(page);
+});
+
+test("the safety page shows the loop, the limits in force and the delivery checks", async ({ page }) => {
+  await page.goto("/safety");
+  await expect(page.getByRole("heading", { name: "How it stays safe" })).toBeVisible();
+  await expect(page.getByTestId("safety-loop").getByRole("listitem")).toHaveCount(8);
+  await expect(page.getByTestId("safety-limits")).toContainText("A whole plan, every step together");
+  await expect(page.getByTestId("safety-checks").getByRole("listitem")).toHaveCount(5);
+});
+
 test("vault runs dry: top up then finish", async ({ page }) => {
   await start(page, ["Vault runs dry"]);
   await expect(page.getByRole("dialog", { name: "Not enough in the vault" })).toBeVisible({ timeout: 30_000 });

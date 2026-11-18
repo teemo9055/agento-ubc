@@ -13,10 +13,12 @@ export const Limits = z.object({
   maxOrderUsd: z.number().min(1).max(1000),
   /** Most a job may hold in its vault for data and services (USDC). */
   maxJobUsdc: z.number().min(0.05).max(100),
+  /** Most a whole plan may cost, every step's orders and data together (USD). Starting a plan approves its steps one by one, so this is the ceiling on that. */
+  maxPlanUsd: z.number().min(1).max(5000),
 });
 export type Limits = z.infer<typeof Limits>;
 
-const DEFAULTS: Limits = { bigSpendUsdc: 0.25, maxOrderUsd: Number(process.env.MAX_ORDER_USD ?? 50), maxJobUsdc: 5 };
+const DEFAULTS: Limits = { bigSpendUsdc: 0.25, maxOrderUsd: Number(process.env.MAX_ORDER_USD ?? 50), maxJobUsdc: 5, maxPlanUsd: 100 };
 const persist = () => process.env.PERSIST !== "false" && !process.env.VITEST;
 const file = () => path.join(process.env.DATA_DIR ?? path.join(process.cwd(), ".data"), "settings.json");
 

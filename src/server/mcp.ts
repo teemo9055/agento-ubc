@@ -103,7 +103,7 @@ export function buildMcpServer(base: string) {
     "look_up",
     {
       title: "Free lookup",
-      description: "Run one of the free tools (search_markets, get_market, spot_price, find_place, search_services). Nothing is bought.",
+      description: "Run one of the free tools (search_markets, get_market, spot_price, find_place, search_services, read_arc for Arc balances, transactions, vaults and payments). Read-only; nothing is bought or signed.",
       inputSchema: { tool: z.enum(Object.keys(FREE_TOOLS) as [string, ...string[]]), args: z.record(z.string(), z.unknown()) },
       annotations: { readOnlyHint: true },
     },

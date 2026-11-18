@@ -1,4 +1,5 @@
 "use client";
+import Link from "next/link";
 import { useEffect, useState } from "react";
 import { Button, Spinner } from "@/components/ui";
 import { Icon } from "@/components/Icon";
@@ -26,6 +27,7 @@ interface Limits {
   bigSpendUsdc: number;
   maxOrderUsd: number;
   maxJobUsdc: number;
+  maxPlanUsd: number;
 }
 interface Config {
   live: boolean;
@@ -52,6 +54,7 @@ function Block({ title, sub, children, id }: { title: string; sub: string; child
 const LIMIT_FIELDS: { key: keyof Limits; label: string; help: string; unit: string; step: number }[] = [
   { key: "maxOrderUsd", label: "Largest single order", help: "An agent can never place an order above this.", unit: "USD", step: 1 },
   { key: "maxJobUsdc", label: "Most a job can spend on data", help: "The vault for one job never holds more than this.", unit: "USDC", step: 0.5 },
+  { key: "maxPlanUsd", label: "Most a plan can cost in total", help: "Starting a plan approves its steps one by one; together they never go past this.", unit: "USD", step: 5 },
   { key: "bigSpendUsdc", label: "Flag purchases above", help: "Bigger purchases are pointed out before you approve.", unit: "USDC", step: 0.05 },
 ];
 
@@ -95,7 +98,12 @@ export default function Settings() {
     <div className="mx-auto flex max-w-2xl flex-col gap-5">
       <div>
         <h1 className="text-[24px] font-semibold tracking-tight">Settings</h1>
-        <p className="mt-1 text-sm text-ink-2">Set these once. Every job follows them, whatever an agent proposes.</p>
+        <p className="mt-1 text-sm text-ink-2">
+          Set these once. Every job follows them, whatever an agent proposes.{" "}
+          <Link href="/safety" className="font-medium underline underline-offset-2">
+            How it stays safe
+          </Link>
+        </p>
       </div>
 
       <Block id="s-limits" title="Spending limits" sub="Checked in code on every job. Nothing is ever spent without your approval either way.">

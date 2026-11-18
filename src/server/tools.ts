@@ -10,6 +10,7 @@ import { spotSymbols } from "./agents/ai-planning";
 import { PRODUCTS } from "./x402";
 import { marketBase, positions as heldPositions, spotFeeBps, tradingVenue, VENUE_NAME } from "./exchange";
 import { FEEDS } from "./chainlink";
+import { checkQuestion, readArc } from "./chain-tools";
 
 /**
  * Two kinds of tools.
@@ -148,13 +149,22 @@ export const FREE_TOOLS: Record<string, FreeTool> = {
     },
   },
   search_services: {
-    description: `Search Circle's Agent Marketplace for paid data and AI services other agents sell over x402. Categories: ${CATEGORIES.join(", ")}. Each result has payableHere (true = you can buy it right now with a \`service\` research step, using its url, method and input), its price, and what input it takes. Set payable=true to list only what can be bought now.`,
+    description: `Find paid services on Circle's Agent Marketplace (${CATEGORIES.join(", ")}). payableHere=true: a \`service\` research step can buy it now with its url and input; payable=true lists only those.`,
     params: z.object({ query: z.string(), category: z.enum(CATEGORIES).optional(), payable: z.boolean().optional() }),
     async run(a) {
       const list = await searchServices(String(a.query ?? ""), a.category as string | undefined, 6, Boolean(a.payable));
       const data = list.map((s) => ({ name: s.name, provider: s.provider, what: s.description, url: s.resource, method: s.method, input: s.input, priceUsd: s.priceUsd, payableHere: s.payableHere, networks: s.networks.slice(0, 4).map(networkName) }));
       const here = list.filter((s) => s.payableHere).length;
       return { data, summary: `${list.length} marketplace services for “${a.query}” · ${here} payable now` };
+    },
+  },
+  read_arc: {
+    description: "Read Arc testnet, free: what=balance (address), tx (hash: status, USDC moved), vault (address: funded, left, closed), payment (from+nonce: collected?). Only addresses/hashes you were given.",
+    params: z.object({ what: z.enum(["balance", "tx", "vault", "payment"]), address: z.string().optional(), hash: z.string().optional(), from: z.string().optional(), nonce: z.string().optional() }),
+    async run(a) {
+      const q = checkQuestion(a);
+      if ("error" in q) throw new Error(q.error);
+      return readArc(q);
     },
   },
 };
@@ -260,10 +270,10 @@ const MAX_SERVICE = BigInt(process.env.MARKETPLACE_MAX_PER_REQUEST ?? 10_000);
 
 /** Each agent's own harness: what it can look up for free, what it can buy, and what it can do. */
 export const TOOLKIT: Record<AgentId, { free: string[]; research: string[] }> = {
-  inso: { free: ["search_markets", "get_market", "browse_markets", "combo_quote", "my_positions", "spot_price", "search_services"], research: ["odds_history", "trade_tape", "oracle_price", "service"] },
-  trado: { free: ["spot_price", "search_markets", "get_market", "browse_markets", "my_positions", "search_services"], research: ["spot_candles", "oracle_price", "odds_history", "gas_price", "btc_network", "wallet_balance", "service"] },
+  inso: { free: ["search_markets", "get_market", "browse_markets", "combo_quote", "my_positions", "spot_price", "search_services", "read_arc"], research: ["odds_history", "trade_tape", "oracle_price", "service"] },
+  trado: { free: ["spot_price", "search_markets", "get_market", "browse_markets", "my_positions", "search_services", "read_arc"], research: ["spot_candles", "oracle_price", "odds_history", "gas_price", "btc_network", "wallet_balance", "service"] },
   // The trip agent can look at markets too, so a brief about a trip can name the fuel cover Inso would build.
-  travo: { free: ["find_place", "find_nearby", "search_markets", "my_positions", "search_services"], research: ["drive_route", "oracle_price", "service"] },
+  travo: { free: ["find_place", "find_nearby", "search_markets", "my_positions", "search_services", "read_arc"], research: ["drive_route", "oracle_price", "service"] },
 };
 
 export const researchMenu = (agent?: AgentId) =>

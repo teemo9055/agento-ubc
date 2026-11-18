@@ -9,6 +9,7 @@ const FAULT_CODE: Record<string, string> = {
   "Agent tries off-plan spend": "policy_block",
   "Analysis crashes": "model_error",
   "Re-approval times out": "approval_timeout",
+  "Seller sends an empty answer": "bad_delivery",
 };
 
 /** The choices a user makes once in Settings: practice mode, and any failures to inject. */

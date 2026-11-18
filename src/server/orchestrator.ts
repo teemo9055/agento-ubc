@@ -517,6 +517,9 @@ export async function approve(runId: string, signed?: { txHash?: Hex }) {
   const noVault = BigInt(ctl.run.cap) === 0n;
   const jobMax = BigInt(Math.round(limits().maxJobUsdc * 1e6));
   if (BigInt(ctl.run.cap) > jobMax) throw new Error(`This job would hold ${fmt(ctl.run.cap)} USDC, over your ${limits().maxJobUsdc} USDC per-job limit. Trim the paid lookups or raise the limit in Settings.`);
+  // Limits can change after a move was checked: the order is held to today's limit, not the one it was built under.
+  const order = ctl.run.proposal?.action ? maxCost(ctl.run.proposal.action) : 0;
+  if (order > limits().maxOrderUsd + 1e-9) throw new Error(`This order could cost $${order.toFixed(2)}, over your $${limits().maxOrderUsd} per-order limit. Make it smaller or raise the limit in Settings.`);
   if (ctl.run.payer === "passkey" && !signed?.txHash && !noVault) throw new Error("sign the funding with your passkey wallet first");
   emit(ctl, { type: "run.funding" });
   const hash = planHash(ctl.run);
@@ -1253,6 +1256,9 @@ export async function startPlan(runId: string, planId: string) {
   // The plan as the user last left it on the board, or as first proposed.
   const proposed = ctl.run.plan?.id === planId && ctl.run.plan.status === "proposed" ? ctl.run.plan : [...(ctl.run.chat ?? [])].reverse().find((m) => m.plan?.id === planId)?.plan;
   if (!proposed) throw new Error("plan not found");
+  // One click approves every step in turn, so the whole plan is held to a ceiling first.
+  const most = proposed.steps.reduce((a, s) => a + s.proposal.research.reduce((x, r) => x + lookupCost(r), 0) + maxCost(s.proposal.action), 0);
+  if (most > limits().maxPlanUsd + 1e-9) throw new Error(`This plan could cost up to $${most.toFixed(2)} in total, over your $${limits().maxPlanUsd} plan limit. Drop a step or raise the limit in Settings.`);
   const plan: Plan = { ...proposed, status: "running", steps: proposed.steps.map((s) => ({ ...s, status: "waiting", runId: undefined, note: undefined, parts: undefined })) };
   emit(ctl, { type: "plan.updated", plan });
   log(ctl, { kind: "plan_approval", what: `Plan started: ${plan.title}`, why: `${plan.steps.length} steps, each approved for you when its turn comes, within the limits shown`, outcome: "approved", by: "user" });

@@ -69,20 +69,101 @@ Measured network fee per `authorize` call, paid by the agent: about 0.0026 USDC.
 
 ## Agent decision loop
 
-1. **Explore.** You chat. The model calls free tools (market search, spot prices, places, marketplace catalog) in a loop of up to 6 rounds and answers with the numbers it found. Nothing is spent.
-2. **Propose.** When there's something to do, the model calls `propose_move`: paid research steps from a priced catalog, an optional condition (e.g. YES price ≤ 40¢), and an action. Code validates it against live data (the contract exists, the agent may do this, the order is under the limit) and prices it. A loose condition is tightened to the order's own limit.
-3. **Edit.** You say yes, change it in chat, or edit a card ("5 contracts", "drop the trade tape"). The work order is re-priced.
-4. **Approve.** One approval covers the whole plan, including big spends over the threshold. The vault is funded with the total plus a 20% buffer.
-5. **Execute.** Research steps run in parallel. Independent steps run in parallel. For each purchase:
+The model suggests, code checks, you approve, the contract enforces. The model never holds a key, never signs and never chooses who gets paid.
+
+```
+ You type a request
+        │
+        ▼
+ 1. UNDERSTAND   model, at most 6 rounds of free lookups (markets, prices, places, Arc reads)
+                 it may: look things up · ask you one question · propose a move or a plan
+                 it can't: pay, sign, order, raise a limit, choose a payee
+        │
+        ▼
+ 2. CHECK        code, no model: the market exists, is open and closes > 20 min away;
+                 size within your stated budget and the per-order limit; price and payee
+                 come from the seller's own quote; title, question and costs rewritten by code
+        │
+        ▼
+ 3. REVIEW       you: what you asked for · what happens · what can go wrong · most it can cost
+                 changes are instant (code) or typed (model → back through 2)
+        │  one Approve (re-checks the market, the per-job and per-order limits)
+        ▼
+ 4. LOCK         a vault on Arc holds only this job's money with a fixed list of (payee, cap);
+                 the contract refuses other payees, amounts over a cap, and repeats
+        │
+        ▼
+ 5. RUN          before every payment: approved line? same payee? price and total within cap?
+                   price rose or over the big-spend limit → asks you (2 min, else no)
+                   seller fails → pauses: retry · skip · top up · stop
+        │
+        ▼
+ 6. DID IT       every paid answer is checked against what the seller promised before it is
+    ARRIVE?      used; a failed answer is refunded or absorbed (below), never used
+        │
+        ▼
+ 7. ACT          every check on fresh data must pass, else nothing is bought
+        │
+        ▼
+ 8. CLOSE        vault closed, unspent USDC back to you, receipt with every payment and its tx
+
+ Stop works at every stage: it closes the vault and refunds what is left.
+```
+
+In more detail:
+
+1. **Explore.** You chat. The model calls free tools (market search, spot prices, places, the marketplace catalog, `read_arc` for balances, transactions and vaults on Arc) in a loop of up to 6 rounds and answers with the numbers it found. Nothing is spent. Two source outages in one turn end the loop. Tool results are cut to size and marked as third-party data; instructions inside them are ignored. Dollar, cent and percent figures in a reply are checked against the tool data, and unmatched ones are flagged.
+2. **Propose.** When there's something to do, the model calls `propose_move` or `propose_plan`: paid research steps from a priced catalog, optional checks, and an action. Code validates it against live data (the contract exists and is open, the agent may do this, the order is under your limits, a budget you never typed is dropped) and prices it. The title, the question and the costs on the card are written by code from the checked numbers.
+3. **Edit.** Quick changes ("5 more", "pay less", "skip the paid lookup") are applied by code with no model, in under a second, and checked again. Typed changes go to the model and come back through the same validator; anything outside the part you asked to change is put back.
+4. **Approve.** One approval covers the job, including big spends over the threshold, which are listed. The market and your limits are checked again at this moment. The vault is funded with the total plus a 20% buffer. Starting a **plan** approves its steps one by one as their turn comes, so the whole plan must first fit under your plan limit; a step rebuilt from earlier findings is only used if it costs no more than what you approved.
+5. **Execute.** Independent steps run in parallel. For each purchase:
    1. Ask the seller for its price (HTTP 402).
    2. Check the policy against the approved line.
-   3. Authorize from the vault.
+   3. Authorize from the vault (or sign a Gateway nanopayment for marketplace sellers, after checking price and payee).
    4. The seller settles onchain and returns the data.
-6. **Check, then act.** Optional checks on other numbers (e.g. BTC spot before buying a BTC contract) are read fresh right before acting. A move can carry up to three, and all must pass: "only if Chainlink and Gemini spot both have BTC above $64,000" buys the oracle price, reads the spot price, and places the order only when two independent sources agree. Each check's reading is shown on the job. The order then goes to Gemini as a real resting order: a **limit** order covers "buy if it drops to X", a **stop-limit** order covers "buy once it rises to X". The app tracks it (open, filled, cancelled), refreshes it, and can cancel it.
+   5. **Delivery check** (see below). Only an answer that passes is used and cached.
+6. **Check, then act.** Optional checks on other numbers (e.g. BTC spot before buying a BTC contract) are read fresh right before acting. A move can carry up to three, and all must pass: "only if Chainlink and Gemini spot both have BTC above $64,000" buys the oracle price, reads the spot price, and places the order only when two independent sources agree. An unreadable check means nothing is bought. The order then goes to Gemini as a real resting order: a **limit** order covers "buy if it drops to X", a **stop-limit** order covers "buy once it rises to X". The app tracks it (open, filled, cancelled), refreshes it, and can cancel it.
    - Every move is labelled where it goes: **Live** (real money), **Gemini sandbox** (real orders, test money) or **Practice** (no exchange connected, nothing sent). The agent can only trade markets listed on the connected exchange.
 7. **Change → ask.** If the policy blocks a spend, that step pauses and you get a re-approval popup. Other steps keep going.
-8. **Fail → choose.** A failed step offers retry, skip (optional steps only), top up, or cancel. Purchases are cached per request key, so a retry never pays twice.
+8. **Fail → choose.** A failed step offers retry, skip (optional steps only), top up, or stop. Purchases are cached per request key, so a retry never pays twice for an answer that arrived.
 9. **Close.** The vault closes, unspent USDC returns to you, and you get the receipt.
+
+### Did it arrive? The delivery check and refunds
+
+x402 itself has no refund rule, so Agento adds one that is fair to both sides. Every paid answer is checked before it is used, by plain code, against what the seller's listing promised in advance:
+
+| Check | Fails when |
+| ----- | ---------- |
+| Answered | nothing came back after payment |
+| Readable | empty, not data, or an error message |
+| Complete | a field the listing promises is missing |
+| About what was asked | it names a different coin, market, chain or address than the request |
+| Fresh | its own timestamp is older than the listing allows (e.g. a Chainlink price over 25 hours old) |
+
+It never judges whether an answer is good or useful. An empty list ("nothing matched") or "not found" is a real answer and stays paid.
+
+What happens when an answer fails:
+
+- **Agento's own seller** keeps a fingerprint of every answer it sells. The buyer claims at `POST /api/x402/refund` with the settlement transaction, the paying address and the answer it got. If the fingerprint matches and the answer fails a published check, the full price goes back to the paying vault on Arc, and reaches you when the job closes. One claim per sale, within 10 minutes, only to the payer. A lost answer can be fetched again free at `/api/x402/redeliver`. The rules are published with each listing in the catalog (`/api/x402`) and the OpenAPI spec.
+- **Outside sellers** name their own payee, so they can't be forced to refund. They are paid from the app's own Gateway balance, so a failed answer is absorbed by the app and you aren't charged.
+- **Strikes.** A seller whose answers fail twice within a day is paused for new purchases, with the reason shown. A strike fades after a day, and one good delivery clears it.
+- **Lost on the way is nobody's fault.** If the answer is lost after payment, the vault path asks the chain whether the payment settled and fetches the answer again; if it can't, the job says so plainly ("paid, answer lost"), with no strike. A Gateway payment whose answer was lost is shown as *may have been charged*, never as *not charged*.
+
+What comes back to you and what doesn't:
+
+| Money | Comes back? |
+| ----- | ----------- |
+| Vault money not spent | Yes, when the job ends, is stopped, or fails to resume after a restart (`vault.close()`; you can also call it yourself) |
+| A payment authorized but never collected | Yes: its cap is released after it expires (`vault.release`) |
+| A paid answer that failed the check, Agento's own seller | Yes, refunded on Arc |
+| A paid answer that failed the check, outside seller | You weren't charged; the app absorbed it |
+| A valid answer the agent then didn't use | No: it was delivered, so it stays paid |
+| An exchange order that filled | No: that is the trade you approved; an unfilled order can be cancelled any time |
+
+### Reading and acting on the blockchain, safely
+
+- **Read.** `read_arc` (free, for every agent and over MCP as `look_up`) answers four typed questions on Arc: a USDC balance, a transaction (status and USDC moved), a job's vault (funded, left, closed) and whether a payment authorization was collected. Fixed contracts and ABIs, a client with no key, a 10-second timeout, inputs checked before any call (no made-up or zero addresses), and only vaults this app's agent works for. Paid reads on other chains (Chainlink prices, gas, balances, any JSON-RPC read) go through Quicknode, and methods that send or sign are refused.
+- **Act.** Every write is made by code, never by the model: opening and funding the vault, x402 authorizations within a line's cap, settlement, the order fingerprint written to Arc, and closing the vault. Each transaction is simulated before it is sent, and one wallet sends one transaction at a time.
 
 ### Hedging everyday costs
 
@@ -169,8 +250,24 @@ Before anything is signed the purchase is checked against the approved line: the
 | Order size | Your stated budget (quantity cut to fit, shown on the card) and the largest-order limit in Settings (default 50 USD); the order is paid on the exchange, never from the vault |
 | Exchange terms | Gemini's prediction-market terms are shown and accepted only by your click, never by the agent |
 | Model output is untrusted | Every move is validated against live data before it is shown; tool results are marked as third-party data |
+| Per-order limit at approval | Re-checked when you approve, so a limit lowered after the move was built still applies |
+| Total for a plan | Settings (default 100 USD): starting a plan approves its steps one by one, so the whole plan must fit first |
+| Rebuilt plan steps | A step rebuilt from earlier findings is used only if it costs no more than what you approved |
+| Paid answers checked before use | Delivery check (`src/server/delivery.ts`); failed answers refunded or absorbed, never used |
+| Sellers that keep failing | Paused after two failed deliveries in a day (`src/server/strikes.ts`) |
+| Marketplace price cap | At most 0.01 USDC per request (`MARKETPLACE_MAX_PER_REQUEST`), checked before signing |
+| Gateway top-ups | At most 3 USDC a day moved into the agent's Gateway balance (`GATEWAY_DAILY_CAP`) |
+| Read-only paid nodes | JSON-RPC methods that send, sign or administer are refused (`src/server/marketplace.ts`) |
+| Pinned payees | Quicknode and listed sellers must ask to be paid at the address on their listing |
+| Markets that can trade | Open, closing more than 20 minutes from now (`MIN_ORDER_EXPIRY_MIN`), re-checked at approval |
+| Budget only from you | A budget the model sets that you never typed is dropped |
+| Only what you hold | Sells are cut to what you hold and never short |
+| Transactions | Simulated before sending; one in flight per wallet; at most 8 jobs running at once |
+| Edits stay in scope | A typed change can only change the part you asked about; quick changes use no model at all |
 
 The policy engine runs before any signature. The vault enforces the same rules onchain, so a bug in the app fails closed.
+
+Not yet in place, and needed before a public deployment: sign-in on the settings, approval and trading routes (anyone who can reach the server can call them today), and rate limits on chat and model calls. The Settings page and `/safety` show the limits in force.
 
 ## Use it from your own AI (MCP)
 
