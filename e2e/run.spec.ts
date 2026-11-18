@@ -6,7 +6,7 @@ const receipt = finished;
 test("explore is free, then the approved move runs with no popup", async ({ page }) => {
   await prefs(page);
   await page.goto("/new");
-  await expect(page.getByTestId("ask-status")).toContainText("Practice mode");
+  await expect(page.getByTestId("ask-status")).toContainText("Practice: nothing real is paid");
   await page.fill("#task", "What are BTC odds right now?");
   await page.getByRole("button", { name: /Ask/ }).click();
   await expect(page.getByTestId("msg-agent")).toBeVisible({ timeout: 30_000 });
