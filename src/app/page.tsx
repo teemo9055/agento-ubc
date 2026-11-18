@@ -1,6 +1,12 @@
-import { redirect } from "next/navigation";
+import type { Metadata } from "next";
+import { Landing } from "@/components/landing/Landing";
 
-// Stand-in until the landing page lands: the app home lives at /home.
-export default function Landing() {
-  redirect("/home");
+export const metadata: Metadata = {
+  title: "Agento: say it, check it, approve once",
+  description: "Say what you want done in plain words, check the plan, approve once and watch it happen. It can only spend what you approved.",
+};
+
+// First visit: what Agento does, in four panels. The app home lives at /home.
+export default function LandingPage() {
+  return <Landing />;
 }

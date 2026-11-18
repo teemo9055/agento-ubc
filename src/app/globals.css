@@ -491,3 +491,142 @@ body {
   background-image: conic-gradient(color-mix(in srgb, var(--agent) 13%, transparent) 25%, transparent 0 50%, color-mix(in srgb, var(--agent) 13%, transparent) 0 75%, transparent 0);
   background-size: 32px 32px;
 }
+
+/* ---------- landing (src/components/landing): stickers on grid paper ---------- */
+.lnd {
+  /* Panel height on wider screens: fills the window between the intro lines and the footer line. */
+  --lnd-ph: clamp(500px, calc(100dvh - 230px), 680px);
+}
+.lnd-scroller {
+  scrollbar-width: none;
+  overscroll-behavior-x: contain;
+}
+.lnd-scroller::-webkit-scrollbar {
+  display: none;
+}
+@media (min-width: 640px) {
+  .lnd-scroller {
+    mask-image: linear-gradient(to right, transparent, #000 5%, #000 95%, transparent);
+  }
+}
+.lnd-slide {
+  transition: scale 520ms cubic-bezier(0.2, 0.8, 0.2, 1), transform 520ms cubic-bezier(0.2, 0.8, 0.2, 1), opacity 520ms, box-shadow 520ms;
+}
+/* Like pix-press, but the hard shadow takes the agent colour so it reads on a black button. */
+.lnd-press {
+  box-shadow: 3px 3px 0 0 var(--agent);
+  transition: transform 90ms steps(2), box-shadow 90ms steps(2);
+}
+.lnd-press:hover {
+  transform: translate(-1px, -1px);
+  box-shadow: 4px 4px 0 0 var(--agent);
+}
+.lnd-press:active {
+  transform: translate(3px, 3px);
+  box-shadow: 0 0 0 0 var(--agent);
+}
+.lnd-serif {
+  font-family: Georgia, "Times New Roman", serif;
+  font-style: italic;
+  font-weight: 700;
+  letter-spacing: -0.01em;
+}
+/* Short windows (e.g. 1024x768): tighter type so the sticker board keeps its size. */
+@media (max-height: 820px) and (min-width: 640px) {
+  .lnd {
+    --lnd-ph: clamp(500px, calc(100dvh - 200px), 680px);
+  }
+  .lnd-title {
+    font-size: 30px;
+  }
+  .lnd-sub {
+    font-size: 14px;
+    margin-top: 6px;
+  }
+  .lnd h1 {
+    font-size: 18px;
+  }
+}
+.lnd-grid {
+  background-color: #fffdf8;
+  background-image:
+    linear-gradient(to right, rgb(11 11 11 / 0.06) 1px, transparent 1px),
+    linear-gradient(to bottom, rgb(11 11 11 / 0.06) 1px, transparent 1px);
+  background-size: 22px 22px;
+  background-position: -1px -1px;
+  box-shadow: inset 0 0 0 1px rgb(11 11 11 / 0.07);
+}
+/* Die-cut: a thick white edge and a soft shadow, like a sticker on paper. */
+.lnd-cut {
+  background: #fff;
+  padding: 5px;
+  box-shadow:
+    0 1px 2px rgb(60 45 20 / 0.12),
+    0 10px 20px -8px rgb(60 45 20 / 0.32);
+}
+/* Die-cut along a shape's own outline (mascots, flags). */
+.lnd-cut-shape {
+  filter: drop-shadow(3px 0 0 #fff) drop-shadow(-3px 0 0 #fff) drop-shadow(0 3px 0 #fff) drop-shadow(0 -3px 0 #fff)
+    drop-shadow(0 6px 6px rgb(60 45 20 / 0.28));
+}
+.lnd-pill {
+  border: 3px solid #fff;
+  box-shadow: 0 4px 10px -4px rgb(60 45 20 / 0.4);
+}
+.lnd-sticker {
+  transform: rotate(var(--tilt, 0deg));
+  transform-origin: 50% 60%;
+}
+@keyframes lnd-pop {
+  from {
+    transform: rotate(calc(var(--tilt, 0deg) - 9deg)) scale(0.84);
+  }
+}
+@keyframes lnd-wobble {
+  0%,
+  100% {
+    transform: rotate(var(--tilt, 0deg));
+  }
+  50% {
+    transform: rotate(calc(var(--tilt, 0deg) + 1.8deg)) translateY(-2px);
+  }
+}
+[data-active="true"] .lnd-sticker {
+  animation:
+    lnd-pop 560ms cubic-bezier(0.2, 0.9, 0.3, 1.35) var(--d, 0ms) both,
+    lnd-wobble var(--w, 5.5s) ease-in-out calc(var(--d, 0ms) + 700ms) infinite;
+}
+@keyframes lnd-caret {
+  50% {
+    opacity: 0;
+  }
+}
+.lnd-caret {
+  animation: lnd-caret 1s steps(1) infinite;
+}
+@keyframes lnd-twinkle {
+  50% {
+    transform: scale(0.78) rotate(12deg);
+  }
+}
+.lnd-twinkle {
+  animation: lnd-twinkle 1.8s ease-in-out infinite;
+}
+@keyframes lnd-march {
+  to {
+    stroke-dashoffset: -28;
+  }
+}
+[data-active="true"] .lnd-path {
+  animation: lnd-march 1.6s linear infinite;
+}
+@media (prefers-reduced-motion: reduce) {
+  .lnd-slide,
+  [data-active="true"] .lnd-sticker,
+  [data-active="true"] .lnd-path,
+  .lnd-caret,
+  .lnd-twinkle {
+    animation: none;
+    transition: none;
+  }
+}
