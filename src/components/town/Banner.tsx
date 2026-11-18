@@ -49,7 +49,7 @@ export function Banner({ place, title, crumbs = [], slim = false, children }: { 
   const k = (SCALE[lot] ?? 1) * (slim ? 0.8 : 1);
   return (
     <div className={`${s.banner} ${s.sky} rounded-2xl border border-[#d8c8ea] ${slim ? "min-h-[168px] sm:min-h-[188px]" : "min-h-[196px] sm:min-h-[236px]"}`} data-testid="building-banner">
-      <svg className="absolute inset-0 h-full w-full" viewBox="0 0 1200 300" preserveAspectRatio="xMaxYMid slice" shapeRendering="crispEdges" aria-hidden>
+      <svg className="absolute inset-0 h-full w-full max-sm:-translate-y-[20%] max-sm:scale-[1.08]" viewBox="0 0 1200 300" preserveAspectRatio="xMaxYMid slice" shapeRendering="crispEdges" aria-hidden>
         <ArtDefs />
         <circle cx={330} cy={64} r={150} fill="url(#tg-sun)" shapeRendering="auto" />
         <rect x={312} y={46} width={36} height={36} fill="#fff6dc" />
@@ -102,12 +102,12 @@ export function Banner({ place, title, crumbs = [], slim = false, children }: { 
         ) : (
           <span />
         )}
-        <div className="max-w-[min(640px,62%)] space-y-2 max-sm:max-w-[78%]">
+        <div className={`space-y-2 ${slim ? "max-w-[min(560px,54%)] max-sm:max-w-[92%]" : "max-w-[min(640px,62%)] max-sm:max-w-[78%]"}`}>
           <div className={s.plate} style={{ ["--accent" as string]: p.color }}>
             <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-[3px] bg-white sm:h-10 sm:w-10">
               <PlaceIcon place={place} size={26} />
             </span>
-            <h1 className={`font-pixel leading-tight ${slim ? "text-[17px] sm:text-[22px]" : "text-[22px] sm:text-[30px]"}`}>{title}</h1>
+            <h1 className={`font-pixel leading-tight ${slim ? "text-[14px] sm:text-[18px]" : "text-[22px] sm:text-[30px]"}`}>{title}</h1>
           </div>
           {children}
         </div>
