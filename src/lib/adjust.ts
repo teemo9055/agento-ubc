@@ -1,4 +1,5 @@
 import type { Proposal } from "./types";
+import { lookupCost } from "./move";
 
 /**
  * The changes people make most often to a move, done by code so the drawing updates at once
@@ -56,13 +57,13 @@ export function adjustmentsFor(p: Proposal): Adjustment[] {
       out.push({
         kind: "more",
         label:
-          s.unit === "hours" ? `Longer days (${s.up} h)` : s.unit === "dollars" ? `${sell ? "Sell" : "Buy"} ${dollars(s.up)} instead` : s.unit === "cover" ? `Cover ${dollars(s.up)} instead` : sell ? `Sell ${s.up}` : `${s.up - s.now} more (${dollars(round2(s.up * price))})`,
+          s.unit === "hours" ? `Longer days (${s.up} h)` : s.unit === "dollars" ? `${sell ? "Sell" : "Buy"} ${dollars(s.up)} instead` : s.unit === "cover" ? `Cover ${dollars(s.up)} instead` : sell ? `Sell ${s.up} instead` : `Buy ${s.up - s.now} more (total ${dollars(round2(s.up * price))})`,
       });
     if (s.down != null)
       out.push({
         kind: "less",
         label:
-          s.unit === "hours" ? `Shorter days (${s.down} h)` : s.unit === "dollars" ? `Only ${dollars(s.down)}` : s.unit === "cover" ? `Cover only ${dollars(s.down)}` : sell ? `Sell only ${s.down}` : `${s.now - s.down} fewer (${dollars(round2(s.down * price))})`,
+          s.unit === "hours" ? `Shorter days (${s.down} h)` : s.unit === "dollars" ? `Spend less: only ${dollars(s.down)}` : s.unit === "cover" ? `Cover only ${dollars(s.down)}` : sell ? `Sell only ${s.down}` : `Spend less: ${s.now - s.down} fewer (${dollars(round2(s.down * price))})`,
       });
   }
   if (a?.kind === "prediction_order" && !a.combo) {
@@ -73,11 +74,11 @@ export function adjustmentsFor(p: Proposal): Adjustment[] {
       if (bid != null && a.maxPrice > bid && bid >= 0.01) out.push({ kind: "pay-less", label: `Sell now at ${cents(bid)}` });
       else if (a.maxPrice < 0.98) out.push({ kind: "pay-more", label: `Hold out for ${cents(a.maxPrice + 0.02)}` });
     } else if (ask != null && a.maxPrice < ask && ask <= 0.99) out.push({ kind: "pay-more", label: `Buy now at ${cents(ask)}` });
-    else if (a.maxPrice > 0.03) out.push({ kind: "pay-less", label: `Wait for ${cents(a.maxPrice - 0.02)}` });
+    else if (a.maxPrice > 0.03) out.push({ kind: "pay-less", label: `Wait for a lower price (${cents(a.maxPrice - 0.02)})` });
   }
   if (a?.kind === "prediction_order" && a.combo && a.maxPrice > 0.03) out.push({ kind: "pay-less", label: `Pay at most ${cents(a.maxPrice - 0.02)}` });
-  if (a && p.research.length) out.push({ kind: "drop-lookups", label: p.research.length === 1 ? "Skip the paid lookup" : `Skip the ${p.research.length} paid lookups` });
-  if (p.condition) out.push({ kind: "drop-check", label: "Don't wait for the check" });
+  if (a && p.research.length) out.push({ kind: "drop-lookups", label: `${p.research.length === 1 ? "Skip the paid lookup" : `Skip the ${p.research.length} paid lookups`} (save $${p.research.reduce((x, r) => x + lookupCost(r), 0) < 0.01 ? p.research.reduce((x, r) => x + lookupCost(r), 0).toFixed(4) : p.research.reduce((x, r) => x + lookupCost(r), 0).toFixed(2)})` });
+  if (p.condition) out.push({ kind: "drop-check", label: "Go ahead without the check" });
   return out;
 }
 

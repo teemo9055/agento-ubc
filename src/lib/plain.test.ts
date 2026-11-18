@@ -56,17 +56,17 @@ describe("everything a move says to a person is in everyday words", () => {
 describe("what can go wrong is read from how the job is built", () => {
   const ifs = (p: Proposal) => risksOf({ proposal: p, lines: p.research.map((r) => line(r.id)) }).map((r) => r.if);
   it("a checked practice order with paid data: seller, check, practice, losing, leftovers", () => {
-    expect(ifs(moves.buy)).toEqual(["The data seller doesn't answer, or asks for more", "A seller sends an empty or wrong answer", "The check doesn't pass", "No exchange is connected", "It goes the other way", "Something is left over"]);
+    expect(ifs(moves.buy)).toEqual(["The data seller doesn't answer, or asks for more", "A seller sends an empty or wrong answer", "The check doesn't pass", "No exchange is connected", expect.stringMatching(/^It isn't “/), "Something is left over"]);
     const check = risksOf({ proposal: moves.buy, lines: [line("r1")] })[2];
     expect(check.then).toBe("Nothing is bought. The lookups already paid for ($0.0001) stay paid.");
   });
 
   it("a real order waits and can be cancelled; cover and combined cover say what losing means", () => {
-    expect(ifs(moves.no)).toEqual(["Nobody sells at your price", "It goes the other way"]);
+    expect(ifs(moves.no)).toEqual(["Nobody sells at your price", expect.stringMatching(/^It isn't “/)]);
     expect(ifs(moves.sell)).toEqual(["Nobody buys at your price"]);
     expect(ifs(moves.cover)).toContain("The thing you're covering doesn't happen");
     expect(ifs(moves.both)).toContain("Any one of them doesn't happen");
-    expect(risksOf({ proposal: moves.no, lines: [] })[1].then).toContain("at most $5.00");
+    expect(risksOf({ proposal: moves.no, lines: [] })[1].then).toContain("lose the $5.00");
   });
 
   it("a trip risks nothing but time", () => {

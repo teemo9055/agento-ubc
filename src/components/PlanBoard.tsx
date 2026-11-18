@@ -182,12 +182,11 @@ export function PlanBoard({ plan, run }: { plan: Plan; run: Run }) {
     <section className="rounded-2xl border border-line bg-panel" aria-label="Plan" data-testid="plan-card">
       <div className="flex flex-wrap items-start justify-between gap-3 border-b border-[#f1f0ec] px-4 py-3.5 sm:px-5">
         <div className="min-w-0">
-          <div className="font-pixel text-[12px] text-agent-ink">The plan</div>
-          <h2 className="mt-0.5 text-[18px] font-semibold leading-snug">{plan.title}</h2>
+          <div className="font-pixel text-[12px] text-agent-ink">The jobs</div>
           <p className="mt-0.5 text-[13.5px] text-ink-2">{plan.why}</p>
         </div>
         <span className={`shrink-0 text-[12.5px] font-semibold ${plan.status === "done" ? "text-good" : plan.status === "running" ? "text-agent-ink" : "text-ink-3"}`} data-testid="plan-status">
-          {plan.status === "proposed" ? `${steps.length} steps · ${stages.length} ${stages.length === 1 ? "stage" : "stages"}` : plan.status === "running" ? `Running · ${doneCount} of ${steps.length} done` : plan.status === "done" ? "Finished" : "Stopped"}
+          {plan.status === "proposed" ? (steps.length ? `${steps.length} ${steps.length === 1 ? "job" : "jobs"} · ${stages.length} ${stages.length === 1 ? "stage" : "stages"}` : "No jobs yet") : plan.status === "running" ? `Running · ${doneCount} of ${steps.length} done` : plan.status === "done" ? "Finished" : "Stopped"}
         </span>
       </div>
 
@@ -397,8 +396,8 @@ export function PlanBoard({ plan, run }: { plan: Plan; run: Run }) {
             value={addText}
             onChange={(e) => setAddText(e.target.value)}
             maxLength={260}
-            placeholder={picked ? `Add a step after step ${n(picked.id)}…` : "Add a step: say what should happen…"}
-            aria-label="Add a step"
+            placeholder={picked ? `Add a job after job ${n(picked.id)}…` : "Add a job: say what should happen…"}
+            aria-label="Add a job"
             className="h-10 min-w-0 flex-1 rounded-lg border border-line bg-surface px-3 text-sm outline-none focus:border-ink/40"
             data-testid="plan-add-input"
           />
@@ -411,7 +410,7 @@ export function PlanBoard({ plan, run }: { plan: Plan; run: Run }) {
             ))}
           </select>
           <Button type="submit" variant="ghost" className="h-10" disabled={Boolean(busy) || addText.trim().length < 4}>
-            {busy === "add" ? <Spinner /> : <Icon name="plus" size={15} />} Add step
+            {busy === "add" ? <Spinner /> : <Icon name="plus" size={15} />} Add job
           </Button>
         </form>
       )}
@@ -426,22 +425,8 @@ export function PlanBoard({ plan, run }: { plan: Plan; run: Run }) {
         </ul>
       )}
 
-      <div className="flex flex-wrap items-center justify-between gap-3 border-t border-[#f1f0ec] px-4 py-3 sm:px-5">
-        <span className="num text-[13px] text-ink-2">
-          {total > 0 ? `At most $${total < 0.01 ? usdc(total) : total.toFixed(2)} across ${steps.length} steps` : `${steps.length} steps, nothing to pay`}
-          {editable ? " · click a step to change it" : ""}
-        </span>
-        {editable && (
-          <Button onClick={() => act("start", "plan-start", { planId: plan.id }, "Plan started · each step runs as its own job")} disabled={Boolean(busy)} variant="agent" className="h-10 px-5" data-testid="start-plan">
-            {busy === "start" ? <Spinner /> : null} Start plan
-          </Button>
-        )}
-        {plan.status === "running" && (
-          <Button onClick={() => act("stop", "plan-stop", {})} disabled={Boolean(busy)} variant="danger" className="h-10" data-testid="stop-plan">
-            {busy === "stop" ? <Spinner /> : null} Stop
-          </Button>
-        )}
-      </div>
+      {/* Starting, stopping and the total live once, in the project's header and review. */}
+      {editable && steps.length > 0 && <p className="border-t border-[#f1f0ec] px-4 py-2.5 text-[12.5px] text-ink-3 sm:px-5">Click a job to see it or change it.</p>}
     </section>
   );
 }

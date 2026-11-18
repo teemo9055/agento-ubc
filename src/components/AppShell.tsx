@@ -95,7 +95,7 @@ export function NotifyToggle() {
 export function MainNav() {
   const path = usePathname();
   const items: { href: string; label: string; icon: IconName; active: boolean }[] = [
-    { href: "/", label: "Jobs", icon: "jobs", active: path === "/" || path.startsWith("/runs") },
+    { href: "/home", label: "Jobs", icon: "jobs", active: path === "/home" || path.startsWith("/runs") || path.startsWith("/projects") },
     { href: "/agents", label: "Agents", icon: "agents", active: path.startsWith("/agents") },
     { href: "/settings", label: "Settings", icon: "shield", active: path.startsWith("/settings") },
   ];
@@ -121,7 +121,7 @@ function TabBar() {
   const { runs } = useRuns();
   const needs = (runs ?? []).reduce((a, r) => a + r.needsYou, 0);
   const tabs: { href: string; label: string; icon: IconName; active: boolean; primary?: boolean }[] = [
-    { href: "/", label: "Jobs", icon: "jobs", active: path === "/" || path.startsWith("/runs") },
+    { href: "/home", label: "Jobs", icon: "jobs", active: path === "/home" || path.startsWith("/runs") || path.startsWith("/projects") },
     { href: "/new", label: "New job", icon: "plus", active: path === "/new", primary: true },
     { href: "/agents", label: "Agents", icon: "agents", active: path.startsWith("/agents") },
     { href: "/settings", label: "Settings", icon: "shield", active: path.startsWith("/settings") },

@@ -7,13 +7,16 @@ import { AgentIcon } from "@/components/AgentIcon";
 import { Mascot } from "@/components/Mascot";
 import { CancelModal, FailureModal, ReapprovalModal } from "@/components/RunPopups";
 import { transitionReady } from "@/components/transitions";
-import { ApproveModal, Cards, CostTable } from "@/components/WorkOrder";
+import { ApproveModal, CostTable } from "@/components/WorkOrder";
 import { Chat, stepTarget, targetKey, type EditTarget } from "@/components/Chat";
 import { OrderStatus } from "@/components/OrderStatus";
-import { Details, ReviewCard, StatusCard } from "@/components/JobBrief";
+import { Details, ReviewCard, ReviewCards, ReviewTotal, StatusCard } from "@/components/JobBrief";
+import { ReceiptView } from "@/components/ReceiptView";
 import { LiveMarket } from "@/components/Live";
 import { PlanBoard, planOf } from "@/components/PlanBoard";
 import { BriefCard, briefOf } from "@/components/BriefCard";
+import { ProjectReview } from "@/components/ProjectReview";
+import { usePathname, useRouter } from "next/navigation";
 import { Assemble } from "@/components/Assemble";
 import { Stages, Workspace } from "@/components/Workspace";
 import { FinishCard } from "@/components/Celebrate";
@@ -54,6 +57,19 @@ function useWide() {
   return wide;
 }
 
+/** The name of the project a job belongs to, for the "Part of" link. */
+function useParentTitle(id?: string) {
+  const [title, setTitle] = useState<string>();
+  useEffect(() => {
+    if (!id) return;
+    fetch(`/api/runs/${id}`)
+      .then((r) => (r.ok ? (r.json() as Promise<Run>) : null))
+      .then((r) => r && setTitle(r.plan?.title ?? r.proposal?.title ?? r.task))
+      .catch(() => undefined);
+  }, [id]);
+  return title;
+}
+
 function Skeleton() {
   return (
     <div className="animate-pulse space-y-6 motion-reduce:animate-none" aria-busy="true" aria-label="Loading job">
@@ -64,6 +80,28 @@ function Skeleton() {
         <div className="hidden h-[480px] rounded-2xl bg-line/60 lg:block" />
       </div>
     </div>
+  );
+}
+
+/** Where the job's money was kept, with a link to its funding on Arc. */
+function VaultNote({ run }: { run: Run }) {
+  return (
+    <p className="text-[12px] text-ink-3">
+      {run.vault ? (
+        <>
+          Money held on Arc in this job&apos;s own account{" "}
+          {run.fundingTx && (
+            <a className="ml-1 inline-flex items-center gap-0.5 underline decoration-line underline-offset-2 hover:text-ink" href={txUrl(run.fundingTx)} target="_blank" rel="noreferrer" title={`Vault ${short(run.vault)}`}>
+              see it on Arc <Icon name="external" size={11} />
+            </a>
+          )}
+        </>
+      ) : run.mode === "demo" ? (
+        "Practice: no real money was set aside"
+      ) : (
+        "Nothing was set aside: this job bought no data"
+      )}
+    </p>
   );
 }
 
@@ -96,6 +134,14 @@ export default function RunPage({ params }: { params: Promise<{ id: string }> })
   const [prefill, setPrefill] = useState<{ text: string; n: number } | null>(null);
   useAgentTheme(run?.agent);
   const wide = useWide();
+  const parentTitle = useParentTitle(run?.parentId);
+  const pathname = usePathname();
+  const router = useRouter();
+  const hasPlan = Boolean(run && planOf(run));
+  // Several jobs together are a project: they live at /projects, a single job at /runs.
+  useEffect(() => {
+    if (hasPlan && pathname?.startsWith("/runs/")) router.replace(`/projects/${id}`);
+  }, [hasPlan, pathname, router, id]);
 
   useEffect(() => {
     if (run) transitionReady();
@@ -213,11 +259,12 @@ export default function RunPage({ params }: { params: Promise<{ id: string }> })
         <div className="min-w-0">
           {tags}
           {run.parentId && (
-            <Link href={`/runs/${run.parentId}`} className="mt-1 inline-block text-[12.5px] text-ink-2 underline decoration-line underline-offset-2" data-testid="back-to-plan">
-              Step {run.stepId?.replace(/^s/, "")} of a plan · back to the plan
+            <Link href={`/projects/${run.parentId}`} className="mt-1 inline-flex items-center gap-1 text-[12.5px] text-ink-2 underline decoration-line underline-offset-2 hover:text-ink" data-testid="back-to-plan">
+              Part of: {parentTitle ?? "a project"} <Icon name="chevron" size={11} />
             </Link>
           )}
-          <h1 style={{ viewTransitionName: `task-${run.id}` }} className="mt-1 line-clamp-3 max-w-2xl text-[19px] font-semibold leading-tight tracking-tight sm:text-[24px]">
+          {/* While reviewing, the review banner carries the title; it isn't said twice. */}
+          <h1 style={{ viewTransitionName: `task-${run.id}` }} className={draft ? "sr-only" : "mt-1 line-clamp-3 max-w-2xl text-[19px] font-semibold leading-tight tracking-tight sm:text-[24px]"}>
             {run.proposal?.title ?? run.task}
           </h1>
         </div>
@@ -251,11 +298,39 @@ export default function RunPage({ params }: { params: Promise<{ id: string }> })
       {draft && (
         <>
           <Assemble play={run.proposal ? `review-${run.proposal.id}` : null}>
-            <ReviewCard run={run} />
+            <ReviewCard
+              run={run}
+              editable={editableSteps}
+              onEditStep={run.status === "draft" ? editStep : undefined}
+              focusedStep={focus?.kind === "step" ? focus.step : null}
+              actions={
+                <div className="flex flex-wrap items-center justify-between gap-3">
+                  <p className="min-w-0 text-[13px] text-ink-2">Nothing runs or is spent until you approve.</p>
+                  <div className="flex flex-1 items-center justify-end gap-2 sm:flex-none">
+                    {run.status === "draft" && (
+                      <Button variant="quiet" onClick={() => post(`/api/runs/${run.id}/back`).catch((e) => toast((e as Error).message, "bad"))} data-testid="back-to-chat">
+                        <Icon name="back" size={14} /> Change it
+                      </Button>
+                    )}
+                    <Button variant="quiet" onClick={() => setCancelling(true)}>
+                      Discard
+                    </Button>
+                    <Button onClick={approveNow} disabled={run.status !== "draft"} data-testid="open-approve" variant="agent" className="px-6">
+                      {run.status === "funding" ? (
+                        <>
+                          <Spinner /> Setting aside the money…
+                        </>
+                      ) : needsSignature ? (
+                        "Approve with passkey"
+                      ) : (
+                        "Approve and start"
+                      )}
+                    </Button>
+                  </div>
+                </div>
+              }
+            />
           </Assemble>
-          {run.proposal?.action?.kind === "prediction_order" && run.proposal.action.trade !== "sell" && true && (
-            <LiveMarket action={run.proposal.action} hedge={run.proposal.hedge} venue={run.proposal.venue} settlement={run.settlement} held={undefined} />
-          )}
           <AnimatePresence>
             {run.editNote && (
               <motion.p initial={{ opacity: 0, y: 4 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0 }} className={`text-right text-[12.5px] ${run.editNote.ok ? "text-ink-2" : "text-bad"}`}>
@@ -263,102 +338,58 @@ export default function RunPage({ params }: { params: Promise<{ id: string }> })
               </motion.p>
             )}
           </AnimatePresence>
-          <Details label="Change a step, or see every cost line" open={details || Boolean(focus)} onToggle={() => setDetails((v) => !v)}>
-            <PhaseGraph
-              phases={run.phases}
-              lines={run.lines}
-              simulated={run.mode === "demo"}
-              editable={editableSteps}
-              focusedId={focus?.kind === "step" ? focus.step : null}
-              onEditStep={editStep}
-            />
-            <p className="-mt-2 text-[12.5px] text-ink-3">Click a step or a card to change it in the chat.</p>
-            <Cards run={run} onEdit={run.status === "draft" ? editCard : undefined} focused={focus?.kind === "card" ? focus.card : null} />
+          <ReviewCards run={run} onEdit={run.status === "draft" ? editCard : undefined} focused={focus?.kind === "card" ? focus.card : null} />
+          <ReviewTotal run={run} />
+          <Details label="Every cost line" open={details} onToggle={() => setDetails((v) => !v)}>
             <CostTable run={run} />
           </Details>
-
-          {/* Desktop: sticks to the bottom of the plan. Phones: a bar above the tab bar. */}
-          <div className="fixed inset-x-0 bottom-[var(--tabbar-h)] z-20 border-t border-line bg-surface/95 px-4 py-3 backdrop-blur-md sm:sticky sm:bottom-4 sm:rounded-2xl sm:border-[1.5px] sm:border-ink sm:bg-panel sm:px-4 sm:shadow-[4px_4px_0_0_var(--color-ink)]">
-            <div className="flex flex-wrap items-center justify-between gap-3">
-              <p className="hidden min-w-0 text-[13px] text-ink-2 sm:block">Nothing runs or is spent until you approve.</p>
-              <div className="flex flex-1 items-center justify-end gap-2 sm:flex-none">
-                {run.status === "draft" && (
-                  <Button variant="quiet" onClick={() => post(`/api/runs/${run.id}/back`).catch((e) => toast((e as Error).message, "bad"))} data-testid="back-to-chat">
-                    <Icon name="back" size={14} /> Change it
-                  </Button>
-                )}
-                <Button variant="quiet" onClick={() => setCancelling(true)}>
-                  Discard
-                </Button>
-                <span className="num text-sm text-ink-2 sm:hidden">{fmt(total)} USDC</span>
-                <Button onClick={approveNow} disabled={run.status !== "draft"} data-testid="open-approve" variant="agent" className="px-6">
-                  {run.status === "funding" ? (
-                    <>
-                      <Spinner /> Funding vault…
-                    </>
-                  ) : (
-                    <>
-                      {needsSignature ? "Approve with passkey" : "Approve and start"}
-                    </>
-                  )}
-                </Button>
-              </div>
-            </div>
-          </div>
         </>
       )}
 
-      {!draft && !planning && !exploring && (
+      {!draft && !planning && !exploring && !finished && (
         <>
+          {/* Running: one line on what is happening now, then the steps as a graph. */}
           <Assemble play={live ? "status" : null}>
-            <StatusCard run={run} onNeedsYou={pending.length > 0 && dismissed === head?.id ? () => setDismissed(null) : undefined} onCancel={() => setCancelling(true)} />
+            <StatusCard run={run} steps={false} onNeedsYou={pending.length > 0 && dismissed === head?.id ? () => setDismissed(null) : undefined} onCancel={() => setCancelling(true)} />
           </Assemble>
-          {run.proposal?.action?.kind === "prediction_order" && run.proposal.action.trade !== "sell" && run.status !== "cancelled" && (
+          <section className="rounded-2xl border border-line bg-panel px-3 py-5 sm:px-5" aria-label="Steps">
+            <PhaseGraph phases={run.phases} lines={run.lines} simulated={run.mode === "demo"} />
+          </section>
+          {run.proposal?.action?.kind === "prediction_order" && run.proposal.action.trade !== "sell" && (
             <LiveMarket action={run.proposal.action} hedge={run.proposal.hedge} venue={run.proposal.venue} settlement={run.settlement} held={run.order?.status === "simulated" ? run.proposal.action.quantity : run.order?.filledQuantity || undefined} />
           )}
           <div className="sr-only" aria-live="polite">
             {pending.length ? `${pending.length} needs your decision` : ""}
           </div>
+          <Details label="Payments so far" open={details} onToggle={() => setDetails((v) => !v)}>
+            {run.proposal && <OrderStatus run={run} />}
+            <VaultNote run={run} />
+            <CostTable run={run} compact />
+          </Details>
+        </>
+      )}
 
+      {finished && (
+        <>
+          {/* Done: the summary is the receipt, under one line on how it ended. */}
+          <Assemble play={live ? "status" : null}>
+            <StatusCard run={run} steps={false} />
+          </Assemble>
+          {run.proposal?.action?.kind === "prediction_order" && run.proposal.action.trade !== "sell" && run.status !== "cancelled" && (
+            <LiveMarket action={run.proposal.action} hedge={run.proposal.hedge} venue={run.proposal.venue} settlement={run.settlement} held={run.order?.status === "simulated" ? run.proposal.action.quantity : run.order?.filledQuantity || undefined} />
+          )}
           {hasVisual && (
             <section className="min-w-0 rounded-2xl border border-line bg-panel p-4" aria-label="Result">
               <AgentWidget run={run} />
             </section>
           )}
-
-          {finished && (
-            <Link href={`/runs/${run.id}/receipt`} className="flex flex-wrap items-center justify-between gap-3 rounded-2xl border border-line bg-panel px-4 py-3.5 hover:border-ink/40" data-testid="receipt-summary">
-              <span className="inline-flex items-center gap-2 text-[14px] font-medium">
-                <Icon name="receipt" size={17} className="text-agent-ink" /> Receipt
-              </span>
-              <span className="num text-[13.5px] text-ink-2">
-                Paid <b className="font-semibold text-ink" data-testid="receipt-total">{fmt(actual)}</b> USDC
-                {BigInt(run.refunded ?? 0) > 0n ? ` · ${fmt(run.refunded!)} returned` : ""} · open ↗
-              </span>
+          <ReceiptView run={run} />
+          <div className="flex flex-wrap items-center justify-between gap-3 text-[13px] text-ink-2">
+            <VaultNote run={run} />
+            <Link href={`/runs/${run.id}/receipt`} className="inline-flex items-center gap-1 underline decoration-line underline-offset-2 hover:text-ink" data-testid="receipt-summary">
+              Receipt on its own page <Icon name="external" size={12} />
             </Link>
-          )}
-
-          <Details label="How it ran: every step, payment and limit" open={details} onToggle={() => setDetails((v) => !v)}>
-            {run.proposal && <OrderStatus run={run} />}
-            <PhaseGraph phases={run.phases} lines={run.lines} simulated={run.mode === "demo"} />
-            <p className="-mt-2 text-[12px] text-ink-3">
-              {run.vault ? (
-                <>
-                  Vault <span className="font-mono">{short(run.vault)}</span>
-                  {run.fundingTx && (
-                    <a className="ml-2 inline-flex items-center gap-0.5 underline decoration-line underline-offset-2 hover:text-ink" href={txUrl(run.fundingTx)} target="_blank" rel="noreferrer">
-                      funding tx <Icon name="external" size={11} />
-                    </a>
-                  )}
-                </>
-              ) : run.mode === "demo" ? (
-                "Practice mode: the vault is simulated"
-              ) : (
-                "No vault was needed: this job bought no data"
-              )}
-            </p>
-            <CostTable run={run} compact />
-          </Details>
+          </div>
         </>
       )}
     </div>
@@ -378,10 +409,51 @@ export default function RunPage({ params }: { params: Promise<{ id: string }> })
 
   const boardPlan = exploring ? planOf(run) : undefined;
   const briefed = briefOf(run);
+  const projectBar = boardPlan && (
+    <div className="mb-4 flex flex-wrap items-end justify-between gap-3" data-testid="project-head">
+      <div className="flex min-w-0 items-center gap-3">
+        <Link href="/home" aria-label="All jobs" className="inline-flex h-8 w-8 items-center justify-center rounded-lg text-ink-2 hover:bg-ink/5 hover:text-ink">
+          <Icon name="back" size={16} />
+        </Link>
+        <div className="min-w-0">
+          <div className="flex items-center gap-2 text-[12px] font-medium text-ink-3">
+            <span className="font-pixel text-[13px] text-agent-ink">Project</span>
+            <span>
+              {boardPlan.steps.length} {boardPlan.steps.length === 1 ? "job" : "jobs"}
+            </span>
+            {tags}
+          </div>
+          <h1 className="mt-0.5 truncate text-[20px] font-semibold leading-tight tracking-tight sm:text-[24px]" data-testid="project-title">
+            {boardPlan.title}
+          </h1>
+        </div>
+      </div>
+      <div className="flex items-center gap-2">
+        {wide && <Stages run={run} plan={boardPlan} />}
+        {boardPlan.status === "proposed" && boardPlan.steps.length > 0 && (
+          <Button variant="agent" className="h-10 px-5" onClick={() => post(`/api/runs/${run.id}/plan-start`, { planId: boardPlan.id }).then(() => toast("Started · each job runs in its turn", "good")).catch((e) => toast((e as Error).message, "bad"))} data-testid="start-all">
+            Start all
+          </Button>
+        )}
+        {boardPlan.status === "running" && (
+          <Button variant="danger" className="h-10" onClick={() => post(`/api/runs/${run.id}/plan-stop`, {}).then(() => toast("Stopped · jobs already running will finish", "good")).catch((e) => toast((e as Error).message, "bad"))} data-testid="stop-all">
+            Stop all
+          </Button>
+        )}
+      </div>
+    </div>
+  );
+  const projectBody = boardPlan && (
+    <div className="space-y-4">
+      {briefed?.plan?.id === boardPlan.id && <BriefCard {...briefed} />}
+      <PlanBoard plan={boardPlan} run={run} />
+      {boardPlan.status === "proposed" && boardPlan.steps.length > 0 && <ProjectReview plan={boardPlan} />}
+    </div>
+  );
   const talkBar = (
     <div className="mb-3 flex items-center justify-between gap-3">
       <div className="flex items-center gap-2.5">
-        <Link href="/" aria-label="All jobs" className="inline-flex h-8 w-8 items-center justify-center rounded-lg text-ink-2 hover:bg-ink/5 hover:text-ink">
+        <Link href="/home" aria-label="All jobs" className="inline-flex h-8 w-8 items-center justify-center rounded-lg text-ink-2 hover:bg-ink/5 hover:text-ink">
           <Icon name="back" size={16} />
         </Link>
         <AgentIcon agent={run.agent} size={30} outfit={runOutfit(run)} mood={run.thinking ? "working" : "idle"} />
@@ -412,13 +484,10 @@ export default function RunPage({ params }: { params: Promise<{ id: string }> })
       {boardPlan ? (
         // A plan is bigger than a chat bubble: the board takes the page and the conversation sits beside it.
         <div className="lg:mx-[calc(50%-min(50vw-24px,760px))]" data-testid="plan-mode">
-          {talkBar}
+          {projectBar}
           {wide ? (
             <div className="grid grid-cols-[minmax(0,1fr)_380px] items-start gap-6">
-              <div className="space-y-4">
-                {briefed?.plan?.id === boardPlan.id && <BriefCard {...briefed} />}
-                <PlanBoard plan={boardPlan} run={run} />
-              </div>
+              {projectBody}
               <aside className="sticky top-[84px] h-[calc(100dvh-170px)] min-h-[460px]" aria-label="Chat">
                 {chatPanel}
               </aside>
@@ -440,10 +509,7 @@ export default function RunPage({ params }: { params: Promise<{ id: string }> })
                 ))}
               </div>
               {(tab ?? "plan") === "plan" ? (
-                <div className="space-y-4">
-                  {briefed?.plan?.id === boardPlan.id && <BriefCard {...briefed} />}
-                  <PlanBoard plan={boardPlan} run={run} />
-                </div>
+                projectBody
               ) : <div className="h-[calc(100dvh-var(--tabbar-h)-200px)] min-h-[420px]">{chatPanel}</div>}
             </>
           )}
@@ -469,7 +535,7 @@ export default function RunPage({ params }: { params: Promise<{ id: string }> })
         </div>
       ) : beside ? (
         <>
-          <Link href="/" className="mb-3 inline-flex min-h-8 items-center gap-1.5 text-[13px] text-ink-2 hover:text-ink">
+          <Link href="/home" className="mb-3 inline-flex min-h-8 items-center gap-1.5 text-[13px] text-ink-2 hover:text-ink">
             <Icon name="back" size={15} /> All jobs
           </Link>
           <div className="grid grid-cols-[minmax(0,1fr)_400px] items-start gap-6">
@@ -484,7 +550,7 @@ export default function RunPage({ params }: { params: Promise<{ id: string }> })
         </>
       ) : (
         <div className="mx-auto max-w-3xl">
-          <Link href="/" className="mb-3 inline-flex min-h-8 items-center gap-1.5 text-[13px] text-ink-2 hover:text-ink">
+          <Link href="/home" className="mb-3 inline-flex min-h-8 items-center gap-1.5 text-[13px] text-ink-2 hover:text-ink">
             <Icon name="back" size={15} /> All jobs
           </Link>
           {header}

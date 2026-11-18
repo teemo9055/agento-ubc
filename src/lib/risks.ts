@@ -1,5 +1,6 @@
 import type { Run } from "./types";
 import { paidInUsdc } from "./types";
+import { outcomeOf } from "./plain";
 
 /** One thing that can go wrong, and what happens then. */
 export interface Risk {
@@ -45,9 +46,11 @@ export function risksOf(run: Pick<Run, "proposal" | "lines">): Risk[] {
     });
   if (a?.kind === "prediction_order" && a.trade !== "sell") {
     const cost = a.maxPrice * a.quantity;
+    // Said about this job: which outcome, and when it is decided.
+    const when = p.market?.closesAt ? ` when it closes (${new Date(p.market.closesAt).toLocaleString("en-US", { month: "short", day: "numeric", hour: "numeric", minute: "2-digit", timeZone: "UTC" })} UTC)` : " when it closes";
     out.push({
-      if: a.combo ? "Any one of them doesn't happen" : p.hedge ? "The thing you're covering doesn't happen" : "It goes the other way",
-      then: `It pays nothing and you're out what it cost, at most ${money(cost)}. That is the most this can lose.`,
+      if: a.combo ? "Any one of them doesn't happen" : p.hedge ? "The thing you're covering doesn't happen" : `It isn't “${outcomeOf(a)}”${when}`,
+      then: `It pays nothing and you lose the ${money(cost)} it cost. That is the most this can lose.`,
     });
   }
   if (a?.kind === "spot_order" && a.side === "buy") out.push({ if: "The price falls after you buy", then: "What you bought is worth less. There is no automatic sell." });

@@ -1,4 +1,5 @@
 "use client";
+import { Activity } from "./Activity";
 import { useEffect, useRef, useState } from "react";
 import { AnimatePresence, motion } from "framer-motion";
 import type { Card, ChatMsg, Plan, Proposal, Run, Venue } from "@/lib/types";
@@ -85,10 +86,13 @@ export function MoveCard({ p, run, chosen, onChoose, busy, drawn }: { p: Proposa
           Changed: {p.changes.join(" · ")}
         </p>
       )}
-      <p className="num mt-2 text-[12.5px] text-ink-3" data-testid="move-facts">
-        {facts.join(" · ")}
-        {p.venue === "paper" && trade ? " · practice order" : ""}
-      </p>
+      {/* Beside the drawing the facts are already on screen; on their own (phones) the card says the most it costs. */}
+      {!drawn && (
+        <p className="num mt-2 text-[12.5px] text-ink-3" data-testid="move-facts">
+          {facts.slice(0, 1).join(" · ")}
+          {p.venue === "paper" && trade ? " · practice, nothing is sent" : ""}
+        </p>
+      )}
       {onChoose && !chosen && (
         <Button onClick={onChoose} disabled={busy || run.status !== "exploring"} variant="agent" className="mt-3 h-10 w-full" data-testid="adopt-move">
           {busy ? <Spinner /> : null} Review and approve <Icon name="arrow" size={15} stroke={2.2} />
@@ -137,21 +141,7 @@ function Bubble({ m, run, onChoose, busy, onShowPlan, drawn }: { m: ChatMsg; run
         <AgentIcon agent={run.agent} size={28} outfit={runOutfit(run)} mood="happy" />
       </span>
       <div className="min-w-0 flex-1">
-        {m.tools && m.tools.length > 0 && (
-          <details className="group mb-1 text-[11.5px] text-ink-3" data-testid="lookups">
-            <summary className="inline-flex cursor-pointer list-none items-center gap-1 hover:text-ink-2">
-              <Icon name="search" size={11} /> Checked {m.tools.length} {m.tools.length === 1 ? "source" : "sources"}
-              <Icon name="chevron" size={10} className="transition-transform group-open:rotate-90" />
-            </summary>
-            <ul className="mt-1 space-y-0.5 pl-4">
-              {m.tools.map((t, i) => (
-                <li key={i} className={t.ok ? "" : "text-warn-ink"}>
-                  {t.summary}
-                </li>
-              ))}
-            </ul>
-          </details>
-        )}
+        {m.tools && m.tools.length > 0 && <Activity tools={m.tools} className="mb-1" />}
         <div className={bubble}>
           <Rich text={m.text} />
         </div>
@@ -182,7 +172,7 @@ function Bubble({ m, run, onChoose, busy, onShowPlan, drawn }: { m: ChatMsg; run
   );
 }
 
-export const CARD_LABEL: Record<Card["kind"], string> = { price: "Price", deliverable: "Deliverable", method: "Method", risk: "Risk" };
+export const CARD_LABEL: Record<Card["kind"], string> = { price: "Price", deliverable: "What you get", method: "How it's done", risk: "Limits" };
 const CARD_HINT: Record<Card["kind"], string> = {
   price: "e.g. big-spend threshold 0.5",
   deliverable: "e.g. make it 5 contracts",

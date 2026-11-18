@@ -1270,6 +1270,17 @@ export async function startPlan(runId: string, planId: string) {
   return ctl.run;
 }
 
+/**
+ * An empty project the user fills by hand: a conversation with no agent reply yet and an empty
+ * board. Jobs are added on the board ("Add a job") or by asking in the chat.
+ */
+export async function createProject(title: string, mode?: "demo" | "live") {
+  const name = title.trim().slice(0, 80) || "New project";
+  const run = await createRun({ agent: "inso", task: name, mode }, { quiet: true });
+  const plan: Plan = { id: id(), title: name, why: "Jobs you add here run together, each with its own page and receipt.", steps: [], unavailable: [], status: "proposed" };
+  return offerPlan(run.id, plan, "Your project is ready. Add a job on the board, or tell me what it's for and I'll suggest the jobs.");
+}
+
 /** Puts a ready-made plan in front of the user as an agent message (used by outside AIs and tests). */
 export function offerPlan(runId: string, plan: Plan, text = plan.why) {
   const ctl = ctlOf(runId);

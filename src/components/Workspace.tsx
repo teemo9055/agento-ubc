@@ -1,7 +1,7 @@
 "use client";
 import { Fragment, useState } from "react";
 import type { Plan, Proposal, Run } from "@/lib/types";
-import { KINDS, blueprintOf, captionOf, kindOf, outline, type Block, type Blueprint, type LaneKey, type WorkKind } from "@/lib/shape";
+import { KINDS, blueprintOf, kindOf, outline, type Block, type Blueprint, type LaneKey } from "@/lib/shape";
 import { usdc } from "@/lib/move";
 import { sizeOf, type AdjustKind } from "@/lib/adjust";
 import { Assemble } from "./Assemble";
@@ -109,121 +109,86 @@ export function AgentView({ p }: { p: Proposal }) {
   return null;
 }
 
-const TABS: WorkKind[] = ["lookup", "order", "conditional", "hedge", "trip", "plan"];
-
 /**
- * The left side while a job is taking shape: a drawing of the work, not a transcript of it.
- * Before the agent proposes anything it shows the outline of the kind of work being asked for;
- * once there is a move, the same outline filled in with the real steps, checks and costs.
+ * The left side while a job is taking shape. Every agent gets the same layout: its live instrument
+ * for the move on top (Inso: the market and the line; Trado: the price with your limit; Travo: the
+ * route and days), then the drawing of what it reads, checks, does and what you get, then the cost.
+ * Before there is a move it shows the outline of the work being asked for.
  */
 export function Workspace({ run, onExample, onAdjust }: { run: Run; onExample?: (text: string) => void; /** Applies a quick change to the move; resolves when the new numbers are in. */ onAdjust?: (kind: AdjustKind) => Promise<unknown> }) {
   const [stepping, setStepping] = useState(false);
   const chat = run.chat ?? [];
   const move = [...chat].reverse().find((m) => m.proposal)?.proposal;
-  const [pick, setPick] = useState<WorkKind | null>(null);
   const guessed = kindOf(run.task);
-  const bp = move ? blueprintOf(move) : outline(pick ?? guessed);
+  const bp = move ? blueprintOf(move) : outline(guessed);
   const kind = KINDS[bp.kind];
-  // What the agent has already read, so the sketch isn't empty while the talking happens.
-  const found = [...new Map(chat.flatMap((m) => m.tools ?? []).filter((t) => t.ok).map((t) => [t.summary, t])).values()].slice(-5);
-
   const b = briefOf(run);
   const size = move ? sizeOf(move) : undefined;
 
   return (
     <div className="space-y-4">
-    {b && <BriefCard {...b} />}
-    <section className="rounded-2xl border border-line bg-panel" aria-label="Workspace" data-testid="workspace" data-kind={bp.kind} data-filled={move ? "" : undefined}>
-      <div className="flex flex-wrap items-center justify-between gap-3 border-b border-[#f1f0ec] px-4 py-3">
-        <div className="min-w-0">
-          <div className="flex items-center gap-2 text-[12px] font-semibold uppercase tracking-wide text-ink-3">
-            {move ? "Proposed" : "Sketch"}
-            {run.thinking && (
-              <span className="inline-flex items-center gap-1 normal-case tracking-normal text-agent-ink">
-                <Spinner /> working on it
-              </span>
-            )}
+      {b && <BriefCard {...b} />}
+      <section className="rounded-2xl border border-line bg-panel" aria-label="Workspace" data-testid="workspace" data-kind={bp.kind} data-filled={move ? "" : undefined}>
+        <div className="flex flex-wrap items-center justify-between gap-3 border-b border-[#f1f0ec] px-4 py-3">
+          <div className="min-w-0">
+            <div className="flex items-center gap-2 text-[12px] font-semibold uppercase tracking-wide text-ink-3">
+              {move ? "Proposed" : "Sketch"}
+              {run.thinking && (
+                <span className="inline-flex items-center gap-1 normal-case tracking-normal text-agent-ink">
+                  <Spinner /> working on it
+                </span>
+              )}
+            </div>
+            <h2 className="mt-0.5 truncate text-[17px] font-semibold leading-tight" data-testid="workspace-title">
+              {move ? move.title : kind.name}
+            </h2>
           </div>
-          <h2 className="mt-0.5 truncate text-[17px] font-semibold leading-tight" data-testid="workspace-title">
-            {move ? move.title : kind.name}
-          </h2>
+          <Stages run={run} />
         </div>
-        <Stages run={run} />
-      </div>
 
-      {!move && (
-        <div role="tablist" aria-label="Kind of work" className="flex flex-wrap gap-1 border-b border-[#f1f0ec] px-3 py-2">
-          {TABS.map((k) => (
-            <button
-              key={k}
-              role="tab"
-              type="button"
-              aria-selected={bp.kind === k}
-              onClick={() => setPick(k)}
-              className={`pressable h-8 rounded-lg px-2.5 text-[12.5px] font-medium ${bp.kind === k ? "bg-ink text-white" : "text-ink-2 hover:bg-ink/5"}`}
-              data-testid={`kind-${k}`}
-            >
-              {KINDS[k].name}
-            </button>
-          ))}
-        </div>
-      )}
+        <div className="space-y-4 p-4">
+          {move && (
+            <div className="empty:hidden" data-testid="instrument">
+              <AgentView p={move} />
+            </div>
+          )}
 
-      <div className="p-4">
-        <Assemble play={move ? `move-${move.id}` : `outline-${bp.kind}`}>
-          <BlueprintView bp={bp} extra={(l, j) =>
-              move && onAdjust && size && l === "does" && j === 0 && !run.thinking ? (
-                <Stepper
-                  busy={stepping}
-                  canLess={size.down != null}
-                  canMore={size.up > size.now}
-                  onAdjust={(k) => {
-                    setStepping(true);
-                    void onAdjust(k).finally(() => setStepping(false));
-                  }}
-                />
-              ) : null} />
-        </Assemble>
+          <Assemble play={move ? `move-${move.id}` : `outline-${bp.kind}`}>
+            <BlueprintView
+              bp={bp}
+              extra={(l, j) =>
+                move && onAdjust && size && l === "does" && j === 0 && !run.thinking ? (
+                  <Stepper
+                    busy={stepping}
+                    canLess={size.down != null}
+                    canMore={size.up > size.now}
+                    onAdjust={(k) => {
+                      setStepping(true);
+                      void onAdjust(k).finally(() => setStepping(false));
+                    }}
+                  />
+                ) : null
+              }
+            />
+          </Assemble>
 
-        {move ? (
-          <div className="mt-4 border-t border-[#f1f0ec] pt-3">
-            <p className="text-[13px] leading-snug text-ink-2">{captionOf(move)}</p>
-            <p className="num mt-1.5 text-[12.5px] text-ink-3" data-testid="workspace-cost">
+          {move ? (
+            <p className="num border-t border-[#f1f0ec] pt-3 text-[12.5px] text-ink-3" data-testid="workspace-cost">
               Up to ${usdc(bp.costUsd ?? 0)} · nothing is spent until you approve
-              {move.venue === "paper" && move.action && move.action.kind !== "itinerary" ? " · practice order" : ""}
+              {move.venue === "paper" && move.action && move.action.kind !== "itinerary" ? " · practice, nothing is sent" : ""}
             </p>
-          </div>
-        ) : (
-          <div className="mt-4 border-t border-[#f1f0ec] pt-3">
-            <p className="text-[13px] text-ink-2">{kind.line}. The outline fills in as you and the agent settle the details.</p>
-            {onExample && (bp.kind !== guessed || chat.length <= 1) && (
-              <button type="button" onClick={() => onExample(kind.example)} className="mt-2 inline-flex max-w-full items-center gap-1.5 text-left text-[12.5px] text-agent-ink underline decoration-agent/40 underline-offset-2" data-testid="workspace-example">
-                <Icon name="chat" size={13} className="shrink-0" /> <span className="truncate">Try: “{kind.example}”</span>
-              </button>
-            )}
-          </div>
-        )}
-
-        {move && (
-          <div className="mt-4 empty:hidden">
-            <AgentView p={move} />
-          </div>
-        )}
-
-        {found.length > 0 && (
-          <div className="mt-4 rounded-xl bg-[#f7f6f2] px-3 py-2.5" data-testid="workspace-found">
-            <div className="text-[11px] font-semibold uppercase tracking-wide text-ink-3">Read so far</div>
-            <ul className="mt-1 space-y-0.5 text-[12.5px] text-ink-2">
-              {found.map((t) => (
-                <li key={t.summary} className="flex gap-1.5">
-                  <Icon name="check" size={12} stroke={2.4} className="mt-[3px] shrink-0 text-good" /> <span className="min-w-0">{t.summary}</span>
-                </li>
-              ))}
-            </ul>
-          </div>
-        )}
-      </div>
-    </section>
+          ) : (
+            <div className="border-t border-[#f1f0ec] pt-3">
+              <p className="text-[13px] text-ink-2">{kind.line}. The outline fills in as you and the agent settle the details.</p>
+              {onExample && chat.length <= 1 && (
+                <button type="button" onClick={() => onExample(kind.example)} className="mt-2 inline-flex max-w-full items-center gap-1.5 text-left text-[12.5px] text-agent-ink underline decoration-agent/40 underline-offset-2" data-testid="workspace-example">
+                  <Icon name="chat" size={13} className="shrink-0" /> <span className="truncate">Try: “{kind.example}”</span>
+                </button>
+              )}
+            </div>
+          )}
+        </div>
+      </section>
     </div>
   );
 }

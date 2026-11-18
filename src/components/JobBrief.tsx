@@ -28,7 +28,8 @@ const orderCost = (run: Run) => {
   return a.kind === "prediction_order" ? (a.trade === "sell" ? 0 : a.maxPrice * a.quantity) : a.amountUsd;
 };
 
-function StepRow({ p, run, n }: { p: Phase; run: Run; n: number }) {
+function StepRow({ p, run, n, as = "li" }: { p: Phase; run: Run; n: number; as?: "li" | "div" }) {
+  const Row = as;
   const line = run.lines.find((l) => l.id === p.lineId);
   const paid = line && paidInUsdc(line.rail);
   const mark =
@@ -44,7 +45,7 @@ function StepRow({ p, run, n }: { p: Phase; run: Run; n: number }) {
       <span className="num text-[11px] text-ink-3">{n}</span>
     );
   return (
-    <li className="flex items-start gap-2.5 py-1.5" data-testid="brief-step">
+    <Row className="flex items-start gap-2.5 py-1.5" data-testid="brief-step">
       <span className="mt-0.5 inline-flex h-5 w-5 shrink-0 items-center justify-center rounded-md border border-line bg-surface">{mark}</span>
       <span className="min-w-0 flex-1">
         <span className={`text-[14px] ${p.status === "skipped" ? "text-ink-3 line-through" : "font-medium"}`}>{p.label}</span>
@@ -57,92 +58,207 @@ function StepRow({ p, run, n }: { p: Phase; run: Run; n: number }) {
       </span>
       {line && (
         <span className="num shrink-0 text-[12.5px] text-ink-2">
-          {paid ? `${fmt(run.status === "draft" || run.status === "funding" ? line.approved : line.actual)} USDC` : line.rail === "exchange" && Number(line.approved) > 0 ? `up to $${(Number(line.approved) / 1e6).toFixed(2)}` : ""}
+          {paid ? `$${fmt(run.status === "draft" || run.status === "funding" ? line.approved : line.actual)}` : line.rail === "exchange" && Number(line.approved) > 0 ? `up to $${(Number(line.approved) / 1e6).toFixed(2)}` : ""}
         </span>
       )}
-    </li>
+    </Row>
   );
 }
 
-/** Before approval: what will happen, in order, and the most it can cost. Nothing else. */
-export function ReviewCard({ run }: { run: Run }) {
-  const p = run.proposal;
-  const data = sum(run.lines.filter((l) => paidInUsdc(l.rail)).map((l) => l.approved));
-  const order = orderCost(run);
-  const trade = p?.action && p.action.kind !== "itinerary";
-  const risks = risksOf(run);
-  const gets = p ? getsLine(p) : undefined;
-  // What the person asked for, in their own words. A step of a plan was asked for by the plan, not typed by them.
-  const want = run.parentId ? undefined : run.task.trim();
-  const Part = ({ title, children, testid }: { title: string; children: React.ReactNode; testid: string }) => (
-    <div className="border-t border-[#f1f0ec] px-4 py-3" data-testid={testid}>
-      <div className="mb-1 text-[11px] font-semibold uppercase tracking-wide text-ink-3">{title}</div>
-      {children}
-    </div>
+/** The steps as a numbered list; while it can still change, each step is a button that hands it to the chat. */
+function Steps({ run, editable, onEditStep, focusedStep }: { run: Run; editable?: string[]; onEditStep?: (id: string) => void; focusedStep?: string | null }) {
+  return (
+    <ol aria-label="What happens" className="space-y-0.5">
+      {run.phases.map((ph, i) =>
+        onEditStep && (!editable || editable.includes(ph.id)) ? (
+          <li key={ph.id}>
+            <button
+              type="button"
+              onClick={() => onEditStep(ph.id)}
+              aria-pressed={focusedStep === ph.id}
+              aria-label={`Step ${i + 1}: ${ph.label}. Change it in the chat`}
+              data-testid={`phase-${ph.id}`}
+              className={`pressable -mx-2 block w-[calc(100%+16px)] rounded-lg px-2 text-left transition-colors ${focusedStep === ph.id ? "bg-agent-soft" : "hover:bg-ink/[0.04]"}`}
+            >
+              <StepRow p={ph} run={run} n={i + 1} as="div" />
+            </button>
+          </li>
+        ) : (
+          <StepRow key={ph.id} p={ph} run={run} n={i + 1} />
+        ),
+      )}
+    </ol>
   );
+}
+
+/**
+ * Before approval, the top of the page: the title of what will be done, what happens as numbered
+ * steps, and the approve button. Everything else is in the cards below.
+ */
+export function ReviewCard({ run, actions, editable, onEditStep, focusedStep }: { run: Run; actions?: React.ReactNode; editable?: string[]; onEditStep?: (id: string) => void; focusedStep?: string | null }) {
+  const p = run.proposal;
+  const trade = p?.action && p.action.kind !== "itinerary";
   return (
     <section className="rounded-2xl border-[1.5px] border-ink bg-panel shadow-[4px_4px_0_0_var(--agent)]" aria-label="Review" data-testid="review-card">
-      <div className="flex flex-wrap items-start justify-between gap-2 px-4 py-3.5">
+      <div className="flex flex-wrap items-start justify-between gap-2 px-4 pt-3.5">
         <div className="min-w-0">
           <div className="font-pixel text-[12px] text-agent-ink">Review</div>
-          <h2 className="mt-0.5 text-[16px] font-semibold leading-snug">{p?.ask ?? run.task}</h2>
+          <h2 className="mt-0.5 text-[18px] font-semibold leading-snug" data-testid="review-title">
+            {p?.title ?? run.task}
+          </h2>
         </div>
         {trade && <VenueBadge venue={p?.venue ?? "paper"} />}
       </div>
-      {want && (
-        <Part title="You asked for" testid="review-want">
-          <p className="text-[14px] leading-snug text-ink">“{want.length > 180 ? `${want.slice(0, 177)}…` : want}”</p>
-        </Part>
-      )}
-      <Part title="What happens" testid="review-steps">
-        <ol aria-label="What happens">
-          {run.phases.map((ph, i) => (
-            <StepRow key={ph.id} p={ph} run={run} n={i + 1} />
-          ))}
-        </ol>
-        {p?.hedge && (
-          <p className="mt-1 rounded-lg bg-agent-soft px-3 py-2 text-[13px] text-ink" data-testid="hedge-line">
-            This is insurance for {p.hedge.protects}.{" "}
-            {p.hedge.covered < p.hedge.lossUsd - 0.5 ? `It covers about $${Math.round(p.hedge.covered)} of your $${p.hedge.lossUsd}. ` : ""}
-            If it doesn&apos;t happen, the ${p.hedge.cost.toFixed(2)} is what the cover cost you.
-          </p>
-        )}
-      </Part>
-      {risks.length > 0 && (
-        <Part title="If something goes wrong" testid="review-risks">
-          <ul className="space-y-1.5">
-            {risks.map((r) => (
-              <li key={r.if} className="text-[13.5px] leading-snug" data-testid="review-risk">
-                <span className="font-semibold text-ink">{r.if}:</span> <span className="text-ink-2">{r.then}</span>
-              </li>
-            ))}
-          </ul>
-        </Part>
-      )}
-      <Part title="Most this can cost" testid="review-total">
-        <div className="flex flex-wrap items-baseline justify-between gap-x-6 gap-y-1">
-          <span className="num text-[16px] font-semibold" data-testid="review-cost">
-            {data > 0n || order === 0 ? `${fmt(data)} USDC for data` : ""}
-            {data > 0n && order > 0 ? " + " : ""}
-            {order > 0 ? `$${order.toFixed(2)} order` : ""}
-          </span>
-          {gets && p?.action && (
-            <span className="text-[13.5px] text-ink-2" data-testid="review-gets">
-              You get: <span className="font-semibold text-ink">{gets.label}</span>
-            </span>
+      <div className="px-4 pb-3 pt-2" data-testid="review-steps">
+        <div className="mb-1 text-[11px] font-semibold uppercase tracking-wide text-ink-3">What happens</div>
+        <Steps run={run} editable={editable} onEditStep={onEditStep} focusedStep={focusedStep} />
+      </div>
+      {actions && <div className="border-t border-[#f1f0ec] px-4 py-3">{actions}</div>}
+    </section>
+  );
+}
+
+const money = (x: number) => `$${x > 0 && x < 0.01 ? x.toFixed(4) : x.toFixed(2)}`;
+const GENERIC = /^(The data seller doesn't answer|A data seller doesn't answer|A seller sends an empty or wrong answer|Something is left over)/;
+
+/** The four answers under the review: what you get, how, the limits and the price. Each can be changed in the chat. */
+export function ReviewCards({ run, onEdit, focused }: { run: Run; onEdit?: (k: "deliverable" | "method" | "risk" | "price") => void; focused?: string | null }) {
+  const p = run.proposal;
+  const gets = p ? getsLine(p) : undefined;
+  const paid = run.lines.filter((l) => paidInUsdc(l.rail));
+  const exchange = run.lines.filter((l) => l.rail === "exchange");
+  const data = Number(sum(paid.map((l) => l.approved))) / 1e6;
+  const risks = risksOf(run);
+  const specific = risks.filter((r) => !GENERIC.test(r.if));
+  const cards: { kind: "deliverable" | "method" | "risk" | "price"; title: string; body: React.ReactNode }[] = [
+    {
+      kind: "deliverable",
+      title: "What you get",
+      body: (
+        <>
+          <p className="text-[14px] font-semibold leading-snug">{gets?.label ?? "The answer"}</p>
+          <p className="mt-0.5 text-[13px] leading-snug text-ink-2">{gets?.detail}</p>
+          {p?.hedge && (
+            <p className="mt-1.5 text-[13px] leading-snug text-ink-2" data-testid="hedge-line">
+              Insurance for {p.hedge.protects}. If it doesn&apos;t happen, the ${p.hedge.cost.toFixed(2)} is what the cover cost you.
+            </p>
           )}
+        </>
+      ),
+    },
+    {
+      kind: "method",
+      title: "How (pay per request)",
+      body: (
+        <ul className="space-y-1 text-[13px] leading-snug">
+          {paid.map((l) => (
+            <li key={l.id} className="flex justify-between gap-2">
+              <span className="min-w-0">
+                <span className="font-medium">{run.phases.find((ph) => ph.lineId === l.id)?.label ?? l.purpose}</span> <span className="text-ink-3">from {l.payeeName}</span>
+              </span>
+              <span className="num shrink-0 text-ink-2">{money(Number(l.approved) / 1e6)}</span>
+            </li>
+          ))}
+          {exchange.map((l) => (
+            <li key={l.id} className="flex justify-between gap-2">
+              <span className="min-w-0">
+                <span className="font-medium">The order</span> <span className="text-ink-3">{p?.venue === "paper" ? "(practice, never sent)" : `on ${l.payeeName}`}</span>
+              </span>
+              <span className="num shrink-0 text-ink-2">up to {money(Number(l.approved) / 1e6)}</span>
+            </li>
+          ))}
+          {!paid.length && !exchange.length && <li className="text-ink-2">Only free lookups: nothing is bought.</li>}
+        </ul>
+      ),
+    },
+    {
+      kind: "risk",
+      title: "Limits",
+      body: (
+        <ul className="space-y-1.5 text-[13px] leading-snug" data-testid="review-risks">
+          {specific.map((r) => (
+            <li key={r.if} data-testid="review-risk">
+              <span className="font-semibold">{r.if}:</span> <span className="text-ink-2">{r.then}</span>
+            </li>
+          ))}
+          {paid.length > 0 && (
+            <li data-testid="review-risk">
+              <span className="font-semibold">If a step fails:</span>{" "}
+              <span className="text-ink-2">it stops and asks you to try again, skip or stop. A seller that sends nothing usable is refunded. What isn&apos;t spent comes back.</span>
+            </li>
+          )}
+          {!specific.length && !paid.length && <li className="text-ink-2">Nothing is spent, so nothing can be lost.</li>}
+        </ul>
+      ),
+    },
+    {
+      kind: "price",
+      title: "Price",
+      body: (
+        <>
+          <p className="num text-[18px] font-semibold">{data > 0 ? money(data) : "Free"}</p>
+          <p className="mt-0.5 text-[13px] leading-snug text-ink-2">
+            {data > 0 ? `for ${paid.length} paid ${paid.length === 1 ? "lookup" : "lookups"}, paid one request at a time. Network fees are a fraction of a cent, paid by Agento.` : "This job buys no data."}
+          </p>
+        </>
+      ),
+    },
+  ];
+  return (
+    <ul className="grid gap-3 sm:grid-cols-2" aria-label="About this job">
+      {cards.map((c) => {
+        const on = focused === c.kind;
+        return (
+          <li key={c.kind} className="min-w-0">
+            <div className={`h-full rounded-2xl border bg-panel p-3.5 transition-[border-color,box-shadow] ${on ? "border-[1.5px] border-ink shadow-[3px_3px_0_0_var(--agent)]" : "border-line"} ${c.kind === "price" ? "bg-agent-soft" : ""}`} data-testid={`card-${c.kind}`} aria-pressed={onEdit ? on : undefined}>
+              <div className="mb-1.5 flex items-center justify-between gap-2">
+                <h3 className="text-[12px] font-semibold uppercase tracking-wide text-ink-3">{c.title}</h3>
+                {onEdit && (
+                  <button type="button" onClick={() => onEdit(c.kind)} aria-pressed={on} aria-label={`Change ${c.title.toLowerCase()} in the chat`} className="pressable inline-flex h-7 items-center gap-1 rounded-md px-2 text-[12px] font-medium text-ink-2 hover:bg-ink/5 hover:text-ink" data-testid={`edit-${c.kind}`}>
+                    <Icon name={on ? "chat" : "edit"} size={12} /> {on ? "In chat" : "Change"}
+                  </button>
+                )}
+              </div>
+              {c.body}
+            </div>
+          </li>
+        );
+      })}
+    </ul>
+  );
+}
+
+/** Below the cards: the most this can take from you, in dollars, with the split on tap. */
+export function ReviewTotal({ run }: { run: Run }) {
+  const data = sum(run.lines.filter((l) => paidInUsdc(l.rail)).map((l) => l.approved));
+  const order = orderCost(run);
+  const most = Number(data) / 1e6 + order;
+  return (
+    <section className="flex flex-wrap items-baseline justify-between gap-x-6 gap-y-1 rounded-2xl border border-line bg-panel px-4 py-3" aria-label="Total" data-testid="review-total">
+      <div>
+        <div className="text-[11px] font-semibold uppercase tracking-wide text-ink-3">Total</div>
+        <div className="num text-[20px] font-semibold" data-testid="review-most">
+          At most {money(most)}
         </div>
-        <p className="mt-1 text-[12.5px] text-ink-3">
-          {data > 0n ? "The data money sits in a vault that can only pay these steps; what isn't used comes back. " : ""}
-          {order > 0 ? (p?.venue === "paper" ? "No exchange is connected, so the order is practice only." : "The order is paid on the exchange.") : ""}
+      </div>
+      <details className="text-[13px] text-ink-2">
+        <summary className="cursor-pointer list-none underline decoration-line underline-offset-2 [&::-webkit-details-marker]:hidden">What&apos;s in it</summary>
+        <p className="num mt-1" data-testid="review-cost" data-usdc={fmt(data)}>
+          {data > 0n || order === 0 ? `$${fmt(data)} for data` : ""}
+          {data > 0n && order > 0 ? " + " : ""}
+          {order > 0 ? `$${order.toFixed(2)} order` : ""}
         </p>
-      </Part>
+        <p className="mt-0.5 text-[12.5px] text-ink-3">
+          {data > 0n ? "What isn't used comes back when the job ends. " : ""}
+          {order > 0 ? (run.proposal?.venue === "paper" ? "Practice: the order is never sent." : "The order is paid on the exchange, only if it fills.") : ""}
+        </p>
+      </details>
     </section>
   );
 }
 
 /** After approval: one line on where the job stands, the steps as a checklist, and what you can do next. */
-export function StatusCard({ run, onNeedsYou, onCancel }: { run: Run; onNeedsYou?: () => void; onCancel?: () => void }) {
+export function StatusCard({ run, onNeedsYou, onCancel, steps = true }: { run: Run; onNeedsYou?: () => void; onCancel?: () => void; /** The checklist of steps; off where the graph already shows them. */ steps?: boolean }) {
   const router = useRouter();
   const out = outcomeOf(run);
   const o = run.order;
@@ -186,7 +302,7 @@ export function StatusCard({ run, onNeedsYou, onCancel }: { run: Run; onNeedsYou
             <h2 className="text-[18px] font-semibold leading-snug" data-testid="status-headline">
               {out.headline}
             </h2>
-            {out.detail && (
+            {out.detail && !out.headline.toLowerCase().includes(out.detail.toLowerCase()) && (
               <p className="mt-0.5 text-[13.5px] leading-snug text-ink-2" data-testid="status-detail">
                 {out.detail}
               </p>
@@ -237,11 +353,13 @@ export function StatusCard({ run, onNeedsYou, onCancel }: { run: Run; onNeedsYou
           <span className="font-semibold text-ink">Handed over from earlier steps:</span> {run.handoff}
         </p>
       )}
-      <ol className="border-t border-[#f1f0ec] px-4 py-2" aria-label="Steps">
-        {run.phases.map((ph, i) => (
-          <StepRow key={ph.id} p={ph} run={run} n={i + 1} />
-        ))}
-      </ol>
+      {steps && (
+        <ol className="border-t border-[#f1f0ec] px-4 py-2" aria-label="Steps">
+          {run.phases.map((ph, i) => (
+            <StepRow key={ph.id} p={ph} run={run} n={i + 1} />
+          ))}
+        </ol>
+      )}
       {run.deliverable?.notes && run.deliverable.notes.length > 0 && (
         <ul className="list-disc space-y-0.5 border-t border-[#f1f0ec] py-3 pl-9 pr-4 text-[13.5px] text-ink-2" data-testid="findings">
           {run.deliverable.notes.slice(0, 4).map((n) => (

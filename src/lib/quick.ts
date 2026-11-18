@@ -24,6 +24,21 @@ const say = (s: string): Quick => ({ label: s, adds: adds(s), do: { say: s } });
 // The agent's own chips repeat what the instant changes already cover (a size, a price).
 const sized = (s: string) => /^(make it|only \$?\d|sell only|ask \d|lower limit|raise|\d+ (more|fewer)|max \d+ hours|up to \d+ hours)/i.test(s);
 
+/** Coins and tickers a chip might drag in from nowhere. */
+const TICKER = /\b(btc|bitcoin|eth|ethereum|sol|solana|xrp|doge|link|brent|oil|fed)\b/gi;
+
+/**
+ * A suggestion has to follow what was actually said: one that names a coin or market nobody in
+ * this conversation mentioned (a coffee-cart question getting BTC chips) is dropped.
+ */
+export function onTopic(s: string, chat: ChatMsg[]): boolean {
+  const named = s.match(TICKER)?.map((x) => x.toLowerCase());
+  if (!named?.length) return true;
+  const said = chat.map((m) => m.text).join(" ").toLowerCase();
+  const alias: Record<string, string[]> = { btc: ["bitcoin"], bitcoin: ["btc"], eth: ["ethereum"], ethereum: ["eth"], sol: ["solana"], solana: ["sol"], oil: ["brent"], brent: ["oil"] };
+  return named.every((n) => new RegExp(`\\b(${[n, ...(alias[n] ?? [])].join("|")})\\b`).test(said));
+}
+
 /** Ways to perfect the move on screen: instant changes first, then one thing only the agent can add. */
 function detail(p: Proposal, fromAgent: string[], max: number): Quick[] {
   const instant = adjustmentsFor(p).map((a): Quick => ({ label: a.label, do: { adjust: a.kind } }));
@@ -65,9 +80,9 @@ export function quickFor(run: Pick<Run, "status" | "chat" | "proposal" | "thinki
   if (plan?.status === "running") return [{ label: "Stop the plan", do: { act: "stop-plan" } }];
   if (plan) return [];
 
-  const rest = (last.suggestions ?? []).filter((s) => !accept(s) && !decline(s));
+  const rest = (last.suggestions ?? []).filter((s) => !accept(s) && !decline(s) && onTopic(s, chat));
   // With a move on screen: the step forward first, then the ways to perfect it.
-  if (last.proposal) return [{ label: "Review this", primary: true, do: { act: "review" } }, ...detail(last.proposal, last.suggestions ?? [], 3)];
+  if (last.proposal) return [{ label: "Review and approve", primary: true, do: { act: "review" } }, ...detail(last.proposal, last.suggestions ?? [], 3)];
   return rest.slice(0, 3).map((s, i) => ({ ...say(s), primary: i === 0 }));
 }
 

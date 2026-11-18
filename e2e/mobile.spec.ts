@@ -1,5 +1,5 @@
 import { devices, expect, test } from "@playwright/test";
-import { openDetails, prefs } from "./helpers";
+import { prefs } from "./helpers";
 
 test.use({ ...devices["iPhone 14"], browserName: "chromium" });
 
@@ -13,7 +13,7 @@ async function newDemoJob(page: import("@playwright/test").Page, task: string, f
 }
 
 test("bottom tab bar navigates", async ({ page }) => {
-  await page.goto("/");
+  await page.goto("/home");
   const bar = page.getByRole("navigation", { name: "Main" });
   await expect(bar).toBeVisible();
   await bar.getByRole("link", { name: "Agents" }).click();
@@ -24,8 +24,7 @@ test("bottom tab bar navigates", async ({ page }) => {
 
 test("Edit on a card opens the chat focused on that card", async ({ page }) => {
   await newDemoJob(page, "BTC odds focus test");
-  await openDetails(page);
-  await page.getByTestId("card-price").click();
+  await page.getByTestId("edit-price").click();
   await expect(page.getByRole("tab", { name: /Chat/ })).toHaveAttribute("aria-selected", "true");
   await expect(page.getByTestId("chat-focus")).toContainText("Price");
   await expect(page.getByRole("dialog")).toHaveCount(0);

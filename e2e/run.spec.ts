@@ -1,5 +1,5 @@
 import { expect, test } from "@playwright/test";
-import { draft, finished, openDetails, openReceipt, prefs, start } from "./helpers";
+import { draft, finished, openReceipt, prefs, start } from "./helpers";
 
 const receipt = finished;
 
@@ -13,8 +13,9 @@ test("explore is free, then the approved move runs with no popup", async ({ page
   await expect(page.getByTestId("free-note")).toBeVisible();
   await page.getByTestId("adopt-move").click();
   await expect(page.getByTestId("review-cost")).toContainText("order");
-  // The graph and cost lines are there, but only when asked for.
-  await expect(page.getByTestId("card-price")).toHaveCount(0);
+  // The four answers sit under the review, with the total below them.
+  await expect(page.getByTestId("card-price")).toBeVisible();
+  await expect(page.getByTestId("review-most")).toContainText("At most $");
   await page.getByTestId("open-approve").click();
   await receipt(page);
   await expect(page.getByRole("dialog")).toHaveCount(0);
@@ -35,10 +36,9 @@ test("back to chat from the work order keeps the conversation", async ({ page })
 
 test("card edit happens in the chat: explains why it can't, offers alternatives, applies one", async ({ page }) => {
   await draft(page, [], "BTC odds");
-  await openDetails(page);
-  await page.getByTestId("card-deliverable").click();
-  await expect(page.getByTestId("chat-focus")).toContainText("Deliverable");
-  await expect(page.getByTestId("card-deliverable")).toHaveAttribute("aria-pressed", "true");
+  await page.getByTestId("edit-deliverable").click();
+  await expect(page.getByTestId("chat-focus")).toContainText("What you get");
+  await expect(page.getByTestId("edit-deliverable")).toHaveAttribute("aria-pressed", "true");
   await page.getByTestId("chat-input").fill("place a real bet on yes");
   await page.keyboard.press("Enter");
   await expect(page.getByText("Can't do that")).toBeVisible();
@@ -52,7 +52,6 @@ test("card edit happens in the chat: explains why it can't, offers alternatives,
 
 test("graph steps are editable in the chat: focus a step, preview, apply", async ({ page }) => {
   await draft(page, [], "BTC odds step edit");
-  await openDetails(page);
   const step = page.getByTestId("phase-r1");
   // Centre it so the sticky approve bar isn't on top.
   await step.evaluate((e) => e.scrollIntoView({ block: "center" }));
@@ -162,7 +161,7 @@ test("dismissed re-approval stays pending, never auto-approved", async ({ page }
   await page.keyboard.press("Escape");
   await expect(page.getByRole("button", { name: "1 needs you" })).toBeVisible();
   await expect(page.getByTestId("status-headline")).toContainText("Paused: it needs your decision");
-  await openDetails(page);
+  // The graph is on the page while it runs, and shows the step that needs you.
   await expect(page.getByTestId("phase-r1")).toHaveAttribute("data-status", "awaiting_reapproval");
   await page.getByRole("button", { name: "1 needs you" }).click();
   await page.getByTestId("reapprove").click();
@@ -184,13 +183,13 @@ test("dashboard lists jobs by folder and status, and opens them", async ({ page 
   await start(page, [], "BTC odds dashboard check", "Inso");
   await receipt(page);
   const url = page.url();
-  await page.goto("/?folder=inso");
+  await page.goto("/home?folder=inso");
   await expect(page.getByRole("heading", { name: "Inso jobs" })).toBeVisible();
   const card = page.getByText("BTC odds dashboard check").first();
   await expect(card).toBeVisible();
-  await page.goto("/?folder=travo");
+  await page.goto("/home?folder=travo");
   await expect(page.getByText("BTC odds dashboard check")).toHaveCount(0);
-  await page.goto("/");
+  await page.goto("/home");
   await page.getByLabel("Search jobs").fill("dashboard check");
   await page.getByText("BTC odds dashboard check").first().click();
   await expect(page).toHaveURL(url);
@@ -205,13 +204,30 @@ test("a plan across agents runs step by step and says what it can't do", async (
   await expect(card).toBeVisible({ timeout: 30_000 });
   await expect(card.getByTestId("plan-step")).toHaveCount(2);
   await expect(card.getByTestId("plan-unavailable")).toContainText("hotel");
-  await card.getByTestId("start-plan").click();
+  // Several jobs together are a project: its own page, one review totalled across the jobs.
+  await expect(page).toHaveURL(/\/projects\//);
+  await expect(page.getByTestId("project-title")).not.toBeEmpty();
+  await expect(page.getByTestId("project-review")).toBeVisible();
+  await expect(page.getByTestId("project-most")).toContainText("At most $");
+  await page.getByTestId("start-all").click();
   await expect(card.getByTestId("plan-status")).toHaveText("Finished", { timeout: 60_000 });
   await expect(card.getByTestId("plan-step-status")).toHaveText(["Done", "Done"]);
   await card.getByTestId("plan-step-link").nth(1).click();
-  await expect(page.getByTestId("back-to-plan")).toContainText("Step 2 of a plan");
+  await expect(page.getByTestId("back-to-plan")).toContainText("Part of:");
   await expect(page.getByTestId("handoff")).toContainText("Inso");
   await expect(page.getByTestId("receipt-total")).toBeVisible();
+});
+
+test("an empty project can be made and filled by hand", async ({ page, request }) => {
+  await prefs(page);
+  const r = await (await request.post("/api/projects", { data: { title: "Austin trip" } })).json();
+  await page.goto(r.url);
+  await expect(page.getByTestId("project-title")).toHaveText("Austin trip");
+  await expect(page.getByTestId("plan-status")).toHaveText("No jobs yet");
+  await page.getByTestId("plan-add-input").fill("Plan a drive from Dallas to Austin");
+  await page.getByRole("button", { name: /Add job/ }).click();
+  await expect(page.getByTestId("plan-step")).toHaveCount(1, { timeout: 30_000 });
+  await expect(page.getByTestId("start-all")).toBeVisible();
 });
 
 test("limits are set once in Settings", async ({ page }) => {
@@ -299,11 +315,8 @@ test("before there is a move, the workspace shows the outline of the kind of wor
   const space = page.getByTestId("workspace");
   await expect(space).toHaveAttribute("data-kind", "hedge");
   await expect(space.locator("[data-ghost]").first()).toBeVisible();
-  // Another kind of work is a tab away, with an example that lands in the chat box to send or change.
-  await page.getByTestId("kind-trip").click();
-  await expect(space).toHaveAttribute("data-kind", "trip");
-  await page.getByTestId("workspace-example").click();
-  await expect(page.getByTestId("chat-input")).toHaveValue(/Dallas/);
+  // No category to pick: the outline follows what was asked.
+  await expect(page.locator("[data-testid^=kind-]")).toHaveCount(0);
 });
 
 test("the showcase builds a long plan that can be changed before anything is paid", async ({ page }) => {
@@ -357,22 +370,23 @@ test("quick changes are applied at once: the drawing and the cost follow without
   await expect(does).not.toHaveText(before, { timeout: 3_000 });
   await expect(page.getByTestId("move-changes")).toBeVisible();
   // The options above the chat box: the step forward first, then changes with the numbers they lead to.
-  await expect(page.getByTestId("quick-primary")).toHaveText("Review this");
-  await expect(page.getByTestId("quick-option").first()).toHaveText(/more|fewer|instead|Only/);
+  await expect(page.getByTestId("quick-primary")).toHaveText("Review and approve");
+  await expect(page.getByTestId("quick-option").first()).toHaveText(/more|fewer|instead|only/);
   const mid = await does.innerText();
-  await page.getByTestId("quick-option").filter({ hasText: /fewer|Only/ }).first().click();
+  await page.getByTestId("quick-option").filter({ hasText: /fewer|only/ }).first().click();
   await expect(does).not.toHaveText(mid, { timeout: 3_000 });
   await page.getByTestId("quick-primary").click();
   await expect(page.getByTestId("review-card")).toBeVisible({ timeout: 30_000 });
-  // The review answers four things: what you asked for, what happens, what if it goes wrong, the most it costs.
-  await expect(page.getByTestId("review-want")).toContainText("What are BTC odds right now?");
+  // The review: the title and numbered steps on top, then what you get, how, the limits and the price, then the total.
+  await expect(page.getByTestId("review-title")).not.toBeEmpty();
   await expect(page.getByTestId("review-steps").getByTestId("brief-step").first()).toBeVisible();
+  for (const card of ["deliverable", "method", "risk", "price"]) await expect(page.getByTestId(`card-${card}`)).toBeVisible();
   await expect(page.getByTestId("review-risk").first()).toBeVisible();
-  await expect(page.getByTestId("review-total")).toContainText("You get");
-  // While reviewing, the same changes rebuild the work order and its cost.
-  const cost = await page.getByTestId("review-cost").innerText();
+  await expect(page.getByTestId("review-most")).toContainText("At most $");
+  // While reviewing, the same changes rebuild the work order and its total.
+  const most = await page.getByTestId("review-most").innerText();
   await page.getByTestId("quick-option").filter({ hasText: /more|instead/ }).first().click();
-  await expect(page.getByTestId("review-cost")).not.toHaveText(cost, { timeout: 3_000 });
+  await expect(page.getByTestId("review-most")).not.toHaveText(most, { timeout: 3_000 });
   await page.getByTestId("open-approve").click();
   await finished(page);
 });
