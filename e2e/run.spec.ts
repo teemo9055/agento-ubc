@@ -324,3 +324,31 @@ test("the agents page shows what Agento sells to other agents and what it earned
   expect(unpaid.status()).toBe(402);
   expect((await unpaid.json()).accepts[0]).toMatchObject({ scheme: "exact", maxAmountRequired: "5000" });
 });
+
+test("quick changes are applied at once: the drawing and the cost follow without the agent", async ({ page }) => {
+  await prefs(page);
+  await page.goto("/new");
+  await page.fill("#task", "What are BTC odds right now?");
+  await page.getByRole("button", { name: /Ask/ }).click();
+  await expect(page.getByTestId("move-card")).toBeVisible({ timeout: 30_000 });
+  const does = page.locator("[data-lane=does] [data-block]").first();
+  const before = await does.innerText();
+  // More, right on the thing it changes.
+  await page.getByTestId("step-more").click();
+  await expect(does).not.toHaveText(before, { timeout: 3_000 });
+  await expect(page.getByTestId("move-changes")).toBeVisible();
+  // The options above the chat box: the step forward first, then changes with the numbers they lead to.
+  await expect(page.getByTestId("quick-primary")).toHaveText("Review this");
+  await expect(page.getByTestId("quick-option").first()).toHaveText(/more|fewer|instead|Only/);
+  const mid = await does.innerText();
+  await page.getByTestId("quick-option").filter({ hasText: /fewer|Only/ }).first().click();
+  await expect(does).not.toHaveText(mid, { timeout: 3_000 });
+  await page.getByTestId("quick-primary").click();
+  await expect(page.getByTestId("review-card")).toBeVisible({ timeout: 30_000 });
+  // While reviewing, the same changes rebuild the work order and its cost.
+  const cost = await page.getByTestId("review-cost").innerText();
+  await page.getByTestId("quick-option").filter({ hasText: /more|instead/ }).first().click();
+  await expect(page.getByTestId("review-cost")).not.toHaveText(cost, { timeout: 3_000 });
+  await page.getByTestId("open-approve").click();
+  await finished(page);
+});

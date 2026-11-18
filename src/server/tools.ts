@@ -417,7 +417,7 @@ export async function validateProposal(agent: AgentId, input: unknown, id: strin
     }
     if (maxPrice * quantity > limits().maxOrderUsd) return { error: `Order over the user's $${limits().maxOrderUsd} per-order limit (set in Settings). Make it smaller.` };
     if (maxPrice !== raw.maxPrice) adjustments.push(`Price rounded to ${Math.round(maxPrice * 100)}¢`);
-    action = { kind: "prediction_order", eventTicker: raw.eventTicker, symbol: raw.symbol, label: raw.label, side: raw.side, orderType: raw.orderType, maxPrice, stopPrice, quantity };
+    action = { kind: "prediction_order", eventTicker: raw.eventTicker, symbol: raw.symbol, label: raw.label, event: ev.title, side: raw.side, orderType: raw.orderType, maxPrice, stopPrice, quantity };
     // Tell the user whether this buys now or waits: the cheapest seller right now is the ask.
     const askNow = raw.side === "yes" ? c.ask : c.bid != null ? round2(1 - c.bid) : null;
     if (raw.orderType === "limit" && askNow != null)

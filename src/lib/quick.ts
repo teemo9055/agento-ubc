@@ -1,11 +1,12 @@
-import type { AgentId, ChatMsg, Plan, Run } from "./types";
+import type { AgentId, ChatMsg, Plan, Proposal, Run } from "./types";
+import { adjustmentsFor, type AdjustKind } from "./adjust";
 
 /**
  * The quick options above the chat box: the decisions a person most often makes next, one tap
  * each. The first is the likeliest. Each either says something to the agent or changes the plan
  * on the board directly. Approving a draft is the review card's button, not one of these.
  */
-export type QuickDo = { say: string } | { act: "start-plan" | "stop-plan" } | { add: { agent: AgentId | "auto"; brief: string } } | { fill: string };
+export type QuickDo = { say: string } | { act: "start-plan" | "stop-plan" | "review" } | { adjust: AdjustKind } | { add: { agent: AgentId | "auto"; brief: string } } | { fill: string };
 
 export interface Quick {
   label: string;
@@ -20,6 +21,15 @@ const accept = (s: string) => /^(yes|yep|ok|set it up|build|do it|start)\b/i.tes
 const decline = (s: string) => /^not now$/i.test(s);
 const adds = (s: string) => /^(only if|check|add|also|include|who'?s)\b/i.test(s);
 const say = (s: string): Quick => ({ label: s, adds: adds(s), do: { say: s } });
+// The agent's own chips repeat what the instant changes already cover (a size, a price).
+const sized = (s: string) => /^(make it|only \$?\d|sell only|ask \d|lower limit|raise|\d+ (more|fewer)|max \d+ hours|up to \d+ hours)/i.test(s);
+
+/** Ways to perfect the move on screen: instant changes first, then one thing only the agent can add. */
+function detail(p: Proposal, fromAgent: string[], max: number): Quick[] {
+  const instant = adjustmentsFor(p).map((a): Quick => ({ label: a.label, do: { adjust: a.kind } }));
+  const extra = fromAgent.filter((s) => !accept(s) && !decline(s) && !sized(s)).slice(0, 1).map(say);
+  return [...instant.slice(0, extra.length ? max - 1 : max), ...extra];
+}
 
 /** Steps people add to a plan most often, offered only when the plan doesn't have one already. */
 const BLOCKS: { label: string; agent: AgentId; brief: string; has: RegExp }[] = [
@@ -33,10 +43,9 @@ export function quickFor(run: Pick<Run, "status" | "chat" | "proposal" | "thinki
   if (run.thinking) return [];
 
   if (run.status === "draft") {
-    // The chips offered with the move that became this draft are still the likeliest changes;
-    // approving is the review card's own button, so it isn't offered twice.
+    // Approving is the review card's own button; these perfect the details before it.
     const from = [...chat].reverse().find((m) => m.proposal && m.proposal.id === run.proposal?.id);
-    return (from?.suggestions ?? []).filter((s) => !accept(s) && !decline(s)).slice(0, 4).map(say);
+    return run.proposal ? detail(run.proposal, from?.suggestions ?? [], 4) : [];
   }
   if (run.status !== "exploring" || last?.role !== "agent") return [];
   // A question is answered with its own options, not with these.
@@ -57,8 +66,8 @@ export function quickFor(run: Pick<Run, "status" | "chat" | "proposal" | "thinki
   if (plan) return [];
 
   const rest = (last.suggestions ?? []).filter((s) => !accept(s) && !decline(s));
-  // With a move on screen its own button is the next step; these are the ways to change it.
-  if (last.proposal) return rest.slice(0, 4).map(say);
+  // With a move on screen: the step forward first, then the ways to perfect it.
+  if (last.proposal) return [{ label: "Review this", primary: true, do: { act: "review" } }, ...detail(last.proposal, last.suggestions ?? [], 3)];
   return rest.slice(0, 3).map((s, i) => ({ ...say(s), primary: i === 0 }));
 }
 

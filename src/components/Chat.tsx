@@ -412,11 +412,11 @@ export function Chat({
   }
 
   /** Something done to the plan from the chat: the board shows the result. */
-  async function planAct(label: string, path: string, body: unknown, ok: string) {
+  async function planAct(label: string, path: string, body: unknown, ok?: string) {
     setActing(label);
     try {
       await post(`/api/runs/${run.id}/${path}`, body);
-      toast(ok, "good");
+      if (ok) toast(ok, "good");
     } catch (e) {
       toast((e as Error).message, "bad");
     } finally {
@@ -432,6 +432,12 @@ export function Chat({
       return input.current?.focus();
     }
     if ("add" in d) return void planAct(q.label, "plan-edit", { op: "add", agent: d.add.agent, brief: d.add.brief }, `${q.label} added to the board`);
+    // Done by code, no waiting for the agent: the drawing beside the chat changes as the answer comes back.
+    if ("adjust" in d) return void planAct(q.label, "adjust", { kind: d.adjust });
+    if (d.act === "review") {
+      const id = [...chat].reverse().find((m) => m.proposal)?.proposal?.id;
+      return id ? void choose(id) : undefined;
+    }
     if (d.act === "stop-plan" && plan) return void planAct(q.label, "plan-stop", { planId: plan.id }, "Plan stopped · steps already running will finish");
     if (d.act === "start-plan" && proposedPlan) return void planAct(q.label, "plan-start", { planId: proposedPlan.id }, "Plan started · each step runs as its own job");
   }

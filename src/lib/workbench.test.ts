@@ -85,12 +85,6 @@ describe("quick options above the chat box", () => {
     expect(q[1].adds).toBe(true);
   });
 
-  it("with a move on screen, offers ways to change it and leaves the yes to the card's own button", () => {
-    const q = quickFor(run({ chat: [agent({ proposal: move(), suggestions: ["Yes, set it up", "Only if Chainlink agrees ($0.0001)", "Make it 2 contracts", "Check the odds history first ($0.02)", "See who's buying first ($0.10)", "Not now"] })] }));
-    expect(q.map((x) => x.label)).toEqual(["Only if Chainlink agrees ($0.0001)", "Make it 2 contracts", "Check the odds history first ($0.02)", "See who's buying first ($0.10)"]);
-    expect(q.some((x) => x.primary)).toBe(false);
-  });
-
   it("with a plan on the board, leads with starting it and offers the steps it doesn't have yet", () => {
     const q = quickFor(run({ chat: [agent({ plan: plan(3), suggestions: ["Yes, start the plan", "Make it cheaper", "Not now"] })] }), plan(3));
     expect(q.map((x) => x.label)).toEqual(["Start all 3 steps", "Price check", "Gas check", "Your own step", "Make it cheaper"]);
@@ -102,12 +96,6 @@ describe("quick options above the chat box", () => {
     // Once it's running the one decision left is to stop it; once it's over there is none.
     expect(quickFor(run({ chat: [agent({})] }), { ...plan(3), status: "running" }).map((x) => x.label)).toEqual(["Stop the plan"]);
     expect(quickFor(run({ chat: [agent({})] }), { ...plan(3), status: "done" })).toEqual([]);
-  });
-
-  it("on a draft, keeps the changes that were offered with the move and leaves approving to the review card", () => {
-    const p = move();
-    const q = quickFor(run({ status: "draft", proposal: p, chat: [agent({ proposal: p, suggestions: ["Yes, set it up", "Make it 2 contracts", "Not now"] })] }));
-    expect(q.map((x) => [x.label, Boolean(x.primary)])).toEqual([["Make it 2 contracts", false]]);
   });
 
   it("reads “Add a step: …” as a step for the board", () => {

@@ -43,6 +43,9 @@ import { PRODUCTS } from "./x402";
 
 import { limits } from "./settings";
 import { partsProgress } from "@/lib/parts";
+import { diffMoves } from "./move-diff";
+import { applyAdjust, type AdjustKind } from "@/lib/adjust";
+import { askOf, titleOf } from "@/lib/plain";
 const BUFFER_PCT = 20n;
 const REAPPROVAL_TIMEOUT_MS = Number(process.env.REAPPROVAL_TIMEOUT_MS ?? 120_000);
 const FAULT_TIMEOUT_MS = Number(process.env.FAULT_TIMEOUT_MS ?? 8_000);
@@ -347,6 +350,41 @@ export async function adopt(runId: string, proposalId: string) {
   await adoptProposal(ctl, p);
   log(ctl, { kind: "card_edit", what: `Move chosen: ${p.title}`, why: p.ask, outcome: "approved", by: "user" });
   return ctl.run;
+}
+
+const adjusting = new Set<string>();
+
+/**
+ * One of the quick changes to the move on screen (a bit more, a bit less, a different price…),
+ * applied and re-checked by code with no model in between, so the screen updates right away.
+ * The move keeps its place in the conversation; while reviewing, the work order is rebuilt from it.
+ */
+export async function adjustMove(runId: string, kind: AdjustKind) {
+  const ctl = ctlOf(runId);
+  if (!["exploring", "draft"].includes(ctl.run.status)) throw new Error("this job is already running");
+  if (chatBusy.has(runId) || adjusting.has(runId)) throw new Error("one change at a time: the last one is still being worked out");
+  const chat = ctl.run.chat ?? [];
+  const at = ctl.run.status === "draft" ? chat.findLastIndex((m) => m.proposal?.id === ctl.run.proposal?.id) : chat.findLastIndex((m) => Boolean(m.proposal));
+  const prev = ctl.run.status === "draft" ? ctl.run.proposal : chat[at]?.proposal;
+  if (!prev) throw new Error("there is no move to change");
+  adjusting.add(runId);
+  try {
+    const v = await validateProposal(ctl.run.agent, applyAdjust(toProposalInput(prev), prev, kind), prev.id);
+    if ("error" in v) throw new Error(v.error.split(". ")[0]);
+    const changes = diffMoves(prev, v.proposal);
+    if (!changes.length) throw new Error(prev.budgetUsd != null && kind === "more" ? `That's all your $${prev.budgetUsd} allows` : "That's as far as it goes");
+    // The agent wrote the name and the question around the old numbers, so code rewrites both from the move as it now is.
+    const next: Proposal = { ...v.proposal, title: titleOf(v.proposal), ask: askOf(v.proposal), changes };
+    // The card in the conversation shows the move as it now stands, with the same quick changes recomputed.
+    const updated = at >= 0 ? chat.map((m, i) => (i === at ? { ...m, proposal: next } : m)) : chat;
+    ctl.run = { ...ctl.run, chat: updated };
+    if (ctl.run.status === "draft") await adoptProposal(ctl, next);
+    else emit(ctl, { type: "workorder.updated", run: { ...ctl.run } });
+    log(ctl, { kind: "card_edit", what: `Changed: ${changes.join(" · ")}`.slice(0, 200), why: "Quick change, checked against the market and your limits", outcome: "edited", by: "user" });
+    return ctl.run;
+  } finally {
+    adjusting.delete(runId);
+  }
 }
 
 /** Back to chat from the work order, keeping the conversation. */
@@ -1050,11 +1088,6 @@ async function recover(ctl: Ctl) {
   emit(ctl, { type: "run.cancelled", refunded: refunded.toString(), refundTx, at: now() });
 }
 
-if (process.env.NEXT_PHASE !== "phase-production-build") {
-  restore();
-  trackOpenOrders();
-}
-
 /** Keeps resting orders current while nobody is looking: fills, partial fills, cancels on the exchange. */
 function trackOpenOrders() {
   const gg = globalThis as unknown as { __agentoOrderPoll?: ReturnType<typeof setInterval> };
@@ -1394,4 +1427,11 @@ export async function rerun(runId: string) {
     return { run, fresh: false as const, why: v.error.split(". ")[0] };
   }
   return { run: await createRun(base as CreateInput, { wait: false }), fresh: false as const };
+}
+
+// Last in the file on purpose: bringing jobs back can run them at once, and that needs everything above to exist
+// (a resumed plan step reports progress to its plan as soon as it starts).
+if (process.env.NEXT_PHASE !== "phase-production-build") {
+  restore();
+  trackOpenOrders();
 }

@@ -452,7 +452,11 @@ export default function RunPage({ params }: { params: Promise<{ id: string }> })
         <div className="lg:mx-[calc(50%-min(50vw-24px,720px))]" data-testid="talk">
           {talkBar}
           <div className="grid grid-cols-[minmax(0,1fr)_400px] items-start gap-6">
-            <Workspace run={run} onExample={(text) => setPrefill((p) => ({ text, n: (p?.n ?? 0) + 1 }))} />
+            <Workspace
+              run={run}
+              onExample={(text) => setPrefill((p) => ({ text, n: (p?.n ?? 0) + 1 }))}
+              onAdjust={(kind) => post(`/api/runs/${run.id}/adjust`, { kind }).catch((e) => toast((e as Error).message, "bad"))}
+            />
             <aside className="sticky top-[84px] h-[calc(100dvh-170px)] min-h-[460px]" aria-label="Chat">
               {chatPanel}
             </aside>

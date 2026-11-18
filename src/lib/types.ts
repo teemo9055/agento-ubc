@@ -196,6 +196,8 @@ export type MoveAction =
       eventTicker: string;
       symbol: string;
       label: string;
+      /** The question the contract belongs to, e.g. "BTC price on November 30"; read from the exchange. */
+      event?: string;
       side: "yes" | "no";
       /** buy (default) opens or adds to a position; sell closes contracts you hold, at maxPrice or better (i.e. at least maxPrice). */
       trade?: "buy" | "sell";

@@ -3,6 +3,7 @@ import { Fragment, useState } from "react";
 import type { Plan, Run } from "@/lib/types";
 import { KINDS, blueprintOf, captionOf, kindOf, outline, type Block, type LaneKey, type WorkKind } from "@/lib/shape";
 import { usdc } from "@/lib/move";
+import { sizeOf, type AdjustKind } from "@/lib/adjust";
 import { Assemble } from "./Assemble";
 import { Icon } from "./Icon";
 import { Spinner } from "./ui";
@@ -32,7 +33,27 @@ export function Stages({ run, plan }: { run: Run; plan?: Plan }) {
 
 const LANE_DOT: Record<LaneKey, string> = { reads: "bg-ink-3", checks: "bg-warn", does: "bg-agent", gets: "bg-good" };
 
-function BlockBox({ b, lane }: { b: Block; lane: LaneKey }) {
+/** Less and more, right on the thing they change. */
+function Stepper({ onAdjust, busy, canLess, canMore }: { onAdjust: (k: AdjustKind) => void; busy: boolean; canLess: boolean; canMore: boolean }) {
+  const btn = "pressable inline-flex h-8 w-8 items-center justify-center rounded-lg border border-line bg-panel text-[16px] font-semibold leading-none text-ink hover:border-ink/50 disabled:opacity-40";
+  return (
+    <div className="mt-2 flex items-center gap-1.5" data-testid="stepper">
+      <button type="button" className={btn} disabled={busy || !canLess} onClick={() => onAdjust("less")} aria-label="Less" data-testid="step-less">
+        −
+      </button>
+      <button type="button" className={btn} disabled={busy || !canMore} onClick={() => onAdjust("more")} aria-label="More" data-testid="step-more">
+        +
+      </button>
+      {busy && (
+        <span className="ml-1 text-agent-ink">
+          <Spinner />
+        </span>
+      )}
+    </div>
+  );
+}
+
+function BlockBox({ b, lane, children }: { b: Block; lane: LaneKey; children?: React.ReactNode }) {
   const real = lane === "does" ? "border-ink bg-panel shadow-[3px_3px_0_0_var(--agent)]" : "border-ink/70 bg-panel";
   return (
     <div data-block data-ghost={b.ghost ? "" : undefined} className={`rounded-xl border-[1.5px] px-3 py-2.5 ${b.ghost ? "border-dashed border-line bg-transparent" : real}`}>
@@ -41,6 +62,7 @@ function BlockBox({ b, lane }: { b: Block; lane: LaneKey }) {
         {b.cost != null && b.cost > 0 && <span className="num shrink-0 text-[12px] text-ink-2">${usdc(b.cost)}</span>}
       </div>
       {b.detail && <div className="mt-0.5 text-[12px] leading-snug text-ink-3">{b.detail}</div>}
+      {children}
     </div>
   );
 }
@@ -52,7 +74,8 @@ const TABS: WorkKind[] = ["lookup", "order", "conditional", "hedge", "trip", "pl
  * Before the agent proposes anything it shows the outline of the kind of work being asked for;
  * once there is a move, the same outline filled in with the real steps, checks and costs.
  */
-export function Workspace({ run, onExample }: { run: Run; onExample?: (text: string) => void }) {
+export function Workspace({ run, onExample, onAdjust }: { run: Run; onExample?: (text: string) => void; /** Applies a quick change to the move; resolves when the new numbers are in. */ onAdjust?: (kind: AdjustKind) => Promise<unknown> }) {
+  const [stepping, setStepping] = useState(false);
   const chat = run.chat ?? [];
   const move = [...chat].reverse().find((m) => m.proposal)?.proposal;
   const [pick, setPick] = useState<WorkKind | null>(null);
@@ -63,6 +86,7 @@ export function Workspace({ run, onExample }: { run: Run; onExample?: (text: str
   const found = [...new Map(chat.flatMap((m) => m.tools ?? []).filter((t) => t.ok).map((t) => [t.summary, t])).values()].slice(-5);
 
   const b = briefOf(run);
+  const size = move ? sizeOf(move) : undefined;
 
   return (
     <div className="space-y-4">
@@ -119,7 +143,19 @@ export function Workspace({ run, onExample }: { run: Run; onExample?: (text: str
                   </div>
                   <div className="space-y-2">
                     {l.blocks.map((b, j) => (
-                      <BlockBox key={j} b={b} lane={l.key} />
+                      <BlockBox key={j} b={b} lane={l.key}>
+                        {move && onAdjust && size && l.key === "does" && j === 0 && !run.thinking && (
+                          <Stepper
+                            busy={stepping}
+                            canLess={size.down != null}
+                            canMore={size.up > size.now}
+                            onAdjust={(k) => {
+                              setStepping(true);
+                              void onAdjust(k).finally(() => setStepping(false));
+                            }}
+                          />
+                        )}
+                      </BlockBox>
                     ))}
                   </div>
                 </div>

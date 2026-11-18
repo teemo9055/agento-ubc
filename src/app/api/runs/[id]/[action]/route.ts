@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { z } from "zod";
 import type { SeqEvent } from "@/lib/events";
-import { adopt, approve, backToChat, cancel, startPlan, stopPlan, editPlanOf, retryPlanStep, rerun, saveRun, cancelRunOrder, refreshRunOrder, sendChat, decideReapproval, editCard, fundingInfo, previewEdit, reapprovalPlan, resolveFailure, subscribe } from "@/server/orchestrator";
+import { adjustMove, adopt, approve, backToChat, cancel, startPlan, stopPlan, editPlanOf, retryPlanStep, rerun, saveRun, cancelRunOrder, refreshRunOrder, sendChat, decideReapproval, editCard, fundingInfo, previewEdit, reapprovalPlan, resolveFailure, subscribe } from "@/server/orchestrator";
 
 export const dynamic = "force-dynamic";
 
@@ -37,6 +37,10 @@ export async function POST(req: NextRequest, ctx: Ctx) {
       case "adopt": {
         const b = Adopt.parse(await req.json());
         return NextResponse.json(await adopt(id, b.proposalId));
+      }
+      case "adjust": {
+        const b = z.object({ kind: z.enum(["more", "less", "pay-more", "pay-less", "drop-lookups", "drop-check"]) }).parse(await req.json());
+        return NextResponse.json(await adjustMove(id, b.kind));
       }
       case "plan-start": {
         const b = StartPlan.parse(await req.json());
