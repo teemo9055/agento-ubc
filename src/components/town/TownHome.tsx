@@ -10,6 +10,7 @@ import type { TownSummary } from "@/server/town";
 import { TownMap } from "./TownMap";
 import { TownBar } from "./TownNav";
 import { PlaceIcon } from "./places";
+import sky from "./town.module.css";
 
 const WORD: Record<string, string> = { exploring: "chatting", draft: "waiting for your OK", funding: "getting ready", running: "working", done: "done", cancelled: "stopped" };
 
@@ -89,7 +90,7 @@ export function TownHome({ initial }: { initial: TownSummary }) {
         <Purse t={t} compact />
       </div>
 
-      <div className="grid-paper relative overflow-hidden rounded-2xl border border-line bg-surface">
+      <div className={`${sky.sky} relative overflow-hidden rounded-2xl border border-[#d8c8ea] shadow-[inset_0_-40px_80px_-40px_rgb(255_220_184/0.6)]`} data-testid="town-scene">
         <TownMap />
         <div className="pointer-events-none absolute inset-x-3 top-3 hidden items-start justify-between gap-3 sm:flex">
           <div className="pointer-events-auto">

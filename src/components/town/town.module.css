@@ -1,8 +1,45 @@
-/* The town map. Motion has a cause (people walking, smoke rising, the bell swinging) and stops under reduced motion. */
+/* The town at dusk. Motion has a cause (people walking, clouds drifting, smoke rising, water
+   falling, fireflies) and stops under reduced motion and while the tab is hidden. */
+
+/* The sky behind the island and every building's banner: dusk pastels. */
+.sky {
+  background:
+    radial-gradient(120% 70% at 18% 8%, rgb(255 244 214 / 0.55), transparent 60%),
+    linear-gradient(180deg, #a99be6 0%, #c6abe8 22%, #e7b8dc 46%, #f7c6c7 66%, #ffdcb8 86%, #ffe9cc 100%);
+}
 
 .scroller {
   overscroll-behavior: contain;
   scrollbar-width: thin;
+}
+
+/* Parallax layers: the far sky moves least, the leafy frame most. --mx/--my are -1..1, set from the pointer. */
+.scene {
+  --mx: 0;
+  --my: 0;
+}
+.far,
+.mid,
+.near,
+.fore {
+  transition: transform 900ms cubic-bezier(0.2, 0.7, 0.2, 1);
+  will-change: transform;
+}
+.far {
+  transform: translate3d(calc(var(--mx) * -10px), calc(var(--my) * -6px), 0);
+}
+.mid {
+  transform: translate3d(calc(var(--mx) * 3px), calc(var(--my) * 2px), 0);
+}
+.near {
+  transform: translate3d(calc(var(--mx) * 12px), calc(var(--my) * 7px), 0);
+}
+.fore {
+  transform: translate3d(calc(var(--mx) * 24px), calc(var(--my) * 12px), 0);
+}
+.paused,
+.paused * {
+  animation-play-state: paused !important;
 }
 
 /* A building's link box covers its drawing's bounds; only the painted shapes and the sign take the pointer. */
@@ -46,13 +83,14 @@
   line-height: 1;
   border: 2px solid #0b0b0b;
   border-radius: 3px;
-  box-shadow: 3px 3px 0 0 rgb(11 11 11 / 0.28);
+  box-shadow:
+    3px 3px 0 0 rgb(43 29 74 / 0.35),
+    0 0 18px 2px rgb(255 217 138 / 0.35);
   transition:
     transform 140ms steps(3),
     background 140ms steps(2),
     box-shadow 140ms steps(2);
 }
-/* The sign's chain to the roof. */
 .sign::before,
 .sign::after {
   content: "";
@@ -82,10 +120,12 @@
   transform: translateY(-6px);
   background: #26252b;
   color: #fff6d6;
-  box-shadow: 3px 3px 0 0 var(--accent);
+  box-shadow:
+    3px 3px 0 0 var(--accent),
+    0 0 22px 4px rgb(255 217 138 / 0.5);
 }
 .building:focus-visible .sign {
-  outline: 2px solid var(--accent);
+  outline: 2px solid #ffffff;
   outline-offset: 3px;
 }
 
@@ -153,13 +193,135 @@
     transform: rotate(360deg);
   }
 }
-.lamp {
-  animation: glowlamp 3s steps(1) infinite;
+
+/* Lamp light breathing. */
+.glow {
+  animation: breathe 4.5s ease-in-out infinite;
 }
-@keyframes glowlamp {
-  50% {
-    fill: #fab219;
+@keyframes breathe {
+  0%,
+  100% {
+    opacity: 0.85;
   }
+  50% {
+    opacity: 1;
+  }
+}
+
+/* Water. */
+.shimmer {
+  animation: shimmer 2.8s steps(3) infinite;
+}
+@keyframes shimmer {
+  0%,
+  100% {
+    opacity: 0.15;
+    transform: translateX(0);
+  }
+  50% {
+    opacity: 1;
+    transform: translateX(3px);
+  }
+}
+.fall {
+  animation: fall 1.2s linear infinite;
+}
+@keyframes fall {
+  from {
+    transform: translateY(0);
+  }
+  to {
+    transform: translateY(36px);
+  }
+}
+
+/* Clouds drift right across the whole canvas and come back round. */
+.drift {
+  animation: drift 160s linear infinite;
+}
+@keyframes drift {
+  from {
+    transform: translateX(-260px);
+  }
+  to {
+    transform: translateX(1300px);
+  }
+}
+.birds {
+  animation: fly 46s linear infinite;
+  animation-delay: -12s;
+}
+@keyframes fly {
+  from {
+    transform: translate(-80px, 30px);
+  }
+  to {
+    transform: translate(1280px, -20px);
+  }
+}
+.bird {
+  animation: flap 0.5s steps(1) infinite;
+}
+@keyframes flap {
+  50% {
+    transform: scaleY(-0.6);
+  }
+}
+
+/* Fireflies: a small warm dot that wanders and blinks. */
+.firefly {
+  position: absolute;
+  width: 4px;
+  height: 4px;
+  background: #fff3b0;
+  box-shadow:
+    0 0 6px 2px rgb(255 226 140 / 0.9),
+    0 0 14px 6px rgb(255 200 110 / 0.35);
+  animation:
+    wander 6s ease-in-out infinite alternate,
+    blink 3.5s steps(4) infinite;
+}
+@keyframes wander {
+  0% {
+    transform: translate(0, 0);
+  }
+  33% {
+    transform: translate(14px, -10px);
+  }
+  66% {
+    transform: translate(-8px, -18px);
+  }
+  100% {
+    transform: translate(10px, 6px);
+  }
+}
+@keyframes blink {
+  0%,
+  100% {
+    opacity: 0.2;
+  }
+  50% {
+    opacity: 1;
+  }
+}
+
+/* A building's banner: its scene, with the nameplate. */
+.banner {
+  position: relative;
+  overflow: hidden;
+  isolation: isolate;
+}
+.plate {
+  display: inline-flex;
+  align-items: center;
+  gap: 10px;
+  padding: 6px 14px 6px 6px;
+  background: #0b0b0b;
+  color: #ffffff;
+  border-radius: 4px;
+  box-shadow:
+    4px 4px 0 0 rgb(43 29 74 / 0.35),
+    0 0 24px 4px rgb(255 217 138 / 0.4);
 }
 
 @media (prefers-reduced-motion: reduce) {
@@ -169,11 +331,22 @@
   .flag,
   .bell,
   .hand,
-  .lamp {
+  .glow,
+  .shimmer,
+  .fall,
+  .drift,
+  .birds,
+  .bird,
+  .firefly {
     animation: none !important;
   }
   .art,
-  .sign {
+  .sign,
+  .far,
+  .mid,
+  .near,
+  .fore {
     transition: none;
+    transform: none;
   }
 }
