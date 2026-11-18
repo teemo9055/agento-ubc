@@ -57,7 +57,7 @@ function StepRow({ p, run, n }: { p: Phase; run: Run; n: number }) {
       </span>
       {line && (
         <span className="num shrink-0 text-[12.5px] text-ink-2">
-          {paid ? `${fmt(run.status === "draft" || run.status === "funding" ? line.approved : line.actual)} USDC` : line.rail === "exchange" && Number(line.approved) > 0 ? `≤ $${(Number(line.approved) / 1e6).toFixed(2)}` : ""}
+          {paid ? `${fmt(run.status === "draft" || run.status === "funding" ? line.approved : line.actual)} USDC` : line.rail === "exchange" && Number(line.approved) > 0 ? `up to $${(Number(line.approved) / 1e6).toFixed(2)}` : ""}
         </span>
       )}
     </li>

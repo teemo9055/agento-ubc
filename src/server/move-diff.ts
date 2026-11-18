@@ -37,7 +37,7 @@ function actionChanges(a: MoveAction, b: MoveAction): string[] {
     if (a.symbol !== b.symbol) out.push(`contract: ${a.label} → ${b.label}`);
     if (a.side !== b.side) out.push(`side: ${a.side.toUpperCase()} → ${b.side.toUpperCase()}`);
     if ((a.trade ?? "buy") !== (b.trade ?? "buy")) out.push(`${a.trade ?? "buy"} → ${b.trade ?? "buy"}`);
-    if (a.quantity !== b.quantity) out.push(`${a.quantity} → ${b.quantity} contracts`);
+    if (a.quantity !== b.quantity) out.push(`pays $${a.quantity} → $${b.quantity}`);
     if (a.maxPrice !== b.maxPrice) out.push(`${b.trade === "sell" ? "min" : "max"} price ${cents(a.maxPrice)} → ${cents(b.maxPrice)}`);
     if (a.orderType !== b.orderType) out.push(`${a.orderType} → ${b.orderType}`);
     if ((a.stopPrice ?? null) !== (b.stopPrice ?? null) && b.stopPrice != null) out.push(`trigger ${cents(b.stopPrice)}`);

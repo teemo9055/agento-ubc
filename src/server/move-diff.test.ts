@@ -19,7 +19,7 @@ describe("what changed, in plain words", () => {
     next.research.push({ id: "r2", tool: "trade_tape", args: { symbol: "GEMI-X" }, label: "Trade flow", why: "who buys" });
     next.condition = { metric: "spot_price", symbol: "btcusd", op: ">=", value: 64000 };
     if (next.action?.kind === "prediction_order") next.action.quantity = 10;
-    expect(diffMoves(base, next)).toEqual(["+ Trade flow", "+ check: BTC price ≥ $64,000", "5 → 10 contracts"]);
+    expect(diffMoves(base, next)).toEqual(["+ Trade flow", "+ check: BTC price ≥ $64,000", "pays $5 → $10"]);
   });
 
   it("says nothing when nothing changed", () => {

@@ -79,7 +79,8 @@ export function blueprintOf(p: Proposal): Blueprint {
   const does: Block[] = [];
   const gets: Block[] = [];
   if (a) {
-    does.push({ ...doesLine(a), cost: maxCost(a) || undefined });
+    // The amount is in the label itself, so the block carries no separate price.
+    does.push(doesLine(a));
     gets.push(getsLine(p));
   } else gets.push(getsLine(p));
   const isCombo = a?.kind === "prediction_order" && Boolean(a.combo);
