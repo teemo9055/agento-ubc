@@ -30,9 +30,10 @@ export function actionText(a: MoveAction) {
 
 export function conditionLabel(c: MoveCondition) {
   const coin = c.symbol.replace(/usd$/, "").toUpperCase();
-  const what = c.metric === "oracle_price" ? `Chainlink ${coin}` : c.metric === "spot_price" ? `${coin} price` : c.metric === "yes_price" ? "YES price" : "NO price";
+  const what = c.metric === "oracle_price" ? `Chainlink ${coin}` : c.metric === "spot_price" ? `${coin} price` : c.metric === "yes_price" ? "Its price" : "The other side's price";
   const dollars = c.metric === "spot_price" || c.metric === "oracle_price";
-  return `${what} ${c.op === "<=" ? "≤" : "≥"} ${dollars ? `$${c.value.toLocaleString()}` : cents(c.value)}`;
+  // Spelled out: "is $64,000 or more", not a symbol.
+  return `${what} is ${dollars ? `$${c.value.toLocaleString()}` : cents(c.value)} or ${c.op === "<=" ? "less" : "more"}`;
 }
 
 /** The most an order can spend. Selling spends nothing. */

@@ -259,7 +259,7 @@ test("the work is drawn beside the chat, and the likeliest next step is one tap"
   await expect(space.locator("[data-ghost]")).toHaveCount(0);
   await expect(page.getByTestId("workspace-cost")).toContainText("Up to $");
   // The move's market is followed live: what it costs to buy right now.
-  await expect(page.getByTestId("live-price")).toContainText(/to buy|no seller|Resolved/, { timeout: 15_000 });
+  await expect(page.getByTestId("live-price")).toContainText(/Costs|Nobody is selling|happen/, { timeout: 15_000 });
   await expect(page.getByTestId("stages").locator("[aria-current=step]")).toHaveText(/Shape it/);
   // Right: ways to change it, one tap each.
   await expect(page.getByTestId("quick").getByRole("button").first()).toBeVisible();
@@ -345,6 +345,11 @@ test("quick changes are applied at once: the drawing and the cost follow without
   await expect(does).not.toHaveText(mid, { timeout: 3_000 });
   await page.getByTestId("quick-primary").click();
   await expect(page.getByTestId("review-card")).toBeVisible({ timeout: 30_000 });
+  // The review answers four things: what you asked for, what happens, what if it goes wrong, the most it costs.
+  await expect(page.getByTestId("review-want")).toContainText("What are BTC odds right now?");
+  await expect(page.getByTestId("review-steps").getByTestId("brief-step").first()).toBeVisible();
+  await expect(page.getByTestId("review-risk").first()).toBeVisible();
+  await expect(page.getByTestId("review-total")).toContainText("You get");
   // While reviewing, the same changes rebuild the work order and its cost.
   const cost = await page.getByTestId("review-cost").innerText();
   await page.getByTestId("quick-option").filter({ hasText: /more|instead/ }).first().click();

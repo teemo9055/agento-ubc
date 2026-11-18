@@ -148,7 +148,7 @@ describe("plans across agents", () => {
 
     it("one doable part is a single move with the brief; none is the brief alone", async () => {
       const one = await brief({ drivers: [fuel, beans], steps: [step("inso", "order")] });
-      expect(one).toMatchObject({ proposal: { title: "Buy YES: BTC A" }, brief: { drivers: [{ step: "s1" }, { help: "no" }] } });
+      expect(one).toMatchObject({ proposal: { action: { symbol: "GEMI-BTC-A" } }, brief: { drivers: [{ step: "s1" }, { help: "no" }] } });
       expect("plan" in one && one.plan).toBeFalsy();
       const none = await brief({ drivers: [cold, beans], steps: [] });
       expect(none).toMatchObject({ brief: { drivers: [{ help: "mainnet" }, { help: "no" }] } });

@@ -342,6 +342,7 @@ export type ProposalInput = z.infer<typeof ProposalInput>;
 
 import { limits } from "./settings";
 import { mainnetOn } from "@/lib/network";
+import { askOf, plainWords, titleOf } from "@/lib/plain";
 import type { Brief } from "@/lib/types";
 const round2 = (x: number) => Math.round(x * 100) / 100;
 /** An order needs time to rest; refuse contracts closing sooner than this. */
@@ -531,10 +532,10 @@ export async function validateProposal(agent: AgentId, input: unknown, id: strin
   return {
     proposal: {
       id,
-      title: p.title,
-      why: p.why,
-      // A hedge's question is written from the sized order, so its numbers are always the real ones.
-      ask: hedgeOf(p.hedge, action) && action?.kind === "prediction_order" ? `Pay up to $${round2(action.maxPrice * action.quantity).toFixed(2)} now; get $${action.quantity} back if “${action.label}” ${action.side === "yes" ? "happens" : "doesn't happen"}?` : p.ask,
+      // The name and the question are written by code from the checked move, in everyday words, so their numbers are always the real ones.
+      title: titleOf({ action, hedge: hedgeOf(p.hedge, action), title: p.title }),
+      why: plainWords(p.why),
+      ask: action ? askOf({ action, hedge: hedgeOf(p.hedge, action), ask: p.ask }) : p.ask,
       research,
       action,
       condition,

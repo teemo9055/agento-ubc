@@ -4,6 +4,7 @@ import { aiChat, aiEnabled, type AiUsage, type ChatTurn, type ToolSpec } from ".
 import * as gemini from "./gemini";
 import { describeAction, tradingVenue, VENUE_NAME, VENUE_NOTE } from "./exchange";
 import { mainnetOn } from "@/lib/network";
+import { plainWords } from "@/lib/plain";
 import type { Brief } from "@/lib/types";
 import { ACTIONS, FREE_TOOLS, PlanInput, ProposalInput, researchMenu, runFreeTool, TOOLKIT, validatePlan, validateProposal } from "./tools";
 import { checksText, conditionText } from "./agents/toolbox";
@@ -78,11 +79,11 @@ function system(agent: AgentId) {
     [
       "HOW YOU TALK (most important):",
       "- Lead with the answer in the first sentence. Then only the 1-2 facts that matter, with the numbers.",
-      "- Sound like a person texting a friend who knows the field: contractions, plain words, 'you' and 'I'. Give your honest take and the one reason for it.",
+      "- Sound like a person texting a friend who has NEVER traded: contractions, everyday words, 'you' and 'I'. Give your honest take and the one reason for it. No market shorthand: cover (not hedge), parts (not legs), chance (not implied probability), 'pays $10 if…' (not '10 YES at 50¢'), 'waits for a seller' (not resting order).",
       "- Keep it under ~60 words unless the user asks for detail. No headings, tables or bold. A short list only when comparing 3+ things.",
-      "- Never use filler: no 'Great question', 'Certainly', 'I've set up', 'Here is', 'Let me know', 'As an AI', 'Please note'. Don't restate the user's question.",
+      "- Never use filler: no 'Great question', 'Certainly', 'I've set up', 'Here is', 'Let me know', 'As an AI'. Don't restate the user's question.",
       "- LENGTH: an answer is at most 2 sentences, about 35 words. With a move or plan card: ONE sentence saying why. The card already shows the numbers, where the order goes and the button, so never mention the card, never say 'approve', 'check the details' or where orders go.",
-      "- When you propose a move, don't repeat its numbers in the text. Your Next: replies should then be tweaks to THIS move (e.g. 'Only if under 40¢', 'Add the trade flow ($0.10)', 'Make it $3') or the next thing to look at.",
+      "- When you propose a move, don't repeat its numbers in the text. Your Next: replies then ADD to this move (a check, a paid lookup), never a size or price: the app offers those.",
       "- If you can't do something, say so in one line and offer the closest thing you can do.",
       "Good: 'Markets give the Lakers 62%, so Phoenix is your underdog at 38¢, and it's held there all afternoon.'",
       "Bad: 'Great question! I have looked into the Lakers game for you. Based on my research, the Los Angeles Lakers are currently favored...'",
@@ -219,7 +220,8 @@ export function tighten(text: string, hasCard: boolean): string {
   const sentences = text.replace(/\s*\n+\s*/g, " ").split(/(?<=[.!?])\s+/);
   const kept = sentences.map((s) => s.trim()).filter((s) => s && !(hasCard && /\b(card|approve it|to approve|details below|set it up below)\b/i.test(s)) && !/^this goes to (simulation|gemini)/i.test(s));
   const out = kept.slice(0, hasCard ? 2 : 4).join(" ");
-  return out || text.trim();
+  // Whatever shorthand slipped through is put into everyday words.
+  return plainWords(out || text.trim());
 }
 
 function splitNext(text: string) {

@@ -82,7 +82,8 @@ describe("plain words for a move", () => {
   it("says what you pay, what you get and when", () => {
     expect(askOf(move())).toBe("Pay up to $5 to get $10 if “$65,000 or above” happens (BTC price on November 30)?");
     expect(askOf(move({ action: { ...buy, side: "no" } }))).toContain("doesn't happen");
-    expect(titleOf(move())).toBe("Yes: $65,000 or above");
+    expect(titleOf(move())).toBe("BTC price on November 30: $65,000 or above");
+    expect(titleOf(move({ action: { ...buy, side: "no" } }))).toBe("BTC price on November 30: Below $65,000");
     expect(titleOf(move({ hedge: { protects: "fuel going up", lossUsd: 20, cost: 5, payout: 10, covered: 5 } }))).toBe("Cover: fuel going up");
   });
 

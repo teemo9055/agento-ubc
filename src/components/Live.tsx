@@ -3,6 +3,7 @@ import { useEffect, useMemo, useState } from "react";
 import type { MoveAction, Proposal, Settlement, Venue } from "@/lib/types";
 import type { Tick } from "@/server/live";
 import { cents, legText } from "@/lib/move";
+import { chance, outcomeOf } from "@/lib/plain";
 import { Icon } from "./Icon";
 
 type Watch = { eventTicker: string; symbol: string };
@@ -107,7 +108,7 @@ export function LiveMarket({ action, hedge, venue, settlement, held }: { action:
     return (
       <section className="rounded-2xl border-[1.5px] border-ink bg-panel shadow-[3px_3px_0_0_var(--agent)]" aria-label="Your cover" data-testid="policy-card">
         <div className="flex items-center justify-between gap-2 border-b border-[#f1f0ec] px-4 py-2.5">
-          <div className="font-pixel text-[12px] text-agent-ink">{hedge ? "Your cover" : "One contract, several outcomes"}</div>
+          <div className="font-pixel text-[12px] text-agent-ink">{hedge ? "Your cover" : "Pays only if all of these happen"}</div>
           <LiveDot t={first} />
         </div>
         <div className="px-4 py-3">
@@ -137,7 +138,7 @@ export function LiveMarket({ action, hedge, venue, settlement, held }: { action:
                     <span className="block text-[12px] text-ink-3">{l.event}</span>
                   </span>
                   <span className="num shrink-0 text-right text-[12.5px] text-ink-2">
-                    {hit === true ? "happened" : hit === false ? "didn't happen" : price != null ? `${cents(price)} alone` : "no seller"}
+                    {hit === true ? "happened" : hit === false ? "didn't happen" : price != null ? `${chance(price)} on its own` : "no seller"}
                   </span>
                 </li>
               );
@@ -162,17 +163,18 @@ export function LiveMarket({ action, hedge, venue, settlement, held }: { action:
     <section className="rounded-2xl border border-line bg-panel px-4 py-3" aria-label="Live market" data-testid="live-market">
       <div className="flex items-center justify-between gap-2">
         <div className="min-w-0 truncate text-[13px] font-semibold">
-          {a.side.toUpperCase()} · {a.label}
+          {a.event ? `${a.event}: ` : ""}
+          {outcomeOf(a)}
         </div>
         <LiveDot t={first} />
       </div>
       <p className="num mt-1 text-[13px] text-ink-2" data-testid="live-price">
-        {!first ? "Reading the market…" : first.resolved ? `Resolved ${first.resolved.toUpperCase()}` : `${buy != null ? `${cents(buy)} to buy` : "no seller"} · ${sell != null ? `${cents(sell)} if you sold` : "no buyer"}${closesIn(first.closesAt) ? ` · ${closesIn(first.closesAt)}` : ""}`}
-        {buy != null && !first?.resolved && buy <= a.maxPrice ? " · at or under your limit" : ""}
+        {!first ? "Reading the market…" : first.resolved ? (first.resolved === a.side ? "It happened: this paid out" : "It didn't happen: this paid nothing") : `${buy != null ? `Costs ${cents(buy)} now for each $1 it can pay (${chance(buy)})` : "Nobody is selling right now"}${sell != null ? ` · sells for ${cents(sell)}` : ""}${closesIn(first.closesAt) ? ` · ${closesIn(first.closesAt)}` : ""}`}
+        {buy != null && !first?.resolved ? (buy <= a.maxPrice ? " · within the price you set" : " · above the price you set, so it waits") : ""}
       </p>
       {worth != null && !first?.resolved && (
         <p className="num mt-0.5 text-[12.5px] text-ink-3" data-testid="live-worth">
-          Your {held} contract{held === 1 ? "" : "s"} would sell for about ${worth.toFixed(2)} now (cost ${(held! * a.maxPrice).toFixed(2)}).
+          What you hold would sell for about ${worth.toFixed(2)} now (you paid up to ${(held! * a.maxPrice).toFixed(2)}).
         </p>
       )}
       {first && !first.resolved && <StrikeMeter t={first} side={a.side} label={a.label} />}

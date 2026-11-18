@@ -6,6 +6,8 @@ import type { Phase, Run } from "@/lib/types";
 import { paidInUsdc } from "@/lib/types";
 import { fmt, sum } from "@/lib/money";
 import { outcomeOf } from "@/lib/outcome";
+import { risksOf } from "@/lib/risks";
+import { getsLine } from "@/lib/plain";
 import { VenueBadge } from "./Chat";
 import { Button, Spinner } from "./ui";
 import { Icon } from "./Icon";
@@ -68,39 +70,73 @@ export function ReviewCard({ run }: { run: Run }) {
   const data = sum(run.lines.filter((l) => paidInUsdc(l.rail)).map((l) => l.approved));
   const order = orderCost(run);
   const trade = p?.action && p.action.kind !== "itinerary";
+  const risks = risksOf(run);
+  const gets = p ? getsLine(p) : undefined;
+  // What the person asked for, in their own words. A step of a plan was asked for by the plan, not typed by them.
+  const want = run.parentId ? undefined : run.task.trim();
+  const Part = ({ title, children, testid }: { title: string; children: React.ReactNode; testid: string }) => (
+    <div className="border-t border-[#f1f0ec] px-4 py-3" data-testid={testid}>
+      <div className="mb-1 text-[11px] font-semibold uppercase tracking-wide text-ink-3">{title}</div>
+      {children}
+    </div>
+  );
   return (
     <section className="rounded-2xl border-[1.5px] border-ink bg-panel shadow-[4px_4px_0_0_var(--agent)]" aria-label="Review" data-testid="review-card">
-      <div className="flex flex-wrap items-start justify-between gap-2 border-b border-[#f1f0ec] px-4 py-3.5">
+      <div className="flex flex-wrap items-start justify-between gap-2 px-4 py-3.5">
         <div className="min-w-0">
           <div className="font-pixel text-[12px] text-agent-ink">Review</div>
           <h2 className="mt-0.5 text-[16px] font-semibold leading-snug">{p?.ask ?? run.task}</h2>
         </div>
         {trade && <VenueBadge venue={p?.venue ?? "paper"} />}
       </div>
-      <ol className="px-4 py-2" aria-label="What happens">
-        {run.phases.map((ph, i) => (
-          <StepRow key={ph.id} p={ph} run={run} n={i + 1} />
-        ))}
-      </ol>
-      {p?.hedge && (
-        <p className="mx-4 mb-3 rounded-lg bg-agent-soft px-3 py-2 text-[13px] text-ink" data-testid="hedge-line">
-          This is insurance for {p.hedge.protects}.{" "}
-          {p.hedge.covered < p.hedge.lossUsd - 0.5 ? `It covers about $${Math.round(p.hedge.covered)} of your $${p.hedge.lossUsd}. ` : ""}
-          If it doesn&apos;t happen, the ${p.hedge.cost.toFixed(2)} is what the cover cost you.
-        </p>
+      {want && (
+        <Part title="You asked for" testid="review-want">
+          <p className="text-[14px] leading-snug text-ink">“{want.length > 180 ? `${want.slice(0, 177)}…` : want}”</p>
+        </Part>
       )}
-      <div className="flex flex-wrap items-baseline justify-between gap-x-6 gap-y-1 border-t border-[#f1f0ec] px-4 py-3 text-[13.5px]">
-        <span className="text-ink-2">Most this can cost</span>
-        <span className="num text-right font-semibold" data-testid="review-cost">
-          {data > 0n || order === 0 ? `${fmt(data)} USDC for data` : ""}
-          {data > 0n && order > 0 ? " + " : ""}
-          {order > 0 ? `$${order.toFixed(2)} order` : ""}
-        </span>
-      </div>
-      <p className="px-4 pb-3.5 text-[12.5px] text-ink-3">
-        {data > 0n ? "The data money sits in a vault that can only pay these steps; what isn't used comes back. " : ""}
-        {order > 0 ? (p?.venue === "paper" ? "No exchange is connected, so the order is practice only." : "The order is paid on the exchange.") : ""}
-      </p>
+      <Part title="What happens" testid="review-steps">
+        <ol aria-label="What happens">
+          {run.phases.map((ph, i) => (
+            <StepRow key={ph.id} p={ph} run={run} n={i + 1} />
+          ))}
+        </ol>
+        {p?.hedge && (
+          <p className="mt-1 rounded-lg bg-agent-soft px-3 py-2 text-[13px] text-ink" data-testid="hedge-line">
+            This is insurance for {p.hedge.protects}.{" "}
+            {p.hedge.covered < p.hedge.lossUsd - 0.5 ? `It covers about $${Math.round(p.hedge.covered)} of your $${p.hedge.lossUsd}. ` : ""}
+            If it doesn&apos;t happen, the ${p.hedge.cost.toFixed(2)} is what the cover cost you.
+          </p>
+        )}
+      </Part>
+      {risks.length > 0 && (
+        <Part title="If something goes wrong" testid="review-risks">
+          <ul className="space-y-1.5">
+            {risks.map((r) => (
+              <li key={r.if} className="text-[13.5px] leading-snug" data-testid="review-risk">
+                <span className="font-semibold text-ink">{r.if}:</span> <span className="text-ink-2">{r.then}</span>
+              </li>
+            ))}
+          </ul>
+        </Part>
+      )}
+      <Part title="Most this can cost" testid="review-total">
+        <div className="flex flex-wrap items-baseline justify-between gap-x-6 gap-y-1">
+          <span className="num text-[16px] font-semibold" data-testid="review-cost">
+            {data > 0n || order === 0 ? `${fmt(data)} USDC for data` : ""}
+            {data > 0n && order > 0 ? " + " : ""}
+            {order > 0 ? `$${order.toFixed(2)} order` : ""}
+          </span>
+          {gets && p?.action && (
+            <span className="text-[13.5px] text-ink-2" data-testid="review-gets">
+              You get: <span className="font-semibold text-ink">{gets.label}</span>
+            </span>
+          )}
+        </div>
+        <p className="mt-1 text-[12.5px] text-ink-3">
+          {data > 0n ? "The data money sits in a vault that can only pay these steps; what isn't used comes back. " : ""}
+          {order > 0 ? (p?.venue === "paper" ? "No exchange is connected, so the order is practice only." : "The order is paid on the exchange.") : ""}
+        </p>
+      </Part>
     </section>
   );
 }

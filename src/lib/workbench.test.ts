@@ -48,9 +48,9 @@ describe("the sketch of the work", () => {
     expect(bp.kind).toBe("conditional");
     expect(bp.lanes.map((l) => [l.key, l.blocks.map((b) => b.label)])).toEqual([
       ["reads", ["Chainlink BTC"]],
-      ["checks", ["Chainlink BTC ≥ $63,000", "BTC price ≥ $63,000"]],
-      ["does", ["Buy 4 × YES"]],
-      ["gets", ["$4.00 if YES wins"]],
+      ["checks", ["Chainlink BTC is $63,000 or more", "BTC price is $63,000 or more"]],
+      ["does", ["Pay up to $2.32"]],
+      ["gets", ["$4 if it's “$65,000 or above”"]],
     ]);
     expect(bp.costUsd).toBeCloseTo(0.0001 + 0.58 * 4, 6);
     expect(bp.lanes.flatMap((l) => l.blocks).some((b) => b.ghost)).toBe(false);
@@ -59,7 +59,7 @@ describe("the sketch of the work", () => {
   it("draws a hedge as a payout, a trip as days, and a lookup as an answer", () => {
     const hedge = blueprintOf(move({ hedge: { protects: "my BTC", lossUsd: 20, cost: 2.32, payout: 4, covered: 0.2 } }));
     expect(hedge.kind).toBe("hedge");
-    expect(hedge.lanes.at(-1)!.blocks[0].label).toBe("$4.00 if it happens");
+    expect(hedge.lanes.at(-1)!.blocks[0].label).toBe("$4 if it happens");
     const trip = blueprintOf(move({ research: [], action: { kind: "itinerary", stops: ["Dallas", "Austin"], hoursPerDay: 4 } }));
     expect([trip.kind, trip.costUsd]).toEqual(["trip", 0]);
     const look = blueprintOf(move({ action: undefined }));
