@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { SELLERS, priceAt, type Seller } from "@/server/sellers";
 import { recordSale } from "@/server/sales";
+import { answerHash } from "@/server/delivery";
 import { PRODUCTS, decodeHeader, encodeHeader, requirements, verifyAndSettle, type PaymentPayload } from "@/server/x402";
 
 export const dynamic = "force-dynamic";
@@ -46,8 +47,24 @@ export async function GET(req: NextRequest, ctx: { params: Promise<{ product: st
     return NextResponse.json({ x402Version: 1, error: (e as Error).message, accepts: [reqs] }, { status: 402 });
   }
 
-  const payer = decodeHeader<PaymentPayload>(header).payload.authorization.from;
-  recordSale({ product: id, payer, amount: price.toString(), tx: settled.hash, own: req.headers.get("x-agento-buyer") === "job" });
+  // Test switch: the seller takes the money and sends an empty answer, so the delivery check and refund can be seen.
+  if (fault === "bad_delivery") data = {};
+  const auth = decodeHeader<PaymentPayload>(header).payload.authorization;
+  const payer = auth.from;
+  const params = Object.fromEntries([...q.entries()].filter(([k]) => k !== "seller"));
+  const kept = JSON.stringify(data ?? null);
+  recordSale({
+    product: id,
+    payer,
+    amount: price.toString(),
+    tx: settled.hash,
+    own: req.headers.get("x-agento-buyer") === "job",
+    nonce: auth.nonce,
+    params,
+    answerHash: answerHash(data),
+    // Kept so a lost answer can be sent again; very large answers are only fingerprinted.
+    answer: kept.length <= 200_000 ? kept : undefined,
+  });
   const res = NextResponse.json({ data });
   res.headers.set(
     "x-payment-response",

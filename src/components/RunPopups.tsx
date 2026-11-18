@@ -137,6 +137,7 @@ const TITLE: Record<string, string> = {
   model_error: "Analysis crashed",
   exchange_rejected: "Exchange refused the order",
   approval_timeout: "Approval timed out",
+  bad_delivery: "The seller didn't deliver",
   unknown: "Step failed",
 };
 
@@ -175,6 +176,11 @@ export function FailureModal({ run, failure, onClose }: { run: Run; failure: Fai
           <Amount value={failure.notCharged} className="mt-1 block text-lg font-semibold" />
         </div>
       </div>
+      {failure.refunded && failure.refunded !== "0" && (
+        <div className="mt-2 rounded-lg border border-good/30 bg-good/5 p-3 text-[13px]" data-testid="failure-refunded">
+          Sent back: <Amount value={failure.refunded} className="font-semibold" /> USDC. It reaches you when the job closes.
+        </div>
+      )}
       {line && (
         <div className="num mt-2 text-[12px] text-ink-3">
           Step so far: {fmt(line.actual)} of {fmt(line.approved)} USDC to {line.payeeName}

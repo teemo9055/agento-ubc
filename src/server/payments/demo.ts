@@ -3,6 +3,7 @@ import { PRODUCTS, requirements } from "../x402";
 import { SELLERS, priceAt } from "../sellers";
 import type { PaymentAdapter } from "./index";
 import { PaymentError } from "./index";
+import { checkDelivery } from "../delivery";
 
 const SCALE = Number(process.env.DEMO_DELAY_SCALE ?? 1);
 const wait = (ms: number) => new Promise((r) => setTimeout(r, ms * SCALE));
@@ -62,7 +63,8 @@ export const demoAdapter: PaymentAdapter = {
     onState("pending");
     await wait(700);
     if (req.fault === "settle_fails") throw new PaymentError("settle_fails", "Signed, but settlement failed");
-    const data = await PRODUCTS[req.product].run(new URLSearchParams(req.params));
+    // Test switch: the seller takes the money and answers with nothing.
+    const data = req.fault === "bad_delivery" ? {} : await PRODUCTS[req.product].run(new URLSearchParams(req.params));
     // Mirrors the vault: once closed, pending authorizations can't settle.
     if (closedRuns.has(run.id)) throw new PaymentError("settle_fails", "Vault closed before settlement");
     spentByRun.set(run.id, (spentByRun.get(run.id) ?? 0n) + amount);
@@ -76,6 +78,14 @@ export const demoAdapter: PaymentAdapter = {
     await wait(600);
     spentByRun.set(run.id, (spentByRun.get(run.id) ?? 0n) + amount);
     return { amount };
+  },
+
+  async refund(run, claim) {
+    await wait(400);
+    // Same rule the seller applies: only an answer that fails a published check is refunded.
+    if (checkDelivery(claim.answer, PRODUCTS[claim.product]?.promise).ok) return { refused: "The answer passes every published check" };
+    spentByRun.set(run.id, (spentByRun.get(run.id) ?? 0n) - claim.amount);
+    return { amount: claim.amount };
   },
 
   async close(run) {

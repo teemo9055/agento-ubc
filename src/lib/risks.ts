@@ -29,6 +29,13 @@ export function risksOf(run: Pick<Run, "proposal" | "lines">): Risk[] {
       if: paid.length === 1 ? "The data seller doesn't answer, or asks for more" : "A data seller doesn't answer, or asks for more",
       then: "The job pauses and asks you: try again, skip it, or stop. It can never pay more than the amounts shown.",
     });
+  if (paid.length)
+    out.push({
+      if: "A seller sends an empty or wrong answer",
+      then: paid.some((l) => l.rail === "gateway")
+        ? "It isn't used. Our own seller sends the money back; an outside seller is paused after two misses, and you aren't charged for its miss."
+        : "It isn't used, and the seller sends the money back. A seller that misses twice in a day is paused.",
+    });
   if (p.condition && trade) out.push({ if: "The check doesn't pass", then: `Nothing is ${selling ? "sold" : "bought"}.${data > 0 ? ` The lookups already paid for (${money(data)}) stay paid.` : ""}` });
   if (trade && p.venue === "paper") out.push({ if: "No exchange is connected", then: "This runs as practice: the order is priced from the real market but never sent, and no order money moves." });
   if (trade && p.venue !== "paper")

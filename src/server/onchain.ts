@@ -1,5 +1,6 @@
 import { decodeFunctionResult, encodeFunctionData, formatUnits, isAddress, parseAbi, type Hex } from "viem";
 import { payRequest } from "./nanopay";
+import { DeliveryError } from "./delivery";
 
 /**
  * Onchain data bought per call from Quicknode on Circle's Agent Marketplace: one vendor, 130+ chains,
@@ -20,7 +21,9 @@ export interface Paid {
 /** One paid JSON-RPC request. */
 async function rpc<T>(chain: string, method: string, params: unknown[]): Promise<{ result: T; paid: Paid }> {
   const r = await payRequest<{ result?: T; error?: { message: string } }>(node(chain), { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ jsonrpc: "2.0", id: 1, method, params }) }, undefined, process.env.QUICKNODE_X402_BASE ? undefined : QUICKNODE_PAYEE);
-  if (r.data.result === undefined || r.data.result === null) throw new Error(`Quicknode ${chain}: ${r.data.error?.message ?? "no result"}`);
+  // Paid, but no result: the delivery check fails (the vendor gets a strike; you aren't charged).
+  if (r.data.result === undefined || r.data.result === null)
+    throw new DeliveryError({ ok: false, test: r.data.error ? "readable" : "answered", reason: `Quicknode ${chain}: ${r.data.error?.message ?? "no result"}` }, r.data);
   return { result: r.data.result, paid: { amountUsdc: Number(r.amount) / 1e6, payTo: r.payTo, via: "Quicknode x402 · Circle Gateway nanopayment", at: r.at } };
 }
 
@@ -84,7 +87,7 @@ export async function oraclePrices(symbols: string[]): Promise<OraclePrice[]> {
   );
   return syms.map((symbol, i) => {
     const [d, dec, round] = [results[i * 3], results[i * 3 + 1], results[i * 3 + 2]];
-    if (!d.success || !dec.success || !round.success || round.returnData === "0x") throw new Error(`Chainlink feed for ${symbol} didn't answer`);
+    if (!d.success || !dec.success || !round.success || round.returnData === "0x") throw new DeliveryError({ ok: false, test: "complete", reason: `Chainlink feed for ${symbol} didn't answer` });
     const decimals = Number(decodeFunctionResult({ abi: feedAbi, functionName: "decimals", data: dec.returnData }));
     const [roundId, answer, , updatedAt] = decodeFunctionResult({ abi: feedAbi, functionName: "latestRoundData", data: round.returnData }) as readonly [bigint, bigint, bigint, bigint, bigint];
     const updated = Number(updatedAt) * 1000;

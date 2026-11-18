@@ -1,4 +1,5 @@
 import type { AgentId, Card, Deliverable, MoveAction, MoveCondition, OrderResult, Proposal, Run } from "@/lib/types";
+import { VENDOR_PROMISES } from "../delivery";
 import { SELLERS } from "../sellers";
 import { PRODUCTS } from "../x402";
 import * as gemini from "../gemini";
@@ -351,7 +352,10 @@ export function toolboxAgent(id: AgentId): AgentDef {
         const v = VENDOR_TOOLS[step.tool];
         const t = RESEARCH[step.tool];
         ctx.progress(0.2, step.label);
-        const got = await ctx.buyMarketplace!(step.id, t.key(step.args), t.product, () => v.run(step.args, v.price(step.args)));
+        const got = await ctx.buyMarketplace!(step.id, t.key(step.args), t.product, () => v.run(step.args, v.price(step.args)), {
+          promise: VENDOR_PROMISES[step.tool],
+          asked: { ...(step.args.symbol ? { symbol: step.args.symbol } : {}), ...(step.args.address ? { address: step.args.address } : {}) },
+        });
         mem.data[step.id] = got;
         ctx.progress(1, v.note(got));
         return;

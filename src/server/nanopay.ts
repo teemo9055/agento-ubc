@@ -1,4 +1,5 @@
 import { BatchEvmScheme, CHAIN_CONFIGS } from "@circle-fin/x402-batching/client";
+import { MaybeChargedError } from "./delivery";
 import { encodeFunctionData, parseAbi, type Hex } from "viem";
 import { circleExecute, circleSignTypedData, circleWallets } from "./circle";
 import { USDC, publicClient, usdcAbi } from "./chain";
@@ -187,11 +188,21 @@ export async function payRequest<T>(url: string, init: RequestInit = {}, maxAmou
   if (!req.resource) throw new Error("Seller sent no resource metadata");
   const payload = await batchScheme().createPaymentPayload(req.x402Version, option as never);
   const sig = Buffer.from(JSON.stringify({ ...payload, accepted: option, resource: req.resource })).toString("base64");
-  const res = await fetch(url, { ...init, headers: { ...(init.headers as Record<string, string>), "PAYMENT-SIGNATURE": sig }, signal: AbortSignal.timeout(20_000) });
-  if (!res.ok) throw new Error(`Payment to ${new URL(url).host} failed: ${res.status} ${(await res.text()).slice(0, 160)}`);
+  // From here a signed payment exists. If the answer is lost, Gateway may still settle it in its next
+  // batch, so this is reported as "may have been charged", never as "not charged".
+  let res: Response;
+  try {
+    res = await fetch(url, { ...init, headers: { ...(init.headers as Record<string, string>), "PAYMENT-SIGNATURE": sig }, signal: AbortSignal.timeout(20_000) });
+  } catch (e) {
+    throw new MaybeChargedError(`No answer from ${new URL(url).host} after paying (${(e as Error).message.slice(0, 80)})`);
+  }
+  if (res.status === 402) throw new Error(`Payment to ${new URL(url).host} was refused: ${(await res.text()).slice(0, 160)}`);
+  if (!res.ok) throw new MaybeChargedError(`${new URL(url).host} answered ${res.status} after payment`);
   const settleHeader = res.headers.get("payment-response");
+  const data = (await res.json().catch(() => undefined)) as T | undefined;
+  if (data === undefined) throw new MaybeChargedError(`${new URL(url).host} sent an unreadable answer after payment`);
   return {
-    data: (await res.json()) as T,
+    data,
     amount,
     payTo: option.payTo as Hex,
     resource: url,

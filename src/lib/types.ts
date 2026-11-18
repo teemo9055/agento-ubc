@@ -21,6 +21,7 @@ export type FailureCode =
   | "model_error"
   | "exchange_rejected"
   | "approval_timeout"
+  | "bad_delivery"
   | "unknown";
 
 export type FailureAction = "retry" | "skip" | "edit" | "cancel" | "topup";
@@ -57,6 +58,16 @@ export interface Payment {
   at?: string;
   /** How it was paid when not a direct onchain transaction, e.g. a batched Gateway nanopayment. */
   via?: string;
+  /** The answer failed a published delivery check. */
+  delivery?: { test: string; reason: string };
+  /**
+   * What happened to the money for an answer that failed: sent back on Arc, absorbed by the app
+   * (an outside seller that doesn't refund; you aren't charged), or not known yet (the answer was
+   * lost and the seller couldn't send it again; no blame either way).
+   */
+  refund?: { state: "refunded" | "absorbed" | "unknown"; amount: string; txHash?: Hex; note?: string };
+  /** Signed, then the answer was lost: the seller may still collect it in its next batch. */
+  maybeCharged?: boolean;
 }
 
 export interface Phase {
@@ -108,6 +119,8 @@ export interface Failure {
   message: string;
   charged: string;
   notCharged: string;
+  /** Sent back after the answer failed the delivery check. */
+  refunded?: string;
   options: FailureAction[];
 }
 

@@ -130,6 +130,19 @@ describe("orchestrator (demo rail)", () => {
     expect(total(run)).toBe(settled(run).reduce((a, p) => a + BigInt(p.amount!), 0n));
   });
 
+  it("bad_delivery: the empty answer isn't used, the price comes back, retry gets a real one", async () => {
+    const { run, seen } = await drive("BTC odds", ["bad_delivery"], { failure: ["retry"] });
+    expect(seen.failures).toEqual(["bad_delivery"]);
+    expect(run.status).toBe("done");
+    const refunded = run.phases.flatMap((p) => p.payments).filter((p) => p.refund?.state === "refunded");
+    expect(refunded).toHaveLength(1);
+    expect(refunded[0].delivery?.test).toBe("readable");
+    // What the lines say was spent equals what was paid minus what came back.
+    const net = settled(run).reduce((a, p) => a + BigInt(p.amount!), 0n) - BigInt(refunded[0].refund!.amount);
+    expect(total(run)).toBe(net);
+    expect(run.decisions.some((d) => /didn't deliver; refunded/.test(d.what))).toBe(true);
+  });
+
   it("insufficient_balance offers top up", async () => {
     const { run, seen } = await drive("BTC odds", ["insufficient_balance"], { failure: ["topup"] });
     expect(seen.failures).toEqual(["insufficient_balance"]);

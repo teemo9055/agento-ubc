@@ -67,6 +67,7 @@ export const usdcAbi = parseAbi([
   "function approve(address,uint256) returns (bool)",
   "function allowance(address,address) view returns (uint256)",
   "function authorizationState(address,bytes32) view returns (bool)",
+  "function transfer(address,uint256) returns (bool)",
   "function transferWithAuthorization(address from,address to,uint256 value,uint256 validAfter,uint256 validBefore,bytes32 nonce,bytes signature)",
 ]);
 

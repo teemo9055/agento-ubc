@@ -113,15 +113,21 @@ export const arcAdapter: PaymentAdapter = {
       },
     };
     onState("pending", { fee: auth.fee });
-    const res = await fetch(url(req), { headers: headers(req, { "x-payment": encodeHeader(payment) }), cache: "no-store" });
-
-    if (res.ok) {
-      const settled = decodeHeader<{ transaction: Hex }>(res.headers.get("x-payment-response") ?? "");
-      const body = (await res.json()) as { data: unknown };
-      return { data: body.data, result: { amount: value, txHash: settled.transaction, fee: auth.fee } };
+    // A lost answer (timeout, dropped connection) is not the same as a refused payment: find out from the chain which it was.
+    let res: Response | null = null;
+    try {
+      res = await fetch(url(req), { headers: headers(req, { "x-payment": encodeHeader(payment) }), cache: "no-store", signal: AbortSignal.timeout(45_000) });
+    } catch {
+      res = null;
     }
 
-    const reason = ((await res.json().catch(() => ({}))) as { error?: string }).error ?? `HTTP ${res.status}`;
+    if (res?.ok) {
+      const settled = decodeHeader<{ transaction: Hex }>(res.headers.get("x-payment-response") ?? "");
+      const body = (await res.json().catch(() => undefined)) as { data: unknown } | undefined;
+      return { data: body ? body.data : undefined, result: { amount: value, txHash: settled.transaction, fee: auth.fee } };
+    }
+
+    const reason = res ? (((await res.json().catch(() => ({}))) as { error?: string }).error ?? `HTTP ${res.status}`) : "no answer";
     const rejected = /underpaid|wrong payee|wrong network|expired|already used/i.test(reason);
 
     // Not settled: wait until chain time passes the authorization's expiry, confirm it was never used, release the cap.
@@ -132,8 +138,11 @@ export const arcAdapter: PaymentAdapter = {
     }
     const used = await publicClient.readContract({ address: USDC, abi: usdcAbi, functionName: "authorizationState", args: [vault, nonce] });
     if (used) {
-      // Settled after all; treat as paid.
-      return { data: null, result: { amount: value, fee: auth.fee } };
+      // Paid after all, but the answer was lost on the way: ask the seller to send it again, free.
+      const again = await fetch(`${APP_URL}/api/x402/redeliver?${new URLSearchParams({ payer: vault, nonce })}`, { cache: "no-store", signal: AbortSignal.timeout(10_000) })
+        .then((r) => (r.ok ? (r.json() as Promise<{ data: unknown; tx: Hex }>) : null))
+        .catch(() => null);
+      return { data: again ? again.data : undefined, result: { amount: value, txHash: again?.tx, fee: auth.fee } };
     }
     await send("agent", { address: vault, abi: vaultAbi, functionName: "release", args: [nonce] });
     if (rejected) throw new PaymentError("payment_rejected", `Seller rejected the payment (${reason}). Authorization released, nothing charged`);
@@ -145,6 +154,19 @@ export const arcAdapter: PaymentAdapter = {
     const tx = await send("agent", { address: vaultOf(run), abi: vaultAbi, functionName: "pay", args: [lineTuple(line), lineProof(run.lines, line).proof, amount, ref] });
     onState("pending");
     return { amount, txHash: tx.hash, fee: tx.fee };
+  },
+
+  async refund(run, claim) {
+    if (!claim.txHash) return { refused: "No settlement transaction to point to" };
+    const res = await fetch(`${APP_URL}/api/x402/refund`, {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ tx: claim.txHash, payer: vaultOf(run), answer: claim.answer ?? null }),
+      signal: AbortSignal.timeout(60_000),
+    }).catch(() => null);
+    if (!res) return { refused: "The seller didn't answer the claim" };
+    const body = (await res.json().catch(() => ({}))) as { refunded?: boolean; amount?: string; refundTx?: Hex; error?: string };
+    return body.refunded ? { amount: BigInt(body.amount ?? "0"), txHash: body.refundTx } : { refused: body.error ?? `HTTP ${res.status}` };
   },
 
   async close(run) {

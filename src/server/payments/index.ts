@@ -17,6 +17,14 @@ export interface PayResult {
   fee?: string;
 }
 
+/** A refund claim for an answer that failed the delivery check. */
+export interface RefundClaim {
+  product: string;
+  amount: bigint;
+  txHash?: Hex;
+  answer: unknown;
+}
+
 export class PaymentError extends Error {
   constructor(
     public code: "seller_402_timeout" | "payment_rejected" | "settle_fails" | "insufficient_balance",
@@ -47,6 +55,8 @@ export interface PaymentAdapter {
     onState: (s: TxState, p?: Partial<PayResult>) => void,
   ): Promise<{ data: unknown; result: PayResult }>;
   payDirect(run: Run, line: CostLine, amount: bigint, ref: Hex, onState: (s: TxState) => void): Promise<PayResult>;
+  /** Ask the seller to send the price back for an answer that failed its published checks. Null when it refused. */
+  refund(run: Run, claim: RefundClaim): Promise<{ amount: bigint; txHash?: Hex } | { refused: string }>;
   close(run: Run): Promise<{ refunded: bigint; txHash?: Hex }>;
 }
 

@@ -40,6 +40,8 @@ import { planTree } from "./merkle";
 import { adapterFor, PaymentError } from "./payments";
 import { SELLERS } from "./sellers";
 import { PRODUCTS } from "./x402";
+import { checkDelivery, DeliveryError, MaybeChargedError, type DeliveryPromise, type DeliveryVerdict } from "./delivery";
+import { recordDelivery, standing } from "./strikes";
 
 import { limits } from "./settings";
 import { partsProgress } from "@/lib/parts";
@@ -52,7 +54,7 @@ const REAPPROVAL_TIMEOUT_MS = Number(process.env.REAPPROVAL_TIMEOUT_MS ?? 120_00
 const FAULT_TIMEOUT_MS = Number(process.env.FAULT_TIMEOUT_MS ?? 8_000);
 /** Measured on Arc testnet: one vault authorize/pay call. 18-decimal native USDC. */
 const EST_FEE_PER_TX = 2_600_000_000_000_000n;
-const PAYMENT_FAULTS: FailureCode[] = ["seller_402_timeout", "payment_rejected", "settle_fails", "insufficient_balance", "price_increase", "approval_timeout"];
+const PAYMENT_FAULTS: FailureCode[] = ["seller_402_timeout", "payment_rejected", "settle_fails", "insufficient_balance", "price_increase", "approval_timeout", "bad_delivery"];
 
 type Waiter = (v: string) => void;
 
@@ -643,7 +645,8 @@ async function runPhase(ctl: Ctl, phaseId: string): Promise<void> {
         code,
         message: ((e as { shortMessage?: string }).shortMessage ?? (e as Error).message).split("\n")[0].slice(0, 160),
         charged: (phaseCharged(ctl, phaseId) - chargedBefore).toString(),
-        notCharged: ctl.run.phases.find((p) => p.id === phaseId)?.payments.find((p) => p.txState === "failed")?.amount ?? "0",
+        notCharged: ctl.run.phases.find((p) => p.id === phaseId)?.payments.find((p) => p.txState === "failed" && !p.maybeCharged)?.amount ?? "0",
+        refunded: e instanceof PhaseFailure ? e.refunded : undefined,
         options: optionsFor(code, phase, retryable),
       };
       emit(ctl, { type: "failure.raised", failure });
@@ -734,7 +737,9 @@ async function buy<T>(ctl: Ctl, phaseId: string, lineId: string, product: string
   }
 
   const line = ctl.run.lines.find((l) => l.id === lineId)!;
-  const payment: Payment = { id: key, lineId, txState: "planned", amount: amount.toString() };
+  // An attempt whose answer failed the delivery check keeps its own entry, so the receipt shows it and its refund.
+  const missed = ctl.run.phases.find((p) => p.id === phaseId)?.payments.filter((p) => (p.id === key || p.id.startsWith(`${key}#`)) && p.refund).length ?? 0;
+  const payment: Payment = { id: missed ? `${key}#${missed + 1}` : key, lineId, txState: "planned", amount: amount.toString() };
   const update = (p: Partial<Payment>) => {
     Object.assign(payment, p);
     emit(ctl, { type: "payment.updated", phaseId, payment: { ...payment, at: now() } });
@@ -745,37 +750,99 @@ async function buy<T>(ctl: Ctl, phaseId: string, lineId: string, product: string
     const fresh = ctl.run.lines.find((l) => l.id === lineId)!;
     emit(ctl, { type: "line.updated", line: { ...fresh, actual: (BigInt(fresh.actual) + result.amount).toString() } });
     update({ txState: "settled", txHash: result.txHash, networkFee: result.fee });
+    // Did it arrive? Only an answer that passes the seller's own published checks is used.
+    const verdict = checkDelivery(data, PRODUCTS[product]?.promise, params);
+    if (!verdict.ok) {
+      payment.delivery = { test: verdict.test, reason: verdict.reason };
+      throw await settleBadDelivery(ctl, lineId, product, quote.payTo, data, result.amount, result.txHash, verdict, update);
+    }
+    recordDelivery({ vendor: quote.payTo, ok: true, evidence: result.txHash });
     ctl.cache.set(key, data);
     emit(ctl, { type: "data.received", key, product, data });
     return data as T;
   } catch (e) {
-    update({ txState: "failed" });
+    if (!(e instanceof PhaseFailure && e.code === "bad_delivery")) update({ txState: "failed" });
     throw e;
   }
+}
+
+/**
+ * A paid answer that failed a published check. If the answer came back, the claim goes to the
+ * seller with the answer as evidence and the price comes back to the vault; the seller gets a strike.
+ * If nothing came back at all (lost on the way and couldn't be sent again), nobody is blamed: no
+ * strike, no claim, and the job says so.
+ */
+async function settleBadDelivery(
+  ctl: Ctl,
+  lineId: string,
+  product: string,
+  payee: Hex,
+  answer: unknown,
+  amount: bigint,
+  txHash: Hex | undefined,
+  verdict: Extract<DeliveryVerdict, { ok: false }>,
+  update: (p: Partial<Payment>) => void,
+): Promise<PhaseFailure> {
+  const seller = Object.values(SELLERS).find((s) => s.address.toLowerCase() === payee.toLowerCase())?.name ?? "The seller";
+  if (verdict.test === "answered") {
+    update({ refund: { state: "unknown", amount: amount.toString(), note: "Paid, but the answer was lost and couldn't be sent again" } });
+    log(ctl, { kind: "failure", what: `${PRODUCTS[product]?.description ?? product}: paid, answer lost`, why: verdict.reason, outcome: "rejected", by: "system", tx: txHash });
+    return new PhaseFailure("bad_delivery", `Paid, but the answer was lost on the way and couldn't be fetched again. Trying again pays again.`);
+  }
+  recordDelivery({ vendor: payee, ok: false, reason: `${verdict.test}: ${verdict.reason}`, evidence: txHash });
+  const r = await adapterFor(ctl.run)
+    .refund(ctl.run, { product, amount, txHash, answer })
+    .catch((e: Error) => ({ refused: e.message }));
+  if ("refused" in r) {
+    update({ refund: { state: "unknown", amount: amount.toString(), note: `Refund refused: ${r.refused}`.slice(0, 160) } });
+    log(ctl, { kind: "failure", what: `${seller} didn't deliver`, why: `${verdict.reason}; refund refused: ${r.refused}`, outcome: "rejected", by: "system", tx: txHash });
+    return new PhaseFailure("bad_delivery", `${seller} sent an answer that failed the check (${verdict.reason.toLowerCase()}) and didn't refund it.`);
+  }
+  const fresh = ctl.run.lines.find((l) => l.id === lineId)!;
+  const net = BigInt(fresh.actual) - r.amount;
+  emit(ctl, { type: "line.updated", line: { ...fresh, actual: (net < 0n ? 0n : net).toString() } });
+  update({ refund: { state: "refunded", amount: r.amount.toString(), txHash: r.txHash } });
+  log(ctl, { kind: "failure", what: `${seller} didn't deliver; refunded`, why: verdict.reason, amount: r.amount.toString(), outcome: "rejected", by: "system", tx: r.txHash });
+  return new PhaseFailure("bad_delivery", `${seller} sent an answer that failed the check (${verdict.reason.toLowerCase()}). Your ${fmt(r.amount.toString())} USDC was sent back.`, r.amount.toString());
 }
 
 /**
  * Buys from a Circle Agent Marketplace seller with a Gateway nanopayment. Same rules as vault
  * spends: an approved line, its payee, its price. Paid from the agent's Gateway balance.
  */
-async function buyMarketplace<T>(ctl: Ctl, phaseId: string, lineId: string, key: string, product: string, fetcher: () => Promise<T & { paid: { amountUsdc: number; payTo: string; via: string } }>): Promise<T> {
+async function buyMarketplace<T>(
+  ctl: Ctl,
+  phaseId: string,
+  lineId: string,
+  key: string,
+  product: string,
+  fetcher: () => Promise<T & { paid: { amountUsdc: number; payTo: string; via: string } }>,
+  check: { promise?: DeliveryPromise; asked?: Record<string, string> } = {},
+): Promise<T> {
   if (ctl.cache.has(key)) return ctl.cache.get(key) as T;
   if (ctl.cancelled) throw new Cancelled();
   const line = ctl.run.lines.find((l) => l.id === lineId);
   if (!line) throw new PhaseFailure("policy_block", "No approved line for this purchase");
+  // A seller that failed two deliveries in the last day is paused, with the reason, before anything is paid.
+  const st = standing(line.payee);
+  if (st.skipped) throw new PhaseFailure("policy_block", `${line.payeeName} is paused after ${st.failures.length} failed deliveries today (until ${new Date(st.until!).toUTCString().slice(17, 22)} UTC)`);
   const unit = BigInt(line.calls?.unitPrice ?? line.approved);
   const verdict = checkSpend(ctl.run, { lineId, payee: line.payee, amount: unit });
   if (!verdict.ok) throw new PhaseFailure("policy_block", verdict.detail);
   await ensureGatewayFunds().catch((e) => {
     throw e instanceof GatewayFundsError ? new PaymentError("payment_rejected", e.message) : e;
   });
-  const payment: Payment = { id: key, lineId, txState: "signing", amount: unit.toString(), via: "Circle Gateway nanopayment" };
+  const missed = ctl.run.phases.find((p) => p.id === phaseId)?.payments.filter((p) => (p.id === key || p.id.startsWith(`${key}#`)) && p.refund).length ?? 0;
+  const payment: Payment = { id: missed ? `${key}#${missed + 1}` : key, lineId, txState: "signing", amount: unit.toString(), via: "Circle Gateway nanopayment" };
   emit(ctl, { type: "payment.updated", phaseId, payment: { ...payment, at: now() } });
   try {
     const got = await fetcher();
     const paid = BigInt(Math.round(got.paid.amountUsdc * 1e6));
     // The seller's price must match what was approved; anything else is refused, never paid silently.
     if (paid > unit || got.paid.payTo.toLowerCase() !== line.payee.toLowerCase()) throw new PhaseFailure("policy_block", "Seller's price or payee changed");
+    const verdict = checkDelivery(got, check.promise, check.asked);
+    if (!verdict.ok) throw new DeliveryError(verdict, got);
+    recordDelivery({ vendor: line.payee, ok: true });
     const fresh = ctl.run.lines.find((l) => l.id === lineId)!;
     emit(ctl, { type: "line.updated", line: { ...fresh, actual: (BigInt(fresh.actual) + paid).toString() } });
     emit(ctl, { type: "payment.updated", phaseId, payment: { ...payment, txState: "settled", amount: paid.toString(), at: now() } });
@@ -783,8 +850,19 @@ async function buyMarketplace<T>(ctl: Ctl, phaseId: string, lineId: string, key:
     emit(ctl, { type: "data.received", key, product, data: got });
     return got;
   } catch (e) {
-    emit(ctl, { type: "payment.updated", phaseId, payment: { ...payment, txState: "failed", at: now() } });
+    if (e instanceof DeliveryError) {
+      // An outside seller was paid from the app's own Gateway balance and its answer failed a check.
+      // It can't be made to refund, so the app absorbs it: you aren't charged, and the seller gets a strike.
+      recordDelivery({ vendor: line.payee, ok: false, reason: `${e.verdict.test}: ${e.verdict.reason}` });
+      const refund = { state: "absorbed" as const, amount: unit.toString(), note: "An outside seller that doesn't refund; the app covered it, you weren't charged" };
+      emit(ctl, { type: "payment.updated", phaseId, payment: { ...payment, txState: "settled", delivery: { test: e.verdict.test, reason: e.verdict.reason }, refund, at: now() } });
+      log(ctl, { kind: "failure", what: `${line.payeeName} didn't deliver`, why: e.verdict.reason, amount: unit.toString(), outcome: "rejected", by: "system" });
+      throw new PhaseFailure("bad_delivery", `${line.payeeName} sent an answer that failed the check (${e.verdict.reason.toLowerCase()}). You weren't charged for it.`);
+    }
+    const maybe = e instanceof MaybeChargedError;
+    emit(ctl, { type: "payment.updated", phaseId, payment: { ...payment, txState: "failed", maybeCharged: maybe || undefined, at: now() } });
     if (e instanceof PhaseFailure) throw e;
+    if (maybe) throw new PaymentError("settle_fails", `${(e as Error).message.slice(0, 120)}. It may still be charged to the app's balance, not to you.`);
     throw new PaymentError("payment_rejected", `Marketplace purchase failed: ${(e as Error).message.slice(0, 140)}`);
   }
 }

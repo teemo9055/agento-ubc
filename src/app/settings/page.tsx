@@ -19,6 +19,7 @@ const FAULTS: { code: FailureCode; label: string }[] = [
   { code: "policy_block", label: "Agent tries off-plan spend" },
   { code: "model_error", label: "Analysis crashes" },
   { code: "approval_timeout", label: "Re-approval times out" },
+  { code: "bad_delivery", label: "Seller sends an empty answer" },
 ];
 
 interface Limits {

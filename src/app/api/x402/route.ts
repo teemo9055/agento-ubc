@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { SELLERS } from "@/server/sellers";
 import { salesSummary } from "@/server/sales";
-import { NETWORK, PRODUCTS } from "@/server/x402";
+import { NETWORK, PRODUCTS, refundPolicy } from "@/server/x402";
 import { USDC } from "@/server/chain";
 
 export const dynamic = "force-dynamic";
@@ -17,6 +17,7 @@ export async function GET(req: NextRequest) {
     priceUsd: Number(p.price) / 1e6,
     params: p.params,
     example: `${origin}/api/x402/${p.id}?${p.example}`,
+    refund: refundPolicy(origin, p),
     accepts: [{ scheme: "exact", network: NETWORK, asset: USDC, payTo: SELLERS.primary.address, maxAmountRequired: p.price.toString() }],
   }));
   return NextResponse.json(

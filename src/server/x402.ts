@@ -2,6 +2,7 @@ import type { Hex } from "viem";
 import { addresses, publicClient, send, USDC, usdcAbi } from "./chain";
 import * as gemini from "./gemini";
 import * as geo from "./geo";
+import { TEST_LABEL, type DeliveryPromise } from "./delivery";
 
 export const NETWORK = "eip155:5042002";
 
@@ -13,8 +14,27 @@ export interface Product {
   params: Record<string, string>;
   /** A query that works, so a buyer can try it as is. */
   example: string;
+  /** What every answer is promised to contain; a paid answer that breaks it is refunded. */
+  promise: DeliveryPromise;
   run: (q: URLSearchParams) => Promise<unknown>;
 }
+
+/** How long after a sale a refund can be claimed. */
+export const REFUND_WINDOW_MIN = 10;
+
+/** The refund rules, published with every listing so a buyer knows them before paying. */
+export const refundPolicy = (origin: string, p: Product) => ({
+  claim: `${origin}/api/x402/refund`,
+  redeliver: `${origin}/api/x402/redeliver`,
+  windowMinutes: REFUND_WINDOW_MIN,
+  checks: Object.values(TEST_LABEL),
+  promise: p.promise,
+  rules: [
+    "Send the settlement transaction, the paying address and the answer you got. If its fingerprint matches what we sent and it fails a check, the full price goes back to the paying address on Arc.",
+    "One claim per sale. A lost answer can be fetched again for free instead.",
+    "A valid answer stays paid, whether or not it was useful.",
+  ],
+});
 
 /** `EVENT:SYMBOL:yes,EVENT:SYMBOL:no` → the legs of a combination. */
 export function parseLegs(text: string): gemini.LegAsk[] {
@@ -49,6 +69,7 @@ export const PRODUCTS: Record<string, Product> = {
     price: 10_000n,
     params: { q: "Keyword, asset or team", limit: "How many, 1-6" },
     example: "q=BTC&limit=3",
+    promise: { list: true, fields: ["ticker", "contracts"] },
     run: (q) => gemini.searchEvents(q.get("q") ?? "", Number(q.get("limit") ?? 5)),
   },
   "markets.event": {
@@ -57,6 +78,7 @@ export const PRODUCTS: Record<string, Product> = {
     price: 10_000n,
     params: { ticker: "Event ticker, e.g. BTC2611152200" },
     example: "ticker=BTC2611152200",
+    promise: { fields: ["ticker", "title", "contracts"] },
     run: (q) => gemini.getEvent(q.get("ticker") ?? ""),
   },
   "markets.history": {
@@ -65,6 +87,7 @@ export const PRODUCTS: Record<string, Product> = {
     price: 20_000n,
     params: { symbol: "Contract symbol", tf: "1m, 5m, 15m or 1hr" },
     example: "symbol=GEMI-BTC2611152200-HI65000&tf=15m",
+    promise: { list: true },
     run: (q) => gemini.oddsHistory(q.get("symbol") ?? "", (q.get("tf") as "15m") ?? "15m"),
   },
   "markets.tape": {
@@ -73,6 +96,7 @@ export const PRODUCTS: Record<string, Product> = {
     price: 100_000n,
     params: { symbol: "Contract symbol" },
     example: "symbol=GEMI-BTC2611152200-HI65000",
+    promise: { list: true },
     run: (q) => gemini.recentTrades(q.get("symbol") ?? "", 100),
   },
   "spot.candles": {
@@ -81,6 +105,7 @@ export const PRODUCTS: Record<string, Product> = {
     price: 20_000n,
     params: { symbol: "Spot symbol, e.g. btcusd", tf: "15m, 1hr, 6hr or 1day" },
     example: "symbol=btcusd&tf=1hr",
+    promise: { list: true },
     run: (q) => gemini.spotCandles(q.get("symbol") ?? "btcusd", (q.get("tf") as "1hr") ?? "1hr"),
   },
   "places.geocode": {
@@ -89,6 +114,7 @@ export const PRODUCTS: Record<string, Product> = {
     price: 5_000n,
     params: { q: "Place name" },
     example: "q=Austin, TX",
+    promise: { nullable: true, fields: ["name", "lat", "lon"] },
     run: (q) => geo.geocode(q.get("q") ?? ""),
   },
   "routes.drive": {
@@ -97,6 +123,7 @@ export const PRODUCTS: Record<string, Product> = {
     price: 30_000n,
     params: { stops: "JSON array of places with coordinates" },
     example: "stops=[]",
+    promise: { fields: ["distanceKm", "hours", "legs"] },
     run: (q) => geo.drive(JSON.parse(q.get("stops") ?? "[]")),
   },
   "cover.quote": {
@@ -105,6 +132,7 @@ export const PRODUCTS: Record<string, Product> = {
     price: 5_000n,
     params: { legs: "EVENT:SYMBOL:yes|no, comma-separated, 2 to 6 of them", cover: "Dollars of cover wanted (default 10)" },
     example: "legs=BTC2611152200:GEMI-BTC2611152200-HI65000:yes,ETH2611152200:GEMI-ETH2611152200-HI1800:yes&cover=20",
+    promise: { fields: ["legs"] },
     run: coverQuote,
   },
   "markets.new": {
@@ -113,6 +141,7 @@ export const PRODUCTS: Record<string, Product> = {
     price: 5_000n,
     params: { list: "new, upcoming or settled", limit: "How many, 1-20" },
     example: "list=new&limit=5",
+    promise: { list: true },
     run: (q) => gemini.listEvents((["new", "upcoming", "settled"].includes(q.get("list") ?? "") ? q.get("list") : "new") as gemini.Listing, Number(q.get("limit") ?? 8)),
   },
 };

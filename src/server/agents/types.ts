@@ -1,3 +1,4 @@
+import type { DeliveryPromise } from "../delivery";
 import type { AgentId, Card, CostLine, Deliverable, OrderResult, Phase, Run } from "@/lib/types";
 
 export type LineDraft = Omit<CostLine, "index" | "actual" | "bigSpend">;
@@ -27,7 +28,7 @@ export interface AgentCtx {
   /** Returns true once if this fault switch is on for the run. */
   fault(code: "model_error" | "policy_block"): boolean;
   /** Buys from an outside marketplace seller with a Gateway nanopayment, through the same spend policy. */
-  buyMarketplace?<T>(lineId: string, key: string, product: string, fetcher: () => Promise<T & { paid: { amountUsdc: number; payTo: string; via: string } }>): Promise<T>;
+  buyMarketplace?<T>(lineId: string, key: string, product: string, fetcher: () => Promise<T & { paid: { amountUsdc: number; payTo: string; via: string } }>, check?: { promise?: DeliveryPromise; asked?: Record<string, string> }): Promise<T>;
   /** Reports the exchange order placed for this move. */
   order?(o: OrderResult): void;
 }
@@ -51,8 +52,10 @@ export interface AgentDef {
 
 export class PhaseFailure extends Error {
   constructor(
-    public code: "model_error" | "policy_block" | "approval_timeout" | "exchange_rejected" | "unknown",
+    public code: "model_error" | "policy_block" | "approval_timeout" | "exchange_rejected" | "bad_delivery" | "unknown",
     message: string,
+    /** USDC base units sent back after a failed delivery check. */
+    public refunded?: string,
   ) {
     super(message);
   }

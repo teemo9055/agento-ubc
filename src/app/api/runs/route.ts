@@ -9,7 +9,7 @@ import { routeAgent } from "@/server/route";
 
 export const dynamic = "force-dynamic";
 
-const FAULTS = ["seller_402_timeout", "payment_rejected", "settle_fails", "insufficient_balance", "policy_block", "price_increase", "model_error", "approval_timeout"] as const;
+const FAULTS = ["seller_402_timeout", "payment_rejected", "settle_fails", "insufficient_balance", "policy_block", "price_increase", "model_error", "approval_timeout", "bad_delivery"] as const;
 
 const Body = z.object({
   // "auto": the server picks the agent that fits the request.
