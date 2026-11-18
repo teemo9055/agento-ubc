@@ -195,7 +195,7 @@ A prediction order shows its market live: what the side costs to buy and what se
 - **Projects (`/projects/…`).** Several jobs for one goal ("sell this, then plan the drive to Austin"). The page shows the jobs and the graph of what waits on what, Start all and Stop all, and one review for all of them: what each job gets you, how, the limits (including "if job 1 fails, job 2 is skipped"), the price and the total. What can't be done here is listed with the reason. A request with several parts becomes a project by itself; you can also make an empty one from the home grid and add jobs to it. Each job keeps its own page, review and receipt, with a "Part of" link back.
 - **Run again / Save.** A finished job can be repeated: the same move is re-checked against today's prices and limits and comes back as a fresh draft to approve.
 - **Settings and `/safety`.** Spending limits, wallet, network, exchange connection, notifications and test switches are set once in Settings. `/safety` shows the decision loop, your limits in force and the delivery checks.
-- **Motion.** Steps assemble when they appear and the running connector marches; all of it is skipped for people who ask for reduced motion.
+- **Motion.** When something new appears, its cards rise a few pixels into place one after another and land with their hard shadow (about half a second); the line into a running step marches. All of it is skipped for people who ask for reduced motion.
 
 ### Plans: how a request is broken down
 
