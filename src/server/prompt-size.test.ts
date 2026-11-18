@@ -8,7 +8,7 @@ it("system prompt plus tool specs stay under budget", () => {
     const chars = p.system.length + JSON.stringify(p.tools).length;
     console.log(a, "system", p.system.length, "tools", JSON.stringify(p.tools).length);
     // Raised from 28k when the solution brief (problem → drivers → steps) and its know-how notes were added.
-    expect(chars).toBeLessThan(31_500);
+    expect(chars).toBeLessThan(31_900);
   }
 });
 

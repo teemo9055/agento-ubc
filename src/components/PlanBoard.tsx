@@ -5,12 +5,14 @@ import type { AgentId, Plan, PlanStep, Run } from "@/lib/types";
 import { THEMES } from "@/lib/themes";
 import { AgentIcon } from "./AgentIcon";
 import { Assemble } from "./Assemble";
-import { actionText, stepCost, usdc } from "./Chat";
+import { stepCost, usdc } from "./Chat";
 import { Button, Spinner } from "./ui";
 import { Icon } from "./Icon";
 import { post } from "./useRun";
 import { toast } from "./Toaster";
 import { partsOf, type Part, type PartState } from "@/lib/parts";
+import { blueprintOf } from "@/lib/shape";
+import { AgentView, BlueprintView } from "./Workspace";
 
 function PartMark({ state }: { state: PartState }) {
   if (state === "active") return <span className="flex h-3.5 w-3.5 shrink-0 items-center justify-center text-agent-ink"><Spinner /></span>;
@@ -251,6 +253,7 @@ export function PlanBoard({ plan, run }: { plan: Plan; run: Run }) {
                         After step {(s.after ?? []).map(n).join(" and ")}
                       </div>
                     )}
+                    {s.usesFindings && plan.status === "proposed" && <div className="mt-1.5 text-[12px] text-ink-2">Decided by what step {(s.after ?? []).map(n).join(" and ")} finds</div>}
                     {(s.gate === "filled" || s.useProceeds) && plan.status === "proposed" && (
                       <div className="mt-1.5 text-[12px] text-ink-2">{s.useProceeds ? `Spends what step ${n(sellerOf(s, steps) ?? s.after[0])} brings in` : "Starts once the order before it fills"}</div>
                     )}
@@ -285,9 +288,15 @@ export function PlanBoard({ plan, run }: { plan: Plan; run: Run }) {
               <p className="mt-0.5 text-[13px] text-ink-2">{picked.proposal.ask}</p>
               <p className="num mt-1 text-[12.5px] text-ink-3">
                 {THEMES[picked.agent].name} · {money(stepCost(picked.proposal))}
-                {picked.proposal.action ? ` · ${actionText(picked.proposal.action)}` : ""}
               </p>
-              <div className="mt-2.5 max-w-[560px] rounded-xl border border-line bg-panel px-3 py-2.5">
+              {/* A step is a whole job: opened, it shows the same drawing a job on its own gets. */}
+              <div className="mt-3 rounded-xl border border-line bg-panel p-3" data-testid="step-blueprint">
+                <BlueprintView bp={blueprintOf(picked.proposal)} />
+              </div>
+              <div className="mt-3 empty:hidden">
+                <AgentView p={picked.proposal} />
+              </div>
+              <div className="mt-3 max-w-[560px] rounded-xl border border-line bg-panel px-3 py-2.5">
                 <div className="mb-1.5 text-[11px] font-semibold uppercase tracking-wide text-ink-3">Sub-tasks</div>
                 <SubTasks step={picked} full />
               </div>

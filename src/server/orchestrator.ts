@@ -46,6 +46,7 @@ import { partsProgress } from "@/lib/parts";
 import { diffMoves } from "./move-diff";
 import { applyAdjust, type AdjustKind } from "@/lib/adjust";
 import { askOf, titleOf } from "@/lib/plain";
+import { lookupCost, maxCost } from "@/lib/move";
 const BUFFER_PCT = 20n;
 const REAPPROVAL_TIMEOUT_MS = Number(process.env.REAPPROVAL_TIMEOUT_MS ?? 120_000);
 const FAULT_TIMEOUT_MS = Number(process.env.FAULT_TIMEOUT_MS ?? 8_000);
@@ -1367,10 +1368,23 @@ async function advanceNow(parentId: string) {
         proposal = v.proposal;
         s.proposal = proposal;
       }
+      // Depending on what earlier steps found: its own agent builds it again with those findings in hand.
+      // What you approved was a ceiling, so a rebuilt step that would cost more is not used.
+      let rebuilt = "";
+      if (budget == null && s.usesFindings && deps.length && s.brief) {
+        const found = deps.map((d) => `${d.proposal.title}: ${d.note ?? "done"}`).join("; ").slice(0, 700);
+        const built = await buildPlanStep(s.agent, `${s.brief}\nWhat the earlier steps found: ${found}`, s.proposal.id).catch(() => null);
+        const top = (p: Proposal) => p.research.reduce((x, r) => x + lookupCost(r), 0) + maxCost(p.action);
+        if (built && "proposal" in built && top(built.proposal) <= top(s.proposal) + 1e-9) {
+          proposal = built.proposal;
+          s.proposal = proposal;
+          rebuilt = "Built from what the earlier steps found";
+        } else rebuilt = built && "proposal" in built ? "Kept as first planned: the version built from the findings would cost more than you approved" : "Kept as first planned";
+      }
       const child = await createRun({ agent: s.agent, task: proposal.title, mode: ctl.run.mode, proposal, plannedBy: `plan in job ${parentId}` } as CreateInput);
       const cc = ctlOf(child.id);
       // The agents before this one pass along what they did, so this step starts with the full picture.
-      const handoff = [...deps.map((d) => `${AGENTS[d.agent].name}: ${d.proposal.title} → ${d.note ?? "done"}`), budget != null ? `Budget for this step: $${budget.toFixed(2)}, what that brought in` : ""].filter(Boolean).join(" · ");
+      const handoff = [rebuilt, ...deps.map((d) => `${AGENTS[d.agent].name}: ${d.proposal.title} → ${d.note ?? "done"}`), budget != null ? `Budget for this step: $${budget.toFixed(2)}, what that brought in` : ""].filter(Boolean).join(" · ");
       emit(cc, { type: "workorder.updated", run: { ...cc.run, parentId, stepId: s.id, handoff: handoff || undefined } });
       Object.assign(s, { status: "running", runId: child.id, note: "Starting" });
       save();

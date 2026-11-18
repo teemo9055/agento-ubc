@@ -661,6 +661,7 @@ export const PlanInput = z.object({
         brief: z.string().min(8).max(260).describe("What this agent should do, complete on its own: name the market, coin, places and amounts. That agent builds the move with its own tools; it never sees this conversation."),
         after: z.array(z.number().int().min(1).max(12)).max(6).describe("Numbers of the earlier steps this one must wait for. Empty when it doesn't depend on any: independent steps run at the same time."),
         gate: z.enum(["done", "filled"]).describe("done: start once the steps in `after` finish. filled: only once their orders have actually filled."),
+        usesFindings: z.boolean().optional().describe("true when what this step does depends on what the steps in `after` FIND (e.g. 'buy whichever coin fell more'): it is rebuilt from their results when it starts."),
         useProceeds: z.boolean().describe("true when this step should spend what the sell it waits for brought in; its budget is set to that amount when it starts. Needs gate filled."),
       }),
     )
@@ -743,6 +744,7 @@ export async function validatePlan(input: unknown, id: string, build: BuildStep)
     gate: s.gate,
     brief: s.brief,
     useProceeds: s.useProceeds || undefined,
+    usesFindings: (s.usesFindings && s.after.length > 0) || undefined,
     status: "waiting",
   }));
   const wrong = checkPlanShape(steps);

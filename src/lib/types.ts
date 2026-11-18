@@ -371,6 +371,8 @@ export interface PlanStep {
   brief?: string;
   /** Its budget is what the sell it waits for brought in, set when it starts. */
   useProceeds?: boolean;
+  /** Built again when it starts, from what the steps it waits for found (a price read, a place found), never costing more than first shown. */
+  usesFindings?: boolean;
   /** The job running this step, once started. */
   runId?: string;
   status: "waiting" | "running" | "blocked" | "done" | "failed" | "skipped";

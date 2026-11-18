@@ -1,13 +1,14 @@
 "use client";
 import { Fragment, useState } from "react";
-import type { Plan, Run } from "@/lib/types";
-import { KINDS, blueprintOf, captionOf, kindOf, outline, type Block, type LaneKey, type WorkKind } from "@/lib/shape";
+import type { Plan, Proposal, Run } from "@/lib/types";
+import { KINDS, blueprintOf, captionOf, kindOf, outline, type Block, type Blueprint, type LaneKey, type WorkKind } from "@/lib/shape";
 import { usdc } from "@/lib/move";
 import { sizeOf, type AdjustKind } from "@/lib/adjust";
 import { Assemble } from "./Assemble";
 import { Icon } from "./Icon";
 import { Spinner } from "./ui";
 import { LiveMarket } from "./Live";
+import { PriceSketch, TripSketch } from "./Sketches";
 import { BriefCard, briefOf } from "./BriefCard";
 
 const STAGES = ["Shape it", "Review", "Run", "Done"] as const;
@@ -65,6 +66,47 @@ function BlockBox({ b, lane, children }: { b: Block; lane: LaneKey; children?: R
       {children}
     </div>
   );
+}
+
+/**
+ * The drawing of one job: what it reads, what must be true, what it does and what you get.
+ * The same drawing is used for a job on its own and for a step opened on the plan board.
+ */
+export function BlueprintView({ bp, extra }: { bp: Blueprint; extra?: (lane: LaneKey, index: number) => React.ReactNode }) {
+  return (
+    <div className="flex flex-col gap-3 md:flex-row md:items-stretch" data-testid="blueprint">
+      {bp.lanes.map((l, i) => (
+        <Fragment key={l.key}>
+          {i > 0 && (
+            <div className="flex items-center justify-center text-ink-3" aria-hidden>
+              <Icon name="arrow" size={16} className="rotate-90 md:rotate-0" />
+            </div>
+          )}
+          <div className="min-w-0 flex-1" data-lane={l.key}>
+            <div className="mb-1.5 flex items-center gap-1.5 text-[11px] font-semibold uppercase tracking-wide text-ink-3">
+              <span className={`h-2 w-2 rounded-[2px] ${LANE_DOT[l.key]}`} aria-hidden /> {l.title}
+            </div>
+            <div className="space-y-2">
+              {l.blocks.map((b, j) => (
+                <BlockBox key={j} b={b} lane={l.key}>
+                  {extra?.(l.key, j)}
+                </BlockBox>
+              ))}
+            </div>
+          </div>
+        </Fragment>
+      ))}
+    </div>
+  );
+}
+
+/** What the agent that owns this kind of move shows beside it: a price chart, the trip's days, or the live market. */
+export function AgentView({ p }: { p: Proposal }) {
+  const a = p.action;
+  if (a?.kind === "spot_order") return <PriceSketch action={a} />;
+  if (a?.kind === "itinerary") return <TripSketch action={a} />;
+  if (a?.kind === "prediction_order" && a.trade !== "sell") return <LiveMarket action={a} hedge={p.hedge} venue={p.venue} />;
+  return null;
 }
 
 const TABS: WorkKind[] = ["lookup", "order", "conditional", "hedge", "trip", "plan"];
@@ -129,39 +171,18 @@ export function Workspace({ run, onExample, onAdjust }: { run: Run; onExample?: 
 
       <div className="p-4">
         <Assemble play={move ? `move-${move.id}` : `outline-${bp.kind}`}>
-          <div className="flex flex-col gap-3 md:flex-row md:items-stretch" data-testid="blueprint">
-            {bp.lanes.map((l, i) => (
-              <Fragment key={l.key}>
-                {i > 0 && (
-                  <div className="flex items-center justify-center text-ink-3" aria-hidden>
-                    <Icon name="arrow" size={16} className="rotate-90 md:rotate-0" />
-                  </div>
-                )}
-                <div className="min-w-0 flex-1" data-lane={l.key}>
-                  <div className="mb-1.5 flex items-center gap-1.5 text-[11px] font-semibold uppercase tracking-wide text-ink-3">
-                    <span className={`h-2 w-2 rounded-[2px] ${LANE_DOT[l.key]}`} aria-hidden /> {l.title}
-                  </div>
-                  <div className="space-y-2">
-                    {l.blocks.map((b, j) => (
-                      <BlockBox key={j} b={b} lane={l.key}>
-                        {move && onAdjust && size && l.key === "does" && j === 0 && !run.thinking && (
-                          <Stepper
-                            busy={stepping}
-                            canLess={size.down != null}
-                            canMore={size.up > size.now}
-                            onAdjust={(k) => {
-                              setStepping(true);
-                              void onAdjust(k).finally(() => setStepping(false));
-                            }}
-                          />
-                        )}
-                      </BlockBox>
-                    ))}
-                  </div>
-                </div>
-              </Fragment>
-            ))}
-          </div>
+          <BlueprintView bp={bp} extra={(l, j) =>
+              move && onAdjust && size && l === "does" && j === 0 && !run.thinking ? (
+                <Stepper
+                  busy={stepping}
+                  canLess={size.down != null}
+                  canMore={size.up > size.now}
+                  onAdjust={(k) => {
+                    setStepping(true);
+                    void onAdjust(k).finally(() => setStepping(false));
+                  }}
+                />
+              ) : null} />
         </Assemble>
 
         {move ? (
@@ -183,9 +204,9 @@ export function Workspace({ run, onExample, onAdjust }: { run: Run; onExample?: 
           </div>
         )}
 
-        {move?.action?.kind === "prediction_order" && move.action.trade !== "sell" && (
-          <div className="mt-4">
-            <LiveMarket action={move.action} hedge={move.hedge} venue={move.venue} />
+        {move && (
+          <div className="mt-4 empty:hidden">
+            <AgentView p={move} />
           </div>
         )}
 

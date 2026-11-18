@@ -26,6 +26,12 @@ vi.mock("@/server/gemini", async (orig) => {
   };
 });
 
+// The agent that rebuilds a step from earlier findings is stood in for, so the test decides what it comes back with.
+const rebuild = vi.hoisted(() => ({ next: undefined as undefined | ((agent: string, brief: string, id: string) => Promise<unknown>) }));
+vi.mock("@/server/explore", async (orig) => {
+  const real = await orig<typeof import("@/server/explore")>();
+  return { ...real, buildPlanStep: (agent: never, brief: string, id: string) => (rebuild.next ? rebuild.next(agent, brief, id) : real.buildPlanStep(agent, brief, id)) };
+});
 vi.mock("@/server/agents/ai-planning", async (orig) => ({ ...(await orig<typeof import("@/server/agents/ai-planning")>()), spotSymbols: async () => ["btcusd", "ethusd"] }));
 
 vi.mock("@/server/chainlink", async (orig) => ({
@@ -179,6 +185,36 @@ describe("plans across agents", () => {
     await orch.startPlan(r.id, p.id);
     return r.id;
   };
+
+  it("a step that depends on earlier findings is rebuilt from them when it starts, never above what was approved", async () => {
+    const run = async (qty: number) => {
+      const p = await plan([step("travo", "drive"), step("inso", "order", [1])]);
+      p.steps[1] = { ...p.steps[1], usesFindings: true };
+      let got = "";
+      rebuild.next = async (agent, brief, id) => {
+        got = brief;
+        const v = await tools.validateProposal(agent as "inso", move.order(qty), id);
+        return "proposal" in v ? { proposal: v.proposal, usage: [] } : v;
+      };
+      try {
+        const id = await begin(p);
+        await until(() => orch.getRun(id)!.plan?.status === "done", "the plan to finish");
+        const child = orch.getRun(orch.getRun(id)!.plan!.steps[1].runId!)!;
+        return { got, child };
+      } finally {
+        rebuild.next = undefined;
+      }
+    };
+    // Cheaper than first planned: used, and the step's job says where it came from.
+    const smaller = await run(3);
+    expect(smaller.got).toContain("What the earlier steps found:");
+    expect(smaller.child.proposal?.action).toMatchObject({ quantity: 3 });
+    expect(smaller.child.handoff).toContain("Built from what the earlier steps found");
+    // Dearer than what was approved: the first plan stands.
+    const bigger = await run(9);
+    expect(bigger.child.proposal?.action).toMatchObject({ quantity: 5 });
+    expect(bigger.child.handoff).toContain("would cost more than you approved");
+  });
 
   it("stop cancels the running step and skips the rest", async () => {
     pause();

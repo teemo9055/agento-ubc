@@ -304,6 +304,8 @@ test("the showcase builds a long plan that can be changed before anything is pai
   // Take a step off the board.
   await steps.last().click();
   await expect(page.getByTestId("plan-inspector")).toBeVisible();
+  // A step is a whole job: opened, it shows the same drawing a single job gets.
+  await expect(page.getByTestId("step-blueprint").locator("[data-block]").first()).toBeVisible();
   await page.getByTestId("plan-remove").click();
   await expect(steps).toHaveCount(n - 1);
   await expect(page.getByTestId("quick-primary")).toHaveText(`Start all ${n - 1} steps`);
