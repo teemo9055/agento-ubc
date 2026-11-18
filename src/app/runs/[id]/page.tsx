@@ -308,8 +308,8 @@ export default function RunPage({ params }: { params: Promise<{ id: string }> })
               focusedStep={focus?.kind === "step" ? focus.step : null}
               actions={
                 <div className="flex flex-wrap items-center justify-between gap-3">
-                  <p className="min-w-0 text-[13px] text-ink-2">Nothing runs or is spent until you approve.</p>
-                  <div className="flex flex-1 items-center justify-end gap-2 sm:flex-none">
+                  <p className="hidden min-w-0 text-[13px] text-ink-2 sm:block">Nothing runs or is spent until you approve.</p>
+                  <div className="flex flex-1 items-center justify-end gap-1.5 whitespace-nowrap sm:flex-none sm:gap-2">
                     {run.status === "draft" && (
                       <Button variant="quiet" onClick={() => post(`/api/runs/${run.id}/back`).catch((e) => toast((e as Error).message, "bad"))} data-testid="back-to-chat">
                         <Icon name="back" size={14} /> Change it
@@ -424,7 +424,7 @@ export default function RunPage({ params }: { params: Promise<{ id: string }> })
             <span>
               {boardPlan.steps.length} {boardPlan.steps.length === 1 ? "job" : "jobs"}
             </span>
-            {tags}
+            {run.mode === "demo" && <span className="inline-flex h-[22px] items-center rounded-md bg-[#f1f0ec] px-2 text-[12px] font-semibold text-ink-2">Practice</span>}
           </div>
           <h1 className="mt-0.5 truncate text-[20px] font-semibold leading-tight tracking-tight sm:text-[24px]" data-testid="project-title">
             {boardPlan.title}

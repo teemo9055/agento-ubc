@@ -31,8 +31,8 @@ export const KITS: Record<AgentId, AgentKit> = {
   inso: {
     free: ["Search markets", "Market details", "Live spot price", "Search Circle's marketplace"],
     paid: [
-      { label: "Odds history", price: "0.02" },
-      { label: "Trade tape", price: "0.10" },
+      { label: "How the odds moved", price: "0.02" },
+      { label: "Recent trades", price: "0.10" },
       { label: "Chainlink price: coins, gold, FX (Circle marketplace)", price: "0.0001" },
       { label: "Any marketplace service payable now", price: "seller's price" },
     ],
@@ -52,7 +52,7 @@ export const KITS: Record<AgentId, AgentKit> = {
     paid: [
       { label: "Price candles", price: "0.02" },
       { label: "Chainlink price (Circle marketplace)", price: "0.0001" },
-      { label: "Odds history", price: "0.02" },
+      { label: "How the odds moved", price: "0.02" },
       { label: "Gas price on 5 chains (Circle marketplace)", price: "0.0001" },
       { label: "Bitcoin fees and mempool (Circle marketplace)", price: "0.0002" },
       { label: "Any wallet's USDC balance (Circle marketplace)", price: "0.0001" },

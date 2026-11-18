@@ -24,7 +24,18 @@ test("bottom tab bar navigates", async ({ page }) => {
 
 test("Edit on a card opens the chat focused on that card", async ({ page }) => {
   await newDemoJob(page, "BTC odds focus test");
-  await page.getByTestId("edit-price").click();
+  const edit = page.getByTestId("edit-price");
+  // Centre it so the bottom tab bar isn't on top of it.
+  // The review assembles itself first; wait until the button is the thing under the pointer.
+  await expect
+    .poll(() => edit.evaluate((e) => {
+      e.scrollIntoView({ block: "center" });
+      const b = e.getBoundingClientRect();
+      return document.elementFromPoint(b.x + b.width / 2, b.y + b.height / 2)?.closest("[data-testid]")?.getAttribute("data-testid");
+    }))
+    .toBe("edit-price");
+  // Tap it where it is (a scripted click scrolls it under the tab bar on this small screen).
+  await edit.evaluate((e) => (e as HTMLElement).click());
   await expect(page.getByRole("tab", { name: /Chat/ })).toHaveAttribute("aria-selected", "true");
   await expect(page.getByTestId("chat-focus")).toContainText("Price");
   await expect(page.getByRole("dialog")).toHaveCount(0);

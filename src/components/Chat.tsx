@@ -36,8 +36,8 @@ export function VenueBadge({ venue }: { venue: Venue }) {
 /** Short labels for paid steps, so the card reads as a sentence, not a spreadsheet. */
 const STEP_LABEL: Record<string, (r: Proposal["research"][number]) => string> = {
   oracle_price: (r) => `Chainlink ${r.args.symbol?.replace(/usd$/i, "").toUpperCase()}`,
-  odds_history: () => "Odds history",
-  trade_tape: () => "Trade flow",
+  odds_history: () => "How the odds moved",
+  trade_tape: () => "Recent trades",
   spot_candles: (r) => `${r.args.symbol?.replace(/usd$/i, "").toUpperCase()} chart`,
   drive_route: () => "Route",
 };

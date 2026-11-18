@@ -1,4 +1,5 @@
 import type { AgentId, Card, Deliverable, MoveAction, MoveCondition, OrderResult, Proposal, Run } from "@/lib/types";
+import { stepName } from "@/lib/plain";
 import { VENDOR_PROMISES } from "../delivery";
 import { SELLERS } from "../sellers";
 import { PRODUCTS } from "../x402";
@@ -125,15 +126,15 @@ export function planFromProposal(p: Proposal): PlanDraft {
     if (isVendorTool(r.tool)) {
       const v = VENDOR_TOOLS[r.tool];
       const price = v.price(r.args);
-      lines.push({ id: r.id, phaseId: r.id, purpose: r.label, service: v.service(r.args), payeeName: v.payeeName(r.args), payee: v.payee(r.args), rail: "gateway", approved: price.toString(), calls: { max: 1, unitPrice: price.toString() } });
-      phases.push({ id: r.id, label: r.label, sub: r.why, dependsOn: [], optional: true, lineId: r.id });
+      lines.push({ id: r.id, phaseId: r.id, purpose: stepName(r), service: v.service(r.args), payeeName: v.payeeName(r.args), payee: v.payee(r.args), rail: "gateway", approved: price.toString(), calls: { max: 1, unitPrice: price.toString() } });
+      phases.push({ id: r.id, label: stepName(r), sub: r.why, dependsOn: [], optional: true, lineId: r.id });
       continue;
     }
     const price = PRODUCTS[t.product].price;
-    lines.push({ id: r.id, phaseId: r.id, purpose: r.label, service: t.product, payeeName: seller.name, payee: seller.address, rail: "x402", approved: price.toString(), calls: { max: 1, unitPrice: price.toString() } });
+    lines.push({ id: r.id, phaseId: r.id, purpose: stepName(r), service: t.product, payeeName: seller.name, payee: seller.address, rail: "x402", approved: price.toString(), calls: { max: 1, unitPrice: price.toString() } });
     phases.push({
       id: r.id,
-      label: r.label,
+      label: stepName(r),
       sub: r.why,
       dependsOn: [],
       optional: true,
@@ -279,14 +280,14 @@ function edit(_card: Card["kind"], prompt: string, o: Record<string, unknown>, s
   if (a?.kind === "prediction_order" && qty) (a.quantity = Math.min(100, Math.max(1, Number(qty[1])))), (changed = true);
   if (a?.kind === "prediction_order" && cents) (a.maxPrice = Math.min(0.99, Math.max(0.01, Number(cents[1]) / 100))), (changed = true);
   if (a?.kind === "spot_order" && dollars) (a.amountUsd = Math.min(100, Math.max(1, Number(dollars[1])))), (changed = true);
-  if (/(no|skip|drop|without)\b.*\b(research|lookups?|tape|history|candles)/.test(t) && next.research.length) {
-    const kw = /tape/.test(t) ? "trade_tape" : /history/.test(t) ? "odds_history" : /candles/.test(t) ? "spot_candles" : null;
+  if (/(no|skip|drop|without)\b.*\b(research|lookups?|tape|trades|history|odds|candles|chart)/.test(t) && next.research.length) {
+    const kw = /tape|trades/.test(t) ? "trade_tape" : /history|odds/.test(t) ? "odds_history" : /candles|chart/.test(t) ? "spot_candles" : null;
     next.research = next.research.filter((r) => kw && r.tool !== kw);
     changed = true;
   }
   if (/(no|drop|remove|without)\b.*\bcondition/.test(t)) (next.condition = undefined), (changed = true);
   if (!changed && step === "act") return editStep(next, step, t);
-  if (!changed) return { ok: false, message: "To change the move itself, ask in the chat.", alternatives: a?.kind === "prediction_order" ? ["5 contracts", "Max 50¢", "Drop the trade tape"] : ["Drop the research"] };
+  if (!changed) return { ok: false, message: "To change the move itself, ask in the chat.", alternatives: a?.kind === "prediction_order" ? ["5 contracts", "Max 50¢", "Skip recent trades"] : ["Skip the paid lookups"] };
   const what = [
     JSON.stringify(a) !== JSON.stringify(p.action) && a ? `Order: ${describeAction(a)}` : "",
     next.research.length !== p.research.length ? `${p.research.length - next.research.length} paid lookup${p.research.length - next.research.length === 1 ? "" : "s"} dropped` : "",

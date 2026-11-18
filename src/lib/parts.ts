@@ -1,4 +1,5 @@
 import type { PhaseStatus, PlanStep, Proposal, Run } from "./types";
+import { stepName } from "./plain";
 import { templateOf, watchesOrder } from "./templates";
 import { actionText, conditionLabel, lookupCost } from "./move";
 
@@ -17,7 +18,7 @@ export interface Part {
 export type PartState = "planned" | "active" | "done" | "failed" | "skipped";
 
 export function partsOf(p: Proposal): Part[] {
-  const out: Part[] = p.research.map((r) => ({ id: r.id, label: r.label, sub: r.why, cost: lookupCost(r) }));
+  const out: Part[] = p.research.map((r) => ({ id: r.id, label: stepName(r), sub: r.why, cost: lookupCost(r) }));
   const t = templateOf(p);
   const checks = p.condition ? [p.condition, ...(p.also ?? [])] : [];
   if (t === "answer") out.push({ id: "check", label: "Write it up", sub: "what the data says" });

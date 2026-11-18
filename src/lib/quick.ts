@@ -69,10 +69,10 @@ export function quickFor(run: Pick<Run, "status" | "chat" | "proposal" | "thinki
   if (plan && plan.status === "proposed") {
     const tools = plan.steps.flatMap((s) => s.proposal.research.map((r) => r.tool)).join(" ");
     const room = plan.steps.length < 12;
+    // Starting is the project's own button; these add to it.
     return [
-      { label: `Start all ${plan.steps.length} steps`, primary: true, do: { act: "start-plan" } },
       ...(room ? BLOCKS.filter((b) => !b.has.test(tools)).map((b): Quick => ({ label: b.label, adds: true, do: { add: { agent: b.agent, brief: b.brief } } })) : []),
-      ...(room ? [{ label: "Your own step", adds: true, do: { fill: "Add a step: " } } satisfies Quick] : []),
+      ...(room ? [{ label: "Your own job", adds: true, do: { fill: "Add a step: " } } satisfies Quick] : []),
       ...(last.plan ? (last.suggestions ?? []).filter((s) => !accept(s) && !decline(s)).slice(0, 1).map(say) : []),
     ];
   }

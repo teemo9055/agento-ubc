@@ -85,14 +85,13 @@ describe("quick options above the chat box", () => {
     expect(q[1].adds).toBe(true);
   });
 
-  it("with a plan on the board, leads with starting it and offers the steps it doesn't have yet", () => {
+  it("with a project on the board, offers the jobs it doesn't have yet (starting it is the project's own button)", () => {
     const q = quickFor(run({ chat: [agent({ plan: plan(3), suggestions: ["Yes, start the plan", "Make it cheaper", "Not now"] })] }), plan(3));
-    expect(q.map((x) => x.label)).toEqual(["Start all 3 steps", "Price check", "Gas check", "Your own step", "Make it cheaper"]);
-    expect(q[0]).toMatchObject({ primary: true, do: { act: "start-plan" } });
-    expect(q[1].do).toEqual({ add: { agent: "trado", brief: "Read the Chainlink prices of BTC and ETH" } });
+    expect(q.map((x) => x.label)).toEqual(["Price check", "Gas check", "Your own job", "Make it cheaper"]);
+    expect(q[0].do).toEqual({ add: { agent: "trado", brief: "Read the Chainlink prices of BTC and ETH" } });
     // A plan that already reads Chainlink isn't offered another price check; a full plan isn't offered more steps.
-    expect(quickFor(run({ chat: [agent({})] }), plan(3, "oracle_price")).map((x) => x.label)).toEqual(["Start all 3 steps", "Gas check", "Your own step"]);
-    expect(quickFor(run({ chat: [agent({})] }), plan(12)).map((x) => x.label)).toEqual(["Start all 12 steps"]);
+    expect(quickFor(run({ chat: [agent({})] }), plan(3, "oracle_price")).map((x) => x.label)).toEqual(["Gas check", "Your own job"]);
+    expect(quickFor(run({ chat: [agent({})] }), plan(12)).map((x) => x.label)).toEqual([]);
     // Once it's running the one decision left is to stop it; once it's over there is none.
     expect(quickFor(run({ chat: [agent({})] }), { ...plan(3), status: "running" }).map((x) => x.label)).toEqual(["Stop the plan"]);
     expect(quickFor(run({ chat: [agent({})] }), { ...plan(3), status: "done" })).toEqual([]);

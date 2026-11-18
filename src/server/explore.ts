@@ -584,8 +584,8 @@ async function rulesTurn(agent: AgentId, chat: ChatMsg[], onTool: (note: string)
     why: `${pick.e.title}: ${S} on “${pick.c.label}” trades near ${Math.round(px * 100)}¢. I'd check the recent odds and flow first.`,
     ask: `Buy ${qty} ${S} at ${Math.round(max * 100)}¢ or less if the price is still there after checking history and flow?`,
     research: [
-      { tool: "odds_history", args: { symbol: pick.c.symbol, tf: "15m" }, label: "Odds history", why: "is it trending?" },
-      { tool: "trade_tape", args: { symbol: pick.c.symbol }, label: "Trade tape", why: "who's buying" },
+      { tool: "odds_history", args: { symbol: pick.c.symbol, tf: "15m" }, label: "How the odds moved", why: "is it trending?" },
+      { tool: "trade_tape", args: { symbol: pick.c.symbol }, label: "Recent trades", why: "who's buying" },
     ],
     action: { kind: "prediction_order", eventTicker: pick.e.ticker, symbol: pick.c.symbol, label: pick.c.label.slice(0, 60), side, orderType: "limit", maxPrice: max, stopPrice: null, quantity: qty },
     condition: null,

@@ -80,6 +80,19 @@ export function getsLine(p: Pick<Proposal, "action" | "hedge">): { label: string
   return { label: `${money(a.quantity)} if it's ${a.side === "yes" ? "" : "not "}“${a.label}”`, detail: `${odds}; nothing if it goes the other way` };
 }
 
+/** Everyday names for paid lookups, used for steps whatever label the agent wrote. */
+const STEP_NAME: Record<string, (args: Record<string, string>) => string> = {
+  odds_history: () => "How the odds moved",
+  trade_tape: () => "Recent trades",
+  spot_candles: (a) => `${(a.symbol ?? "").replace(/usd$/i, "").toUpperCase()} price chart`.trim(),
+  oracle_price: (a) => `Chainlink ${(a.symbol ?? "").replace(/usd$/i, "").toUpperCase()} price`.trim(),
+  gas_price: (a) => `Network fee on ${a.chain ? a.chain[0].toUpperCase() + a.chain.slice(1) : "the chain"}`,
+  btc_network: () => "Bitcoin network fees",
+  wallet_balance: () => "Wallet balance",
+  drive_route: () => "Driving route",
+};
+export const stepName = (r: { tool: string; args: Record<string, string>; label: string }) => STEP_NAME[r.tool]?.(r.args) ?? r.label;
+
 /** Market shorthand the agent's own sentences shouldn't use, and what to say instead. */
 const SWAPS: [RegExp, string][] = [
   [/\bcombos?\b/gi, "combined cover"],

@@ -42,11 +42,11 @@ test("card edit happens in the chat: explains why it can't, offers alternatives,
   await page.getByTestId("chat-input").fill("place a real bet on yes");
   await page.keyboard.press("Enter");
   await expect(page.getByText("Can't do that")).toBeVisible();
-  await page.getByRole("button", { name: "Drop the trade tape" }).click();
+  await page.getByRole("button", { name: "Skip recent trades" }).click();
   await expect(page.getByTestId("edit-preview")).toBeVisible();
   await page.getByTestId("apply-edit").click();
   await expect(page.getByRole("dialog")).toHaveCount(0);
-  await expect(page.getByTestId("card-deliverable")).not.toContainText("Trade tape");
+  await expect(page.getByTestId("card-deliverable")).not.toContainText("Recent trades");
   await expect(page.getByTestId("chat-focus")).toHaveCount(0);
 });
 
@@ -333,7 +333,7 @@ test("the showcase builds a long plan that can be changed before anything is pai
   const n = await steps.count();
   expect(n).toBeGreaterThanOrEqual(6);
   // The chat leads with starting it; nothing has run.
-  await expect(page.getByTestId("quick-primary")).toHaveText(`Start all ${n} steps`);
+  await expect(page.getByTestId("start-all")).toBeVisible();
   await expect(board.getByTestId("plan-status")).not.toHaveText("Finished");
   // Take a step off the board.
   await steps.last().click();
@@ -342,7 +342,7 @@ test("the showcase builds a long plan that can be changed before anything is pai
   await expect(page.getByTestId("step-blueprint").locator("[data-block]").first()).toBeVisible();
   await page.getByTestId("plan-remove").click();
   await expect(steps).toHaveCount(n - 1);
-  await expect(page.getByTestId("quick-primary")).toHaveText(`Start all ${n - 1} steps`);
+  await expect(board.getByTestId("plan-status")).toContainText(`${n - 1} jobs`);
 });
 
 test("the agents page shows what Agento sells to other agents and what it earned", async ({ page }) => {
