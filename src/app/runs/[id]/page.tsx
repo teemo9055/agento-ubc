@@ -2,6 +2,7 @@
 import { ComposePanel } from "@/components/TierPicker";
 import { Report } from "@/components/Report";
 import { LearnedBanner } from "@/components/LearnedBanner";
+import { WatchThis } from "@/components/Watches";
 import { use, useEffect, useRef, useState } from "react";
 import Link from "next/link";
 import dynamic from "next/dynamic";
@@ -673,6 +674,7 @@ export default function RunPage({
               Receipt on its own page <Icon name="external" size={12} />
             </Link>
           </div>
+          {run.status === "done" && run.proposal?.compose && <WatchThis run={run} />}
           <NextSteps run={run} />
         </>
       )}

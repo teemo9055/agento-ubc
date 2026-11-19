@@ -52,6 +52,8 @@ import { learnFromRun } from "./learn";
 
 /** Who planned a recipe sold to an outside agent: such runs don't teach the book again. */
 export const RECIPE_BUYER = "Agento recipe (sold over x402)";
+/** Who planned a watch's check: also doesn't teach the book. */
+export const WATCH_CHECK = "Agento watch check";
 
 import { limits } from "./settings";
 import { partsProgress } from "@/lib/parts";
@@ -707,7 +709,7 @@ async function finish(ctl: Ctl) {
   if (report?.headline && report.by === "ai") deliverable.summary = report.headline;
   emit(ctl, { type: "run.done", deliverable, refunded: refunded.toString(), refundTx: txHash, at: now(), report });
   // A composed job that worked teaches the recipe book; a sold recipe's own run doesn't count twice.
-  if (ctl.run.proposal?.compose && ctl.run.ai?.model !== RECIPE_BUYER) {
+  if (ctl.run.proposal?.compose && ctl.run.ai?.model !== RECIPE_BUYER && ctl.run.ai?.model !== WATCH_CHECK) {
     try {
       const r = learnFromRun(ctl.run);
       if (r) emit(ctl, { type: "run.learned", recipe: { id: r.id, title: r.title, status: r.status, runs: r.runs, successes: r.successes, network: r.network } });

@@ -57,6 +57,12 @@ for (const motion of ["full", "reduced"] as const) {
     await expect(page.getByTestId("evidence-popover")).toContainText("Practice: no money moved");
     // It worked, so it's a recipe now.
     await expect(page.getByTestId("learned-banner")).toContainText("Saved as a recipe");
+    // Watch what it found: priced per check and in total before anything runs.
+    if (motion === "full") {
+      await expect(page.getByTestId("watch-cost")).toContainText(/Each check about \$[\d.]+ · at most \$[\d.]+ total/);
+      await page.getByTestId("watch-start").click();
+      await expect(page.getByTestId("watch-made")).toBeVisible();
+    }
     if (process.env.SHOT && motion === "full") {
       await page.keyboard.press("Escape");
       await graph.scrollIntoViewIfNeeded();

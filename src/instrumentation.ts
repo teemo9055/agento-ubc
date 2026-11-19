@@ -7,6 +7,11 @@ export async function register() {
     const { installFixtures } = await import("./server/fixtures");
     installFixtures();
   }
+  // Watches: every minute, run the checks that are due.
+  if (process.env.NEXT_RUNTIME === "nodejs" && !process.env.VITEST && process.env.WATCHES !== "off") {
+    const { tick } = await import("./server/watches");
+    setInterval(() => void tick().catch((e: Error) => console.warn("watches:", e.message)), 60_000).unref();
+  }
   // The capability map: crawl the marketplace catalog 30s after boot, then every CATALOG_REFRESH_HOURS.
   if (process.env.NEXT_RUNTIME === "nodejs" && !process.env.VITEST && !process.env.MARKET_DATA && process.env.CATALOG_CRAWL !== "off") {
     const { crawlCatalog } = await import("./server/catalog/crawl");

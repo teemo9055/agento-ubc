@@ -16,6 +16,7 @@ import { Band, Card } from "@/components/JobCard";
 import type { RunSummary } from "@/lib/summary";
 import type { AgentId } from "@/lib/types";
 import { moodFor } from "@/lib/outfit";
+import { WatchList } from "@/components/Watches";
 
 type Folder = "all" | "saved" | AgentId;
 /** First in the grid: start a job, or a project to put several jobs in. */
@@ -170,6 +171,7 @@ function Dashboard() {
         </div>
       </div>
 
+      <WatchList />
       {!runs ? (
         <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4" aria-busy="true">
           {[0, 1, 2, 3].map((i) => (
