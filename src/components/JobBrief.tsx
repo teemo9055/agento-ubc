@@ -11,6 +11,7 @@ import { getsLine } from "@/lib/plain";
 import { VenueBadge } from "./Chat";
 import { Button, Spinner } from "./ui";
 import { Icon } from "./Icon";
+import { Point, Points } from "./Points";
 import { post } from "./useRun";
 import { toast } from "./Toaster";
 
@@ -154,13 +155,13 @@ export function ReviewCards({ run, onEdit, focused }: { run: Run; onEdit?: (k: "
           {gaps.length > 0 && (
             <div className="mt-2 border-t border-[#f1f0ec] pt-2" data-testid="review-gaps">
               <p className="text-[12px] font-semibold uppercase tracking-wide text-ink-3">What it can&apos;t answer</p>
-              <ul className="mt-1 space-y-1 text-[13px] leading-snug">
+              <Points as="ul" layout="stack" className="mt-1.5">
                 {gaps.map((g) => (
-                  <li key={g.id}>
-                    <span className="font-medium">{g.gap!.fact}</span> <span className="text-ink-3">· {g.gap!.why}</span>
-                  </li>
+                  <Point key={g.id} as="li" size="sm" tone="muted" soft title={g.gap!.fact}>
+                    {g.gap!.why}
+                  </Point>
                 ))}
-              </ul>
+              </Points>
             </div>
           )}
         </>
@@ -184,17 +185,26 @@ export function ReviewCards({ run, onEdit, focused }: { run: Run; onEdit?: (k: "
           {maybe.length > 0 && (
             <li className="rounded-lg border border-dashed border-line px-2 py-1.5" data-testid="review-maybe">
               <span className="text-[12px] font-semibold uppercase tracking-wide text-ink-3">Only if needed · at most {money(Number(sum(maybe.map((l) => l.approved))) / 1e6)}</span>
-              <ul className="mt-1 space-y-1">
+              <Points as="ul" layout="stack" className="mt-1.5">
                 {maybe.map((l) => {
                   const ph = maybeOf(l)!;
                   return (
-                    <li key={l.id}>
-                      <span className="font-medium">{ph.label}</span> <span className="num text-ink-3">· {money(Number(l.approved) / 1e6)}</span>
-                      <span className="block text-ink-3">{ph.tieBreaker ? "Only if the sources disagree" : `Only if ${ph.conditional}`} · from {l.payeeName}</span>
-                    </li>
+                    <Point
+                      key={l.id}
+                      as="li"
+                      size="sm"
+                      tone="warn"
+                      title={
+                        <>
+                          {ph.label} <span className="num font-normal text-ink-3">· {money(Number(l.approved) / 1e6)}</span>
+                        </>
+                      }
+                    >
+                      <span className="text-ink-3">{ph.tieBreaker ? "Only if the sources disagree" : `Only if ${ph.conditional}`} · from {l.payeeName}</span>
+                    </Point>
                   );
                 })}
-              </ul>
+              </Points>
             </li>
           )}
           {exchange.map((l) => (
@@ -224,20 +234,23 @@ export function ReviewCards({ run, onEdit, focused }: { run: Run; onEdit?: (k: "
       title: "Risk & safeguards",
       sub: "If something goes wrong",
       body: (
-        <ul className="space-y-1.5 text-[13px] leading-snug" data-testid="review-risks">
+        <Points as="ul" layout="stack" data-testid="review-risks">
           {specific.map((r) => (
-            <li key={r.if} data-testid="review-risk">
-              <span className="font-semibold">{r.if}:</span> <span className="text-ink-2">{r.then}</span>
-            </li>
+            <Point key={r.if} as="li" size="sm" tone="warn" title={`${r.if}:`} data-testid="review-risk">
+              {r.then}
+            </Point>
           ))}
           {paid.length > 0 && (
-            <li data-testid="review-risk">
-              <span className="font-semibold">If a step fails:</span>{" "}
-              <span className="text-ink-2">it stops and asks you to try again, skip or stop. A seller that sends nothing usable is refunded. What isn&apos;t spent comes back.</span>
-            </li>
+            <Point as="li" size="sm" tone="good" title="If a step fails:" data-testid="review-risk">
+              it stops and asks you to try again, skip or stop. A seller that sends nothing usable is refunded. What isn&apos;t spent comes back.
+            </Point>
           )}
-          {!specific.length && !paid.length && <li className="text-ink-2">Free: nothing is bought.</li>}
-        </ul>
+          {!specific.length && !paid.length && (
+            <Point as="li" size="sm" tone="good">
+              Free: nothing is bought.
+            </Point>
+          )}
+        </Points>
       ),
     },
   ];
@@ -421,11 +434,15 @@ export function StatusCard({ run, onNeedsYou, onCancel, steps = true }: { run: R
         </ol>
       )}
       {run.deliverable?.notes && run.deliverable.notes.length > 0 && (
-        <ul className="list-disc space-y-0.5 border-t border-[#f1f0ec] py-3 pl-9 pr-4 text-[13.5px] text-ink-2" data-testid="findings">
-          {run.deliverable.notes.slice(0, 4).map((n) => (
-            <li key={n}>{n}</li>
-          ))}
-        </ul>
+        <div className="border-t border-[#f1f0ec] px-4 py-3">
+          <Points as="ul" min={220} data-testid="findings">
+            {run.deliverable.notes.slice(0, 4).map((n) => (
+              <Point key={n} as="li" size="sm" tone="agent">
+                {n}
+              </Point>
+            ))}
+          </Points>
+        </div>
       )}
     </section>
   );

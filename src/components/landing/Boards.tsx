@@ -2,6 +2,7 @@
 import type { AgentId } from "@/lib/types";
 import { Icon } from "@/components/Icon";
 import { Mascot } from "@/components/Mascot";
+import { Point, Points } from "@/components/Points";
 import { Board, Cut, MascotSticker, Pill, Sparkle, Sticker } from "./Stickers";
 
 /** Every board is drawn on this canvas and scaled to fit. */
@@ -217,16 +218,13 @@ export function DoneBoard() {
               <Icon name="check" size={12} stroke={2.6} /> Done
             </span>
             <div className="mt-1.5 text-[15px] font-semibold leading-snug">Cover placed at your price</div>
-            <ul className="mt-2 space-y-1">
+            <Points as="ul" min={76} className="mt-2.5">
               {steps.map((s) => (
-                <li key={s} className="flex items-center gap-2 text-[12.5px] text-ink-2">
-                  <span className="inline-flex h-4 w-4 items-center justify-center rounded-[5px] bg-good text-white">
-                    <Icon name="check" size={10} stroke={3} />
-                  </span>
+                <Point as="li" key={s} size="sm" tone="good" soft>
                   {s}
-                </li>
+                </Point>
               ))}
-            </ul>
+            </Points>
             <div className="num mt-3 rounded-[10px] bg-[#f3f1ea] px-3 py-2 text-[12.5px] font-semibold">
               Done · $0.12 spent · <span className="text-good">$0.02 came back</span>
             </div>

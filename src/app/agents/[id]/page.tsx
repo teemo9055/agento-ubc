@@ -6,6 +6,7 @@ import { motion } from "framer-motion";
 import { AgentPortrait, Banner } from "@/components/AgentPortrait";
 import { Mascot } from "@/components/Mascot";
 import { Icon } from "@/components/Icon";
+import { Point, Points } from "@/components/Points";
 import { useAgentRecords, TOPIC } from "@/components/agentStats";
 import { Knowledge } from "@/components/AgentKnowledge";
 import { useAgentTheme } from "@/components/useRun";
@@ -141,15 +142,15 @@ export default function AgentProfile({ params }: { params: Promise<{ id: string 
               ))}
             </span>
           </li>
-          <li className="flex flex-wrap items-start gap-x-6 gap-y-2 py-3">
-            <span className="w-44 shrink-0 text-[13px] font-semibold">Can do</span>
-            <span className="text-[14px] text-ink-2">{k.acts}</span>
-          </li>
-          <li className="flex flex-wrap items-start gap-x-6 gap-y-2 py-3 last:pb-0">
-            <span className="w-44 shrink-0 text-[13px] font-semibold">Never does</span>
-            <span className="text-[14px] text-ink-2">{k.never}</span>
-          </li>
         </ul>
+        <Points as="ul" min={240} className="mt-1" aria-label="What it can and can't do">
+          <Point as="li" tone="good" label="Can do">
+            {k.acts}
+          </Point>
+          <Point as="li" tone="bad" label="Never does">
+            {k.never}
+          </Point>
+        </Points>
       </Card>
 
       <Card title="Knows & has learned">

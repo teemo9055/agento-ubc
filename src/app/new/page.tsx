@@ -9,7 +9,8 @@ import { post, useAgentTheme } from "@/components/useRun";
 import { THEMES } from "@/lib/themes";
 import type { AgentId, Run, Venue } from "@/lib/types";
 import { Icon } from "@/components/Icon";
-import { CAPABILITIES, WHERE_LABEL } from "@/lib/capabilities";
+import { CAPABILITIES, WHERE_LABEL, type Where } from "@/lib/capabilities";
+import { Point, Points, type PointTone } from "@/components/Points";
 import { usePasskeyWallet } from "@/components/passkey/usePasskey";
 import { jobNetwork, mainnetHeldBack, usePrefs, type NetConfig } from "@/lib/prefs";
 
@@ -33,6 +34,14 @@ const GOALS: { title: string; sub: string; agent: AgentId; say: string }[] = [
   { title: "Get something done", sub: "Check a seller, plan a drive, get a booking ready", agent: "worko", say: "I need something done" },
   { title: "Check what I hold", sub: "Your positions, and selling them", agent: "inso", say: "Show my positions" },
 ];
+
+/** Each group of "what works" gets its own tone: works now, needs an exchange, needs mainnet, not offered. */
+const WHERE_TONE: Record<Where, { tone: PointTone; head: string }> = {
+  now: { tone: "good", head: "text-good" },
+  exchange: { tone: "agent", head: "text-agent-ink" },
+  mainnet: { tone: "warn", head: "text-warn-ink" },
+  never: { tone: "muted", head: "text-ink-3" },
+};
 
 const VENUE_LINE: Record<Venue, string> = {
   paper: "orders are practice only",
@@ -259,21 +268,18 @@ export default function NewJob() {
         </summary>
         {(["now", "exchange", "mainnet", "never"] as const).map((w) => (
           <div key={w} className="mt-3">
-            <div className={`text-[12px] font-semibold uppercase tracking-wide ${w === "now" ? "text-good" : w === "exchange" ? "text-agent-ink" : "text-ink-3"}`}>{WHERE_LABEL[w]}</div>
-            <ul className="mt-1 space-y-1 text-ink-2">
+            <div className={`text-[12px] font-semibold uppercase tracking-wide ${WHERE_TONE[w].head}`}>{WHERE_LABEL[w]}</div>
+            <Points as="ul" min={240} className="mt-1.5">
               {CAPABILITIES.filter((c) => c.where === w).map((c) => (
-                <li key={c.what} className="flex gap-1.5">
-                  <Icon name={w === "now" || w === "exchange" ? "check" : "x"} size={13} stroke={2.4} className={`mt-[3px] shrink-0 ${w === "now" ? "text-good" : w === "exchange" ? "text-agent-ink" : "text-ink-3"}`} />
-                  <span>
-                    {c.what}
-                    <span className="num text-ink-3">
-                      {c.cost ? ` · ${c.cost} USDC` : w === "now" ? " · free" : ""}
-                      {c.note && w !== "now" ? ` · ${c.note}` : ""}
-                    </span>
+                <Point as="li" key={c.what} size="sm" tone={WHERE_TONE[w].tone} soft={w === "never"}>
+                  {c.what}
+                  <span className="num text-ink-3">
+                    {c.cost ? ` · ${c.cost} USDC` : w === "now" ? " · free" : ""}
+                    {c.note && w !== "now" ? ` · ${c.note}` : ""}
                   </span>
-                </li>
+                </Point>
               ))}
-            </ul>
+            </Points>
           </div>
         ))}
         <p className="mt-3 text-ink-3">Without an exchange connected, orders are practice orders: everything else still runs for real. Ask for something that isn&apos;t possible and the agent says so, then offers the closest thing that works.</p>

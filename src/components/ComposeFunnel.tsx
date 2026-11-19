@@ -1,6 +1,7 @@
 "use client";
 import { useEffect, useState } from "react";
 import type { ComposeTrace } from "@/lib/types";
+import { Point, Points } from "./Points";
 
 const reduced = () => typeof window !== "undefined" && window.matchMedia?.("(prefers-reduced-motion: reduce)").matches;
 
@@ -57,20 +58,28 @@ export function ComposeFunnel({ trace, plans }: { trace: ComposeTrace; plans: nu
         {stat(built, built === 1 ? "plan" : "plans", "plans")}
       </div>
       {trace.facts.length > 0 && (
-        <ul className="mt-2.5 space-y-1 border-t border-[#f1f0ec] pt-2 text-[12.5px]" aria-label="What it needs to find out">
-          {trace.facts.map((f, i) => (
-            <li key={f.id} className={`flex items-start gap-2 transition-opacity duration-200 ${i < ticked ? "opacity-100" : "opacity-0"}`} data-testid={`fact-${f.id}`} data-covered={f.covered ? "true" : "false"}>
-              <span aria-hidden className={`mt-[1px] w-3 shrink-0 text-center font-semibold ${f.covered ? "text-good" : "text-ink-3"}`}>
-                {f.covered ? "✓" : "–"}
-              </span>
-              <span className={f.covered ? "text-ink" : "text-ink-3"}>
-                {f.question}
-                {!f.covered && <span className="sr-only"> (no service found)</span>}
-                {f.importance === "must" && <span className="ml-1.5 text-[11px] font-semibold uppercase tracking-wide text-ink-3">must</span>}
-              </span>
-            </li>
-          ))}
-        </ul>
+        <div className="mt-2.5 border-t border-[#f1f0ec] pt-2.5">
+          <Points as="ul" min={220} aria-label="What it needs to find out">
+            {trace.facts.map((f, i) => {
+              const label = [f.importance === "must" ? "Must know" : "", f.covered ? "" : "No service found"].filter(Boolean).join(" · ");
+              return (
+                <Point
+                  key={f.id}
+                  as="li"
+                  size="sm"
+                  tone={f.covered ? "good" : "muted"}
+                  soft={!f.covered}
+                  label={label || undefined}
+                  className={`transition-opacity duration-200 ${i < ticked ? "opacity-100" : "opacity-0"}`}
+                  data-testid={`fact-${f.id}`}
+                  data-covered={f.covered ? "true" : "false"}
+                >
+                  <span className={f.covered ? "text-ink" : "text-ink-3"}>{f.question}</span>
+                </Point>
+              );
+            })}
+          </Points>
+        </div>
       )}
     </section>
   );

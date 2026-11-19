@@ -1,4 +1,5 @@
 import Link from "next/link";
+import { Point, Points } from "@/components/Points";
 import { limits } from "@/server/settings";
 import { STRIKE_HOURS, STRIKE_LIMIT } from "@/server/strikes";
 import { REFUND_WINDOW_MIN } from "@/server/x402";
@@ -98,13 +99,13 @@ export default function SafetyPage() {
         <h2 id="checks" className="mb-3 text-[13px] font-semibold uppercase tracking-wide text-ink-3">
           The check on every paid answer
         </h2>
-        <ul className="grid gap-2 sm:grid-cols-2" data-testid="safety-checks">
+        <Points as="ul" min={260} data-testid="safety-checks">
           {Object.values(TEST_LABEL).map((t) => (
-            <li key={t} className="rounded-lg border border-line bg-panel px-3 py-2 text-[14px]">
+            <Point as="li" key={t} tone="good">
               {t}
-            </li>
+            </Point>
           ))}
-        </ul>
+        </Points>
         <p className="mt-2 text-[13px] text-ink-3">
           Fair to sellers too: the rules are published before the sale, an empty result or "not found" counts as a real answer, a lost connection is nobody's fault, and a seller is only paused after {STRIKE_LIMIT} misses within {STRIKE_HOURS} hours. One good answer clears it.
         </p>

@@ -3,6 +3,7 @@ import Link from "next/link";
 import { useEffect, useState } from "react";
 import { Button, Spinner } from "@/components/ui";
 import { Icon } from "@/components/Icon";
+import { Point, Points } from "@/components/Points";
 import { toast } from "@/components/Toaster";
 import { NotifyToggle } from "@/components/AppShell";
 import { ExchangePanel } from "@/components/ExchangePanel";
@@ -217,11 +218,13 @@ export default function Settings() {
         {cfg?.setup && cfg.setup.length > 0 && (
           <div className="mt-3 rounded-lg border border-warn bg-warn/10 px-3 py-2 text-[12.5px] text-warn-ink" data-testid="setup-problems">
             <b>Setup on this machine:</b>
-            <ul className="mt-1 list-disc pl-4">
+            <Points as="ul" layout="stack" className="mt-1.5">
               {cfg.setup.map((x) => (
-                <li key={x}>{x}</li>
+                <Point as="li" key={x} size="sm" tone="warn">
+                  {x}
+                </Point>
               ))}
-            </ul>
+            </Points>
           </div>
         )}
       </Block>

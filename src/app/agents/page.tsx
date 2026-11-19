@@ -6,6 +6,7 @@ import Link from "next/link";
 import { motion } from "framer-motion";
 import { AgentPortrait, Banner } from "@/components/AgentPortrait";
 import { Icon } from "@/components/Icon";
+import { Point, Points } from "@/components/Points";
 import { useAgentRecords } from "@/components/agentStats";
 import { KITS } from "@/lib/agentKit";
 import { THEMES } from "@/lib/themes";
@@ -60,13 +61,13 @@ export default function AgentDirectory() {
                 <h2 className="mt-2 font-pixel text-[20px] text-agent-ink">{THEMES[a].name}</h2>
                 <div className="text-[15px] font-semibold">{k.title}</div>
                 <p className="mt-0.5 text-[13.5px] leading-snug text-ink-2">{k.headline}</p>
-                <ul className="mt-3 space-y-1 text-[13px] text-ink-2" aria-label="What you can ask for">
+                <Points as="ul" layout="stack" className="mt-3" aria-label="What you can ask for">
                   {k.can.slice(0, 4).map((x) => (
-                    <li key={x} className="flex gap-1.5">
-                      <Icon name="check" size={13} stroke={2.4} className="mt-[3px] shrink-0 text-agent-ink" /> {x}
-                    </li>
+                    <Point as="li" key={x} size="sm" tone="agent">
+                      {x}
+                    </Point>
                   ))}
-                </ul>
+                </Points>
                 <div className="num mt-3 text-[12.5px] text-ink-3">
                   {rec ? (
                     rec.done ? (

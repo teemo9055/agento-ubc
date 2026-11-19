@@ -1,4 +1,5 @@
 import type { ReactNode } from "react";
+import { Point, Points } from "@/components/Points";
 import s from "./town.module.css";
 
 /**
@@ -123,13 +124,25 @@ export function Markdown({ source }: { source: string }) {
       const ordered = /^\d+\. /.test(line);
       const items: string[] = [];
       while (i < lines.length && (ordered ? /^\d+\. /.test(lines[i]) : lines[i].startsWith("- "))) items.push(lines[i++].replace(/^(- |\d+\. )/, ""));
-      const L = ordered ? "ol" : "ul";
+      // Grouped points as boxes, not bullets: numbered boxes for steps, plain boxes otherwise.
       blocks.push(
-        <L key={k}>
-          {items.map((t, j) => (
-            <li key={j}>{inline(t, j)}</li>
-          ))}
-        </L>,
+        ordered ? (
+          <Points key={k} as="ol" layout="stack">
+            {items.map((t, j) => (
+              <Point key={j} as="li" size="sm" tone="agent" label={j + 1}>
+                {inline(t, j)}
+              </Point>
+            ))}
+          </Points>
+        ) : (
+          <Points key={k} as="ul" layout="stack">
+            {items.map((t, j) => (
+              <Point key={j} as="li" size="sm" tone="agent">
+                {inline(t, j)}
+              </Point>
+            ))}
+          </Points>
+        ),
       );
       continue;
     }

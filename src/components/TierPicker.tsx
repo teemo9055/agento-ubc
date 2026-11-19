@@ -2,6 +2,7 @@
 import { useState } from "react";
 import type { ChatTiers, TierChoice } from "@/lib/types";
 import { ComposeFunnel } from "./ComposeFunnel";
+import { Point, Points } from "./Points";
 import { post } from "./useRun";
 import { toast } from "./Toaster";
 
@@ -44,33 +45,32 @@ export function TierPicker({ tiers, onPick, busy }: { tiers: ChatTiers; onPick?:
             <span className="mt-0.5 text-[12px] text-ink-3">
               {t.steps} step{t.steps === 1 ? "" : "s"} · {BLURB[t.tier]}
             </span>
-            <ul className="mt-2 space-y-1 text-[12.5px] leading-snug">
+            <Points as="ul" layout="stack" className="mt-2">
               {t.answers.map((a) => (
-                <li key={a.id} className="flex items-start gap-1.5">
-                  <span aria-hidden className="mt-[1px] text-good">
-                    ✓
-                  </span>
-                  <span className="min-w-0">
-                    {a.question}
-                    {a.crossChecked && (
-                      <span className="ml-1 inline-block rounded-[4px] bg-agent-soft px-1 text-[10.5px] font-semibold text-agent-ink" data-testid="cross-checked">
+                <Point
+                  key={a.id}
+                  as="li"
+                  size="sm"
+                  tone="good"
+                  label={
+                    a.crossChecked ? (
+                      <span className="text-agent-ink" data-testid="cross-checked">
                         cross-checked
                       </span>
-                    )}
-                  </span>
-                </li>
+                    ) : undefined
+                  }
+                >
+                  {a.question}
+                </Point>
               ))}
               {gaps.slice(0, 2).map((g) => (
-                <li key={g.fact} className="flex items-start gap-1.5 text-ink-3">
-                  <span aria-hidden className="mt-[1px]">
-                    –
-                  </span>
-                  <span className="min-w-0">
+                <Point key={g.fact} as="li" size="sm" tone="muted" soft label="Can't answer">
+                  <span className="text-ink-3">
                     {g.fact} <span className="text-[11.5px]">({g.why.toLowerCase()})</span>
                   </span>
-                </li>
+                </Point>
               ))}
-            </ul>
+            </Points>
             {!t.runnable && <span className="mt-2 text-[11.5px] font-medium text-warn-ink">{t.why ?? "Can't run here"}: switch to Arc mainnet in Settings</span>}
           </button>
         );

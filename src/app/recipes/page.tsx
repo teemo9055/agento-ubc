@@ -3,6 +3,7 @@ import { Suspense, useEffect, useMemo, useState } from "react";
 import Link from "next/link";
 import { useRouter, useSearchParams } from "next/navigation";
 import { Icon } from "@/components/Icon";
+import { Point, Points } from "@/components/Points";
 import { Band } from "@/components/JobCard";
 import { RecipeCard, RecipeKey } from "@/components/Recipes";
 import { useAgentTheme } from "@/components/useRun";
@@ -45,13 +46,13 @@ function LearnedSection({ onStart, busy }: { onStart: (text: string, id: string)
             <p className="num mt-2 text-[12.5px] text-ink-2">
               Worked {r.successes} of {r.runs} time{r.runs === 1 ? "" : "s"} · about {usd(r.avgCostUsd)} a run · built from {r.runs} run{r.runs === 1 ? "" : "s"}
             </p>
-            <ol className="mt-2 space-y-0.5 text-[12.5px] text-ink-3">
+            <Points as="ol" layout="stack" className="mt-2 gap-1">
               {r.steps.slice(0, 4).map((s, i) => (
-                <li key={i} className="truncate">
-                  {i + 1}. {s}
-                </li>
+                <Point as="li" key={i} size="sm" tone="agent" className="[&>span]:truncate">
+                  <span className="num text-ink-3">{i + 1}.</span> {s}
+                </Point>
               ))}
-            </ol>
+            </Points>
             <div className="mt-auto flex items-center justify-between gap-2 pt-3">
               {r.buy ? <code className="truncate rounded bg-surface px-1 text-[11.5px] text-ink-2">{r.buy}</code> : <span />}
               <button type="button" disabled={Boolean(busy)} onClick={() => onStart(r.worry, r.id)} className="pressable inline-flex h-8 shrink-0 items-center rounded-lg border border-ink px-2.5 text-[12.5px] font-semibold hover:bg-ink hover:text-white">

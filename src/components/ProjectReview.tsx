@@ -3,6 +3,7 @@ import type { Plan } from "@/lib/types";
 import { getsLine } from "@/lib/plain";
 import { lookupCost, maxCost } from "@/lib/move";
 import { THEMES } from "@/lib/themes";
+import { Point, Points } from "./Points";
 
 const money = (x: number) => `$${x > 0 && x < 0.01 ? x.toFixed(4) : x.toFixed(2)}`;
 const num = (id: string) => id.replace(/^s/, "");
@@ -51,19 +52,16 @@ export function ProjectReview({ plan }: { plan: Plan }) {
       title: "Risk & safeguards",
       sub: "If something goes wrong",
       body: (
-        <ul className="space-y-1.5 text-[13px] leading-snug" data-testid="project-limits">
+        <Points as="ul" layout="stack" data-testid="project-limits">
           {waits.map((s) => (
-            <li key={s.id}>
-              <span className="font-semibold">If step {(s.after ?? []).map(num).join(" or ")} fails:</span>{" "}
-              <span className="text-ink-2">
-                step {num(s.id)} is skipped{s.gate === "filled" ? ", and it also waits for that order to fill" : ""}{s.useProceeds ? "; it only spends what that sale brought in" : ""}.
-              </span>
-            </li>
+            <Point key={s.id} as="li" size="sm" tone="warn" title={`If step ${(s.after ?? []).map(num).join(" or ")} fails:`}>
+              step {num(s.id)} is skipped{s.gate === "filled" ? ", and it also waits for that order to fill" : ""}{s.useProceeds ? "; it only spends what that sale brought in" : ""}.
+            </Point>
           ))}
-          <li>
-            <span className="font-semibold">Starting it:</span> <span className="text-ink-2">each job is approved for you when its turn comes, never above the amounts shown. You can stop all of it at any point.</span>
-          </li>
-        </ul>
+          <Point as="li" size="sm" tone="good" title="Starting it:">
+            each job is approved for you when its turn comes, never above the amounts shown. You can stop all of it at any point.
+          </Point>
+        </Points>
       ),
     },
   ];

@@ -1,6 +1,7 @@
 "use client";
 import type { ToolCall } from "@/lib/types";
 import { Icon } from "./Icon";
+import { Point, Points } from "./Points";
 
 /** What kind of thing each free lookup looks at, for the one-line summary. */
 const NOUN: Record<string, [string, string]> = {
@@ -40,7 +41,7 @@ export function activityLine(tools: ToolCall[]): string {
 
 /**
  * The agent's working notes as one quiet row, closed by default: a summary you can open to see each
- * lookup in order, one line each, with a check or a cross. Like a coding agent's tool calls.
+ * lookup in order, one box each, marked when it didn't answer. Like a coding agent's tool calls.
  */
 export function Activity({ tools, className = "" }: { tools: ToolCall[]; className?: string }) {
   if (!tools.length) return null;
@@ -53,20 +54,22 @@ export function Activity({ tools, className = "" }: { tools: ToolCall[]; classNa
         {failed > 0 && <span className="text-warn-ink">· {failed} didn&apos;t answer</span>}
         <Icon name="chevron" size={10} className="transition-transform group-open:rotate-90 motion-reduce:transition-none" />
       </summary>
-      <ol className="mt-1 space-y-0.5 border-l border-line pl-3" aria-label="Lookups, in order">
+      {/* Points has no "ol", so the grid is the same one Points draws, kept as an ordered list. */}
+      <Points as="ol" layout="stack" className="mt-1.5 gap-1" aria-label="Lookups, in order">
         {tools.map((t, i) => (
-          <li key={i} className="flex items-start gap-1.5" data-testid="activity-item">
-            {t.ok ? (
-              <Icon name="check" size={11} stroke={2.6} className="mt-[3px] shrink-0 text-good" />
-            ) : (
-              <span className="mt-[1px] shrink-0 font-semibold text-warn-ink" aria-label="failed">
-                ×
-              </span>
-            )}
-            <span className={`min-w-0 ${t.ok ? "" : "text-warn-ink"}`}>{t.summary}</span>
-          </li>
+          <Point
+            key={i}
+            as="li"
+            size="sm"
+            tone={t.ok ? "good" : "warn"}
+            soft={!t.ok}
+            label={t.ok ? undefined : <span aria-label="failed">Didn&apos;t answer</span>}
+            data-testid="activity-item"
+          >
+            <span className={t.ok ? "text-ink-2" : "text-warn-ink"}>{t.summary}</span>
+          </Point>
         ))}
-      </ol>
+      </Points>
     </details>
   );
 }

@@ -5,6 +5,7 @@ import { VenueBadge } from "./Chat";
 import { Button, Spinner } from "./ui";
 import { toast } from "./Toaster";
 import { Icon } from "./Icon";
+import { Point, Points } from "./Points";
 
 interface Status {
   venue: Venue;
@@ -108,16 +109,13 @@ export function ExchangePanel() {
             </Button>
           </div>
           {check && (
-            <ul className="mt-1.5 space-y-0.5">
+            <Points as="ul" layout="stack" className="mt-1.5 gap-1">
               {check.map((c) => (
-                <li key={c.step} className="flex gap-1.5">
-                  <span className={c.ok ? "text-good" : "text-bad"}>{c.ok ? "✓" : "✗"}</span>
-                  <span>
-                    <span className="font-medium">{c.step}</span> <span className="text-ink-3">{c.detail}</span>
-                  </span>
-                </li>
+                <Point key={c.step} as="li" size="sm" tone={c.ok ? "good" : "bad"} soft={!c.ok} label={c.ok ? "Passed" : "Failed"} title={c.step}>
+                  {c.detail}
+                </Point>
               ))}
-            </ul>
+            </Points>
           )}
         </div>
       )}

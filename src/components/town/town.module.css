@@ -356,18 +356,11 @@
   padding: 2px 0 2px 12px;
   color: #52514e;
 }
+/* Lists render as Point boxes (see Markdown.tsx): no bullets, no indent. */
 .md ul,
 .md ol {
-  padding-left: 1.4em;
-}
-.md ul {
-  list-style: disc;
-}
-.md ol {
-  list-style: decimal;
-}
-.md li + li {
-  margin-top: 0.25em;
+  list-style: none;
+  padding-left: 0;
 }
 .md a {
   color: #4b3bb0;

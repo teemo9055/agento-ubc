@@ -11,6 +11,7 @@ import { TownHeader } from "@/components/town/TownNav";
 import { TwoForms, CodeTabs } from "@/components/town/TwoForms";
 import { CatIcon, iconStyle } from "@/components/town/icons";
 import { usd, day } from "@/components/town/bits";
+import { Point, Points } from "@/components/Points";
 
 export const dynamic = "force-dynamic";
 
@@ -103,14 +104,19 @@ export default async function StoreItemPage({ params }: { params: Promise<{ id: 
               {j.product ? (
                 <div className="space-y-3 text-[14px]">
                   <p className="text-ink-2">What to send:</p>
-                  <ul className="space-y-1">
+                  <Points as="ul" min={200}>
                     {Object.entries(j.product.params).map(([k, v]) => (
-                      <li key={k} className="flex gap-2">
-                        <code className="shrink-0 rounded bg-[#f1f0ec] px-1 font-mono text-[12.5px]">{k}</code>
-                        <span>{v}</span>
-                      </li>
+                      <Point
+                        key={k}
+                        as="li"
+                        size="sm"
+                        tone="agent"
+                        title={<code className="rounded bg-[#f1f0ec] px-1 font-mono text-[12.5px]">{k}</code>}
+                      >
+                        {v}
+                      </Point>
                     ))}
-                  </ul>
+                  </Points>
                   <p>
                     {j.product.promise.fields?.length ? (
                       <>
@@ -191,22 +197,23 @@ export default async function StoreItemPage({ params }: { params: Promise<{ id: 
               <div className="mt-3 grid gap-4 md:grid-cols-2">
                 <div>
                   <p className="mb-1 text-[12px] font-semibold uppercase tracking-wide text-ink-3">The checks</p>
-                  <ul className="space-y-1 text-[13.5px]">
+                  <Points as="ul" layout="stack">
                     {j.refundPolicy.checks.map((c) => (
-                      <li key={c} className="flex gap-2">
-                        <span aria-hidden className="text-good">✓</span>
+                      <Point key={c} as="li" size="sm" tone="good">
                         {c}
-                      </li>
+                      </Point>
                     ))}
-                  </ul>
+                  </Points>
                 </div>
                 <div>
                   <p className="mb-1 text-[12px] font-semibold uppercase tracking-wide text-ink-3">The rules</p>
-                  <ul className="list-disc space-y-1 pl-4 text-[13.5px] text-ink-2">
+                  <Points as="ul" layout="stack">
                     {j.refundPolicy.rules.map((r) => (
-                      <li key={r}>{r}</li>
+                      <Point key={r} as="li" size="sm" tone="agent">
+                        {r}
+                      </Point>
                     ))}
-                  </ul>
+                  </Points>
                   <p className="mt-2 text-[13px]">
                     <Link href="/town/library/refund-a-bad-answer" className="font-medium underline underline-offset-2">
                       How to claim

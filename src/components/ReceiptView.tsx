@@ -9,6 +9,7 @@ import { motion } from "framer-motion";
 import { Button } from "./ui";
 import { AgentIcon } from "./AgentIcon";
 import { Icon } from "./Icon";
+import { Point, Points } from "./Points";
 import { runOutfit } from "@/lib/summary";
 
 function download(name: string, body: string, type: string) {
@@ -130,11 +131,13 @@ export function ReceiptView({ run }: { run: Run }) {
         <div className="font-medium">“{r.task}”</div>
         <div className="mt-1.5 text-ink-2">{r.deliverable.summary}</div>
         {run.deliverable?.notes && run.deliverable.notes.length > 0 && (
-          <ul className="mt-1 list-disc space-y-0.5 pl-4 text-[12.5px] text-ink-2">
+          <Points as="ul" min={220} className="mt-2">
             {run.deliverable.notes.map((n) => (
-              <li key={n}>{n}</li>
+              <Point key={n} as="li" size="sm" tone="agent">
+                <span className="text-ink-2">{n}</span>
+              </Point>
             ))}
-          </ul>
+          </Points>
         )}
       </div>
 

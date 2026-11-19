@@ -10,6 +10,7 @@ import { post } from "./useRun";
 import { toast } from "./Toaster";
 import { AgentIcon } from "./AgentIcon";
 import { Icon } from "./Icon";
+import { Point, Points } from "./Points";
 import { WalletPanel } from "./passkey/WalletPanel";
 import { usePasskeyWallet } from "./passkey/usePasskey";
 import { fundCalls, sendCalls } from "./passkey/wallet";
@@ -115,16 +116,13 @@ export function Cards({ run, onEdit, focused }: { run: Run; onEdit?: (k: Card["k
                   }`}
                 >
                   <span className="min-h-0 overflow-hidden">
-                    <span className="mt-2 block space-y-1 border-t border-black/5 pt-2 text-[13px] leading-snug text-ink-2">
+                    <Points layout="stack" className="mt-2">
                       {c.points.slice(1).map((p) => (
-                        <span key={p} className="flex gap-1.5">
-                          <span aria-hidden className="text-ink-3">
-                            ·
-                          </span>
-                          {p}
-                        </span>
+                        <Point key={p} size="sm" tone={c.kind === "risk" ? "warn" : "agent"}>
+                          <span className="text-ink-2">{p}</span>
+                        </Point>
                       ))}
-                    </span>
+                    </Points>
                   </span>
                 </span>
               )}
@@ -329,23 +327,22 @@ export function ApproveModal({ run, open, onClose }: { run: Run; open: boolean; 
       </ul>
 
       <div className="mt-4 grid gap-2 text-[12.5px] text-ink-2">
-        <div className="flex gap-2.5 rounded-xl bg-surface p-3">
-          <Icon name="check" size={16} className="mt-px text-agent-ink" />
-          <span>
-            {big.length ? `${big.length} big spend${big.length > 1 ? "s" : ""} over ${fmt(run.threshold)} USDC approved now. No pause mid-run.` : `No spend over the ${fmt(run.threshold)} USDC threshold.`}
-          </span>
-        </div>
-        <div className="flex gap-2.5 rounded-xl bg-surface p-3">
-          <Icon name="refund" size={16} className="mt-px text-agent-ink" />
-          <span>You&apos;re asked again only if a price, payee or step changes.</span>
-        </div>
-        <div className="flex gap-2.5 rounded-xl bg-surface p-3">
-          <Icon name="shield" size={16} className="mt-px text-agent-ink" />
-          <span>
-            Vault rule: up to <b className="num">{fmt(total)}</b> across {run.lines.filter((l) => !offVault(l.rail)).length} lines, only to{" "}
-            {[...new Set(run.lines.filter((l) => !offVault(l.rail)).map((l) => l.payeeName))].join(", ")}. Enforced onchain.
-          </span>
-        </div>
+        <Points layout="stack">
+          <Point size="sm" tone="good">
+            <span className="text-ink-2">
+              {big.length ? `${big.length} big spend${big.length > 1 ? "s" : ""} over ${fmt(run.threshold)} USDC approved now. No pause mid-run.` : `No spend over the ${fmt(run.threshold)} USDC threshold.`}
+            </span>
+          </Point>
+          <Point size="sm" tone="agent">
+            <span className="text-ink-2">You&apos;re asked again only if a price, payee or step changes.</span>
+          </Point>
+          <Point size="sm" tone="agent">
+            <span className="text-ink-2">
+              Vault rule: up to <b className="num">{fmt(total)}</b> across {run.lines.filter((l) => !offVault(l.rail)).length} lines, only to{" "}
+              {[...new Set(run.lines.filter((l) => !offVault(l.rail)).map((l) => l.payeeName))].join(", ")}. Enforced onchain.
+            </span>
+          </Point>
+        </Points>
         <div className="num flex justify-between rounded-xl border border-dashed border-line px-3 py-2 text-[12px] text-ink-3">
           <span>Your wallet → vault</span>
           <span>

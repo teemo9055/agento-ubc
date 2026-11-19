@@ -13,6 +13,7 @@ import { toast } from "./Toaster";
 import { partsOf, type Part, type PartState } from "@/lib/parts";
 import { blueprintOf } from "@/lib/shape";
 import { AgentView, BlueprintView } from "./Workspace";
+import { Point, Points } from "./Points";
 
 function PartMark({ state }: { state: PartState }) {
   if (state === "active") return <span className="flex h-3.5 w-3.5 shrink-0 items-center justify-center text-agent-ink"><Spinner /></span>;
@@ -416,13 +417,17 @@ export function PlanBoard({ plan, run }: { plan: Plan; run: Run }) {
       )}
 
       {plan.unavailable.length > 0 && (
-        <ul className="space-y-0.5 border-t border-[#f1f0ec] px-4 py-3 text-[12.5px] sm:px-5" data-testid="plan-unavailable">
-          {plan.unavailable.map((u) => (
-            <li key={u.what} className="text-ink-2">
-              <span className="font-medium text-bad">Can&apos;t do here:</span> {u.what}. <span className="text-ink-3">{u.why}</span>
-            </li>
-          ))}
-        </ul>
+        <div className="border-t border-[#f1f0ec] px-4 py-3 sm:px-5">
+          <Points as="ul" min={240} data-testid="plan-unavailable">
+            {plan.unavailable.map((u) => (
+              <Point key={u.what} as="li" size="sm" tone="bad" soft label="Can't do here">
+                <span className="text-ink-2">
+                  {u.what}. <span className="text-ink-3">{u.why}</span>
+                </span>
+              </Point>
+            ))}
+          </Points>
+        </div>
       )}
 
       {/* Starting, stopping and the total live once, in the project's header and review. */}

@@ -4,6 +4,7 @@ import type { Report as ReportT, Run } from "@/lib/types";
 import { fmt } from "@/lib/money";
 import { txUrl } from "@/lib/format";
 import { Icon } from "./Icon";
+import { Point, Points } from "./Points";
 
 const VERDICT: Record<NonNullable<ReportT["verdict"]>, { text: string; cls: string }> = {
   looks_fine: { text: "Looks fine", cls: "bg-good/10 text-good border-good/40" },
@@ -82,20 +83,19 @@ export function Report({ run, id }: { run: Run; /** Set on the page made for pri
         </h2>
       </div>
       {r.claims.length > 0 && (
-        <ul className="space-y-1.5 border-t border-[#f1f0ec] px-4 py-3 text-[14px] leading-snug" aria-label="What was found">
-          {r.claims.map((c, i) => (
-            <li key={i} className="flex gap-2" data-testid="report-claim">
-              <span aria-hidden className="mt-[7px] h-1.5 w-1.5 shrink-0 rounded-full bg-ink/60" />
-              <span className="min-w-0">
+        <div className="border-t border-[#f1f0ec] px-4 py-3">
+          <Points as="ul" layout="stack" aria-label="What was found">
+            {r.claims.map((c, i) => (
+              <Point key={i} as="li" size="sm" tone={c.unverified?.length ? "warn" : "agent"} data-testid="report-claim">
                 {c.text}
                 {c.evidence.map((e) => (
                   <Evidence key={e} run={run} phaseId={e} n={order.indexOf(e) + 1} />
                 ))}
                 {c.unverified?.length ? <span className="ml-1 text-[12px] text-warn-ink" title="These figures weren't in the data">(unchecked: {c.unverified.join(", ")})</span> : null}
-              </span>
-            </li>
-          ))}
-        </ul>
+              </Point>
+            ))}
+          </Points>
+        </div>
       )}
       {r.conflicts.length > 0 && (
         <div className="mx-4 mb-3 space-y-2 rounded-xl border border-warn bg-warn/10 px-3 py-2.5 text-[13px]" data-testid="report-conflicts">
@@ -114,11 +114,13 @@ export function Report({ run, id }: { run: Run; /** Set on the page made for pri
       {r.gaps.length > 0 && (
         <div className="border-t border-[#f1f0ec] px-4 py-3 text-[13px]" data-testid="report-gaps">
           <div className="text-[11.5px] font-semibold uppercase tracking-wide text-ink-3">What this didn&apos;t cover</div>
-          <ul className="mt-1 space-y-0.5 text-ink-2">
+          <Points as="ul" min={220} className="mt-1.5">
             {r.gaps.map((g) => (
-              <li key={g}>– {g}</li>
+              <Point key={g} as="li" size="sm" tone="muted" soft>
+                <span className="text-ink-2">{g}</span>
+              </Point>
             ))}
-          </ul>
+          </Points>
         </div>
       )}
       <p className="num border-t border-[#f1f0ec] px-4 py-2.5 text-[12.5px] text-ink-3" data-testid="report-spent">

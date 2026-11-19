@@ -2,6 +2,7 @@
 import { useCallback, useEffect, useState } from "react";
 import type { AgentId } from "@/lib/types";
 import { Icon } from "./Icon";
+import { Point, Points } from "./Points";
 import { toast } from "./Toaster";
 
 interface Outcome {
@@ -46,26 +47,26 @@ export function Knowledge({ agent }: { agent: AgentId }) {
     <div className="space-y-4 text-[14px]">
       <div>
         <div className="mb-1.5 text-[13px] font-semibold">Knows</div>
-        <ul className="space-y-1.5 text-ink-2">
+        <Points as="ul" min={260}>
           {k.primers.map((p) => (
-            <li key={p} className="flex gap-2">
-              <Icon name="check" size={14} className="mt-[3px] shrink-0 text-agent" /> {p}
-            </li>
+            <Point as="li" key={p} size="sm" tone="agent">
+              {p}
+            </Point>
           ))}
-        </ul>
+        </Points>
       </div>
       <div>
         <div className="mb-1.5 text-[13px] font-semibold">Learned from past orders</div>
         {k.lessons.length === 0 ? (
           <p className="text-ink-3">Nothing yet. Lessons appear once orders on the exchange fill, get cancelled or are refused.</p>
         ) : (
-          <ul className="space-y-1.5 text-ink-2">
+          <Points as="ul" min={260}>
             {k.lessons.map((l) => (
-              <li key={l} className="flex gap-2">
-                <Icon name="bolt" size={14} className="mt-[3px] shrink-0 text-agent" /> {l}
-              </li>
+              <Point as="li" key={l} size="sm" tone="agent" soft>
+                {l}
+              </Point>
             ))}
-          </ul>
+          </Points>
         )}
       </div>
       {k.outcomes.length > 0 && (
