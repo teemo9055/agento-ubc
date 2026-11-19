@@ -3,6 +3,7 @@ import { ComposePanel } from "@/components/TierPicker";
 import { Report } from "@/components/Report";
 import { LearnedBanner } from "@/components/LearnedBanner";
 import { WatchThis } from "@/components/Watches";
+import { Replay } from "@/components/graph/Replay";
 import { use, useEffect, useRef, useState } from "react";
 import Link from "next/link";
 import dynamic from "next/dynamic";
@@ -644,7 +645,7 @@ export default function RunPage({
           <LearnedBanner run={run} />
           {run.proposal?.compose && (
             <section className="rounded-2xl border border-line bg-panel px-3 py-5 sm:px-5" aria-label="Steps" data-testid="done-graph">
-              <PhaseGraph phases={run.phases} lines={run.lines} simulated={run.mode === "demo"} run={run} />
+              <Replay run={run} />
             </section>
           )}
           {run.report && (

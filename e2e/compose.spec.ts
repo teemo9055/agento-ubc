@@ -50,6 +50,13 @@ for (const motion of ["full", "reduced"] as const) {
     await expect(graph.getByTestId("graph-spend")).toContainText("spent $");
     await expect(graph.getByTestId("verdict-node")).toHaveAttribute("data-lean", /do_not_proceed|be_careful/);
 
+    // Replay: at the very start, every step is waiting again.
+    const scrubber = graph.getByTestId("replay-scrubber");
+    await scrubber.fill("0");
+    await expect(graph.locator('[data-testid^="phase-"][data-status="planned"]')).toHaveCount(await graph.locator('[data-testid^="phase-"][data-status]').count());
+    await scrubber.fill(await scrubber.getAttribute("max") ?? "0");
+    await expect(graph.locator('[data-tiebreaker="true"]')).toHaveAttribute("data-status", "done");
+
     // The report: claims with evidence chips, the conflict explained, the spend from the receipt.
     const report = page.getByTestId("report");
     await expect(report.getByTestId("report-conflicts")).toContainText("third source");

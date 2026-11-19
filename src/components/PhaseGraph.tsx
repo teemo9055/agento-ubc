@@ -6,6 +6,7 @@ import { Node, toneOf } from "./graph/Node";
 import { connector, depthOf, gridLayout, laneLayout, GAP_X, NODE_H, NODE_W, LANE_LABEL_W, VERDICT_H, VERDICT_W, type Layout, type Pt } from "./graph/layout";
 import { VaultNode, VAULT_H, VAULT_W, spendOf } from "./graph/VaultNode";
 import { VerdictNode } from "./graph/VerdictNode";
+import { diffPlans, type PlanDiff } from "@/lib/planDiff";
 
 export { depthOf };
 
@@ -76,6 +77,28 @@ function Coin({ from, to }: { from: Pt; to: Pt }) {
   );
 }
 
+/** What the last edit changed, shown on the graph for a moment: new steps 1.5s, price and seller 2s. */
+function useEditDiff(phases: Phase[], lines: CostLine[], on: boolean) {
+  const prev = useRef<{ phases: Phase[]; lines: CostLine[] } | null>(null);
+  const [diff, setDiff] = useState<PlanDiff | null>(null);
+  const key = phases.map((p) => p.id).join() + "|" + lines.map((l) => `${l.id}:${l.approved}:${l.payeeName}`).join();
+  useEffect(() => {
+    const before = prev.current;
+    prev.current = { phases, lines };
+    if (!on || !before) return;
+    const d = diffPlans(before, { phases, lines });
+    if (!d.added.length && !Object.keys(d.price).length && !Object.keys(d.provider).length) return;
+    setDiff(d);
+    const t1 = setTimeout(() => setDiff((x) => (x ? { ...x, added: [] } : x)), 1500);
+    const t2 = setTimeout(() => setDiff(null), 2000);
+    return () => {
+      clearTimeout(t1);
+      clearTimeout(t2);
+    };
+  }, [key, on]); // eslint-disable-line react-hooks/exhaustive-deps
+  return diff;
+}
+
 const IMPORTANCE: Record<string, string> = { must: "font-semibold text-ink", should: "text-ink-2", nice: "text-ink-3" };
 
 export function PhaseGraph({
@@ -106,6 +129,7 @@ export function PhaseGraph({
   const lanes = run?.lanes?.length ? run.lanes : undefined;
   // In lanes, the Verdict node is where the findings meet, so the "write it up" step isn't drawn again.
   const phases = useMemo(() => (lanes ? all.filter((p) => p.id !== "check") : all), [all, lanes]);
+  const edit = useEditDiff(phases, lines, Boolean(draft));
   const layout: Layout = useMemo(() => {
     const grid = gridLayout(phases, width);
     // Lanes scroll sideways when they don't fit; only a phone-sized box gets the plain grid instead.
@@ -154,6 +178,11 @@ export function PhaseGraph({
 
   return (
     <div ref={box} className="w-full" aria-label="Steps of this job" data-testid="phase-graph" data-layout={layout.vertical ? "vertical" : layout.bands ? "lanes" : "horizontal"}>
+      {draft && run?.proposal?.changes?.length ? (
+        <p className="mb-2 rounded-lg bg-agent-soft px-2.5 py-1.5 text-[12.5px] text-agent-ink" data-testid="graph-changes">
+          {run.proposal.changes.join(" · ")}
+        </p>
+      ) : null}
       {run && spend && (
         <p className="num mb-3 text-[12.5px] text-ink-2" data-testid="graph-spend" aria-live="polite">
           {draft
@@ -237,6 +266,7 @@ export function PhaseGraph({
               x={at(p.id).x}
               y={at(p.id).y}
               onGap={p.gap && onGap ? (a) => onGap(p.gap!.fact, a) : undefined}
+              diff={edit ? { isNew: edit.added.includes(p.id), priceFrom: edit.price[p.id]?.from, providerFrom: edit.provider[p.id]?.from } : undefined}
             />
           ))}
           {verdictAt && run && <VerdictNode run={run} x={verdictAt.x} y={verdictAt.y} />}

@@ -67,7 +67,7 @@ function Mark({ tone, step }: { tone: Tone; step: number }) {
   return <span className={`${base} num border-[1.5px] border-[#d5d4ce] text-ink-3`}>{step}</span>;
 }
 
-export function Node({ p, line, step, simulated, onEdit, focused, dim, x, y, onGap }: { p: Phase; line?: CostLine; step: number; simulated: boolean; onEdit?: () => void; focused?: boolean; dim?: boolean; x: number; y: number; /** For a gap: find another way, or skip it. */ onGap?: (action: "another" | "skip") => void }) {
+export function Node({ p, line, step, simulated, onEdit, focused, dim, x, y, onGap, diff }: { p: Phase; line?: CostLine; step: number; simulated: boolean; onEdit?: () => void; focused?: boolean; dim?: boolean; x: number; y: number; /** For a gap: find another way, or skip it. */ onGap?: (action: "another" | "skip") => void; /** Just changed by an edit: shown for a moment. */ diff?: { isNew?: boolean; priceFrom?: string; providerFrom?: string } }) {
   const net = useNet();
   const tone = toneOf(p);
   const last = p.payments[p.payments.length - 1];
@@ -93,7 +93,7 @@ export function Node({ p, line, step, simulated, onEdit, focused, dim, x, y, onG
       onClick={onEdit}
       aria-pressed={onEdit ? Boolean(focused) : undefined}
       aria-label={onEdit ? `${label}. Edit in chat` : label}
-      className={`node-in group absolute flex flex-col overflow-hidden rounded-xl px-3.5 pb-2.5 pt-3 text-left transition-[box-shadow,border-color,opacity,transform,background-color] duration-300 motion-reduce:transition-none ${frame} ${red ? "!shadow-[3px_3px_0_0_var(--color-bad)]" : ""} ${focused ? "!border-ink shadow-[3px_3px_0_0_var(--agent)]" : ""} ${
+      className={`node-in group absolute flex flex-col overflow-hidden rounded-xl px-3.5 pb-2.5 pt-3 text-left transition-[box-shadow,border-color,opacity,transform,background-color] duration-300 motion-reduce:transition-none ${frame} ${red ? "!shadow-[3px_3px_0_0_var(--color-bad)]" : ""} ${diff?.isNew ? "!border-good !border-2" : ""} ${focused ? "!border-ink shadow-[3px_3px_0_0_var(--agent)]" : ""} ${
         onEdit && !focused ? "cursor-pointer hover:-translate-y-0.5 hover:border-ink" : ""
       } ${dim ? "opacity-55" : ""}`}
       style={{ left: x, top: y, width: NODE_W, height: NODE_H, animationDelay: `${(step - 1) * 60}ms` }}
@@ -103,13 +103,16 @@ export function Node({ p, line, step, simulated, onEdit, focused, dim, x, y, onG
       data-finding-tone={p.finding?.tone}
       data-gap={p.gap ? "true" : undefined}
       data-tiebreaker={p.tieBreaker ? "true" : undefined}
+      data-new={diff?.isNew ? "true" : undefined}
     >
+      {diff?.isNew && <span className="absolute right-1.5 top-1.5 rounded bg-good px-1 text-[10px] font-semibold text-white" data-testid={`new-${p.id}`}>+ new</span>}
       <div className="flex items-start gap-2.5">
         {p.gap ? <span className="inline-flex h-[22px] w-[22px] shrink-0 items-center justify-center rounded-[5px] border border-dashed border-ink/40 text-[12px] text-ink-3">?</span> : <Mark tone={tone} step={step} />}
         <div className="min-w-0 flex-1">
           <div className="flex items-center gap-1.5">
             {p.conditional && <span aria-hidden title={`Only if ${p.conditional}`} className="inline-block h-2 w-2 shrink-0 rotate-45 border-[1.5px] border-ink bg-panel" data-testid={`when-${p.id}`} />}
             <span className="truncate text-[13.5px] font-semibold leading-tight">{p.label}</span>
+            {diff?.providerFrom && <span className="truncate text-[11px] text-ink-3 line-through" title={`Was ${diff.providerFrom}`}>{diff.providerFrom}</span>}
             {p.conflict && (
               <span
                 title={p.conflict.note}
@@ -152,7 +155,11 @@ export function Node({ p, line, step, simulated, onEdit, focused, dim, x, y, onG
           ) : p.finish ? (
             <span className="font-semibold text-ink-2">You finish it</span>
           ) : line ? (
-            tone === "waiting" || tone === "skipped" ? `${tieWaiting || p.conditional ? "Up to" : "Agento pays"} $${fmt(line.approved === "0" && line.calls ? line.calls.unitPrice : line.approved)}` : `$${fmt(line.actual)} of $${fmt(line.approved)}`
+            diff?.priceFrom ? (
+              <span data-testid={`price-change-${p.id}`}>
+                ${fmt(diff.priceFrom)} → ${fmt(line.approved)}
+              </span>
+            ) : tone === "waiting" || tone === "skipped" ? `${tieWaiting || p.conditional ? "Up to" : "Agento pays"} $${fmt(line.approved === "0" && line.calls ? line.calls.unitPrice : line.approved)}` : `$${fmt(line.actual)} of $${fmt(line.approved)}`
           ) : (
             "Free"
           )}
