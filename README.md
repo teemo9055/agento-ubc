@@ -2,7 +2,7 @@
 
 Ask an agent anything; it looks things up for free. When there's something worth doing, it proposes one concrete move ("Buy 7 YES on Phoenix at 39¢ or less if the odds are still under 40%?"). Say yes and the move becomes a priced work order: you approve once, the agent pays for its research in USDC on Arc from a vault that only pays what you approved, re-checks the condition on fresh data, then acts. You get the result and an itemized receipt.
 
-Three agents share one runtime. Each move's steps come from the conversation, often starting from a recipe in the recipe book (below) that the agent then tailors.
+Three agents share one runtime. Each move's steps come from the conversation, often starting from a recipe in the recipe book (below) that the agent then tailors. For a problem nobody wrote a recipe for, the **composer** builds the plan itself from Circle's whole Agent Marketplace catalog (below): it chains services so one answer feeds the next, cross-checks key answers with a second provider, and turns jobs that worked into recipes other agents can buy.
 
 | Agent | Domain | Explores with (free) | Paid research (x402) | Moves |
 | ----- | ------ | -------------------- | -------------------- | ----- |
@@ -103,7 +103,8 @@ The model suggests, code checks, you approve, the contract enforces. The model n
         │
         ▼
  1. UNDERSTAND   model, at most 6 rounds of free lookups (markets, prices, places, Arc reads)
-                 it may: look things up · ask you one question · propose a move or a plan
+    / COMPOSE    it may: look things up · ask you one question · propose a move or a plan ·
+                 compose plans from the whole marketplace catalog (Quick, Thorough, Most certain)
                  it can't: pay, sign, order, raise a limit, choose a payee
         │
         ▼
@@ -120,7 +121,10 @@ The model suggests, code checks, you approve, the contract enforces. The model n
                  the contract refuses other payees, amounts over a cap, and repeats
         │
         ▼
- 5. RUN          before every payment: approved line? same payee? price and total within cap?
+ 5. RUN          bind / branch / cross-check: a step's input from an earlier answer (checked
+                 against the field it fills), steps that run only if needed, a tie-breaker only
+                 if two sources disagree
+                 before every payment: approved line? same payee? price and total within cap?
                    price rose or over the big-spend limit → asks you (2 min, else no)
                    seller fails → pauses: retry · skip · top up · stop
         │
@@ -154,6 +158,26 @@ In more detail:
 7. **Change → ask.** If the policy blocks a spend, that step pauses and you get a re-approval popup. Other steps keep going.
 8. **Fail → choose.** A failed step offers retry, skip (optional steps only), top up, or stop. Purchases are cached per request key, so a retry never pays twice for an answer that arrived.
 9. **Close.** The vault closes, unspent USDC returns to you, and you get the receipt.
+
+## How Agento builds a solution
+
+For a problem nobody wrote a recipe for ("I'm about to send $400 to someone on Facebook Marketplace for a bike, here's the listing and their number"), Agento builds the plan from the whole [Agent Marketplace](https://agents.circle.com/services) catalog. Try it on the New job page: **See it compose**.
+
+```
+ capability map → facts → routes → tiers → dataflow → report → recipe
+```
+
+1. **Capability map** (`src/server/catalog`). Every listing in the catalog (about 2,700) is crawled and tagged with what it takes and what it gives back, from a fixed vocabulary (phone, listing link, risk signal, reviews…): rules first from the listing's own schema and description, the model only for what rules leave unknown, and code drops any field the listing doesn't have. Each listing also has its price, where it can be paid (Arc testnet, Arc mainnet) and a delivery record built from real runs. Services that send, buy, book or call are mapped but never planned. Search mixes meaning (embeddings), words and track record; sellers paused by strikes are left out. `GET /api/catalog?stats=1` shows the map.
+2. **Facts** (`src/server/composer/facts.ts`). What the user gave (only values really in their text) and the questions that would settle the problem, each with how much it matters: must, should, nice.
+3. **Routes** (`route.ts`). For each question, services whose answers fit; when one needs an input nobody gave, it chains backwards to a service that produces it (up to three deep). Plain code: the same problem and catalog give the same routes.
+4. **Tiers** (`tiers.ts`). Quick (must-know, cheapest), Thorough (everything worth knowing), Most certain (a second provider checks each key answer, and a third is bought only if they disagree). Each is an ordinary proposal: the existing validator prices it from each seller's own quote, and the review lists what it can't answer. The funnel shows "Searched 2,667 services → 48 relevant → 3 plans".
+5. **Dataflow** (`src/server/dataflow.ts`). When a step starts, inputs bound to earlier answers are filled and checked against the field they fill (a phone is normalised, a link must be http(s), a wallet must be an address); text from a seller is data and never instructions. A step whose condition doesn't hold is skipped and costs nothing; a missing input fails only that step.
+6. **Report** (`src/server/report.ts`). One sentence, a verdict, and claims that each cite the paid steps behind them. The model words claims only from delivered answers; code drops claims without evidence and flags figures the data doesn't contain. Conflicts, gaps and spend are written by code.
+7. **Recipe** (`src/server/learn.ts`). A composed job that worked becomes a recipe, with the user's values replaced by placeholders. Promoted once it has worked again (75%+), it is sold to other agents over x402 at `/api/x402/recipe.<id>`: the request is checked first, the buyer's payment settles before the paid checks run, and a failed must-know check is refunded in full.
+
+The graph tells the same story while it runs: the vault on the left with money flowing to each paid step, edges labelled with the value they carry, a finding on each step ("Line type: voip"), lanes per question ending in a verdict, ≠ when sources disagree, and a tie-breaker that wakes up only then.
+
+Marketplace lookups are paid from the app's Gateway balance, not the job's vault; the per-job limits count them too. On Arc testnet only about 130 listings are payable (mostly chain reads), so the composer's breadth shows on Arc mainnet: on testnet, mainnet-only plans are shown with "Only payable on Arc mainnet" and can't be approved.
 
 ### Did it arrive? The delivery check and refunds
 
@@ -307,6 +331,11 @@ Before anything is signed the purchase is checked against the approved line: the
 | Only what you hold | Sells are cut to what you hold and never short |
 | Transactions | Simulated before sending; one in flight per wallet; at most 8 jobs running at once |
 | Edits stay in scope | A typed change can only change the part you asked about; quick changes use no model at all |
+| Bound inputs are checked | A value one step passes to the next is checked against the receiving field's type, and fields the listing doesn't take are dropped (`src/server/dataflow.ts`) |
+| Only services that read | Listings that send, buy, book, call or change something are never put in a plan (`src/server/catalog/tag.ts`) |
+| Tie-breakers and branches | Priced and approved up front, bought only if sources disagree or an earlier answer calls for it; otherwise never spent |
+| Job limits include marketplace lookups | The per-job and mainnet limits count Gateway-paid steps, not just the vault |
+| Sold recipes | The buyer's request is checked before payment, the payment settles before anything is bought, a failed must-know check is refunded, and recipe runs stop at a daily cap (`RECIPE_SALES_DAILY_CAP_USD`) |
 
 The policy engine runs before any signature. The vault enforces the same rules onchain, so a bug in the app fails closed.
 
@@ -323,6 +352,7 @@ The app is also an MCP server at `/api/mcp`, so Claude Code, Claude Desktop, Cur
 | `ask_agent` | Chat with a built-in agent; it explores and may propose a move |
 | `propose_move` | Your AI's own move, validated against live data and priced as a draft work order |
 | `propose_plan` | Your AI's own plan: 2-12 moves for different agents, with what each waits for. Every move and the plan's shape are validated; the user starts it in the app |
+| `compose` | A problem in plain words becomes up to three plans built from the whole marketplace catalog, with draft links |
 | `edit_work_order` | Change a draft by request; re-priced or refused with a reason |
 | `get_job`, `list_jobs` | Status, chat, cost, steps, what it is waiting for |
 | `get_job_data`, `get_receipt` | Results for your AI to analyse; itemized receipt |

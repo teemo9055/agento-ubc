@@ -44,6 +44,9 @@ export const CAPABILITIES: Capability[] = [
   { what: "What's new, opening soon or just settled on Gemini, and how each market resolved", where: "now", who: ["inso", "trado"] },
   { what: "Live prices on any contract, and how far the real price is from its line", where: "now", who: ["inso", "trado"] },
   { what: "Price cover against several things happening together (a combination)", where: "now", who: ["inso"] },
+  // Composed from the whole marketplace.
+  { what: "A check built from the whole marketplace catalog: Quick, Thorough or Most certain, one answer feeding the next, key answers cross-checked", where: "mainnet", who: ["worko", "inso", "trado"], note: "Plans are built here; most of their services take Arc mainnet (about 130 are payable on testnet)" },
+  { what: "Recipes learned from jobs that worked, sold to other agents per request", where: "now", who: ["worko"], note: "x402 at /api/x402/recipe.<id>, refunded if a must-know check fails" },
   // Orders.
   { what: "One order on a combination of 2-6 outcomes that pays only if all happen", where: "exchange", who: ["inso"], note: "Gemini's test exchange; not yet on its real one" },
   { what: "Buy or sell prediction contracts on crypto and commodity markets: limits, stop-limits, conditions, hedges, positions", where: "exchange", who: ["inso", "trado"], note: "Gemini's test exchange lists only these markets" },
