@@ -28,9 +28,17 @@ export interface AgentCtx {
   /** Returns true once if this fault switch is on for the run. */
   fault(code: "model_error" | "policy_block"): boolean;
   /** Buys from an outside marketplace seller with a Gateway nanopayment, through the same spend policy. */
-  buyMarketplace?<T>(lineId: string, key: string, product: string, fetcher: () => Promise<T & { paid: { amountUsdc: number; payTo: string; via: string } }>, check?: { promise?: DeliveryPromise; asked?: Record<string, string> }): Promise<T>;
+  buyMarketplace?<T>(lineId: string, key: string, product: string, fetcher: () => Promise<T & { paid: { amountUsdc: number; payTo: string; via: string } }>, check?: { promise?: DeliveryPromise; asked?: Record<string, string>; resource?: string }): Promise<T>;
   /** Reports the exchange order placed for this move. */
   order?(o: OrderResult): void;
+  /** Finished research steps' answers, by step id (survives a restart). */
+  results?(): Record<string, unknown>;
+  /** Ends this step without running it, with a plain reason. Nothing is paid. */
+  skip?(note: string): never;
+  /** Adds what a step found, what flowed into it or whether its sources agreed, for the graph. */
+  update?(phaseId: string, patch: Pick<import("@/lib/types").Phase, "finding" | "inputs" | "conflict">): void;
+  /** Records a decision the system made on the user's behalf within what was approved. */
+  decide?(what: string, why: string): void;
 }
 
 export interface AgentDef {
@@ -50,9 +58,12 @@ export interface AgentDef {
   restore?(options: Record<string, unknown>, run: Run): Record<string, unknown>;
 }
 
+/** Thrown by a step that isn't needed after all (its condition didn't hold, its sources agreed). Nothing is paid. */
+export class SkipPhase extends Error {}
+
 export class PhaseFailure extends Error {
   constructor(
-    public code: "model_error" | "policy_block" | "approval_timeout" | "exchange_rejected" | "bad_delivery" | "unknown",
+    public code: "model_error" | "policy_block" | "approval_timeout" | "exchange_rejected" | "bad_delivery" | "missing_input" | "unknown",
     message: string,
     /** USDC base units sent back after a failed delivery check. */
     public refunded?: string,

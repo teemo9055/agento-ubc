@@ -17,6 +17,8 @@ const EFFORT = process.env.AI_REASONING_EFFORT ?? "low";
 
 export const aiEnabled = () => Boolean(KEY) && process.env.AI_DISABLED !== "true";
 export const aiModel = () => MODEL;
+/** Where the OpenAI-compatible endpoint lives, for calls other than chat (embeddings). */
+export const aiEndpoint = () => ({ base: BASE, key: KEY });
 
 export interface AiUsage {
   model: string;

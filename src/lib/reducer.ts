@@ -37,13 +37,17 @@ export function reduce(run: Run | null, e: SeqEvent): Run | null {
     case "run.approved":
       return { ...run, status: "running", planHash: e.planHash, vault: e.vault, fundingTx: e.fundingTx, startedAt: e.at };
     case "phase.started":
-      return mapPhase(run, e.phaseId, (p) => ({ ...p, status: "active", error: undefined, progress: 0 }));
+      return mapPhase(run, e.phaseId, (p) => ({ ...p, status: "active", error: undefined, progress: 0, startedAt: e.at ?? p.startedAt }));
     case "phase.progress":
       return mapPhase(run, e.phaseId, (p) => ({ ...p, progress: Math.max(p.progress ?? 0, e.progress), note: e.note ?? p.note }));
     case "phase.done":
-      return mapPhase(run, e.phaseId, (p) => ({ ...p, status: "done", progress: 1, note: e.note ?? p.note }));
+      return mapPhase(run, e.phaseId, (p) => ({ ...p, status: "done", progress: 1, note: e.note ?? p.note, endedAt: e.at ?? p.endedAt }));
     case "phase.skipped":
-      return mapPhase(run, e.phaseId, (p) => ({ ...p, status: "skipped" }));
+      return mapPhase(run, e.phaseId, (p) => ({ ...p, status: "skipped", note: e.note ?? p.note, endedAt: e.at ?? p.endedAt }));
+    case "phase.updated":
+      return mapPhase(run, e.phaseId, (p) => ({ ...p, ...e.patch }));
+    case "run.tallied":
+      return { ...run, verdict: e.verdict };
     case "payment.updated":
       return mapPhase(run, e.phaseId, (p) => {
         const i = p.payments.findIndex((x) => x.id === e.payment.id);
@@ -67,7 +71,7 @@ export function reduce(run: Run | null, e: SeqEvent): Run | null {
       };
     }
     case "data.received":
-      return { ...run, feed: { ...run.feed, [e.key]: { product: e.product, data: e.data } } };
+      return { ...run, feed: { ...run.feed, [e.key]: { product: e.product, data: e.data } }, ...(e.phaseId ? { results: { ...run.results, [e.phaseId]: e.data } } : {}) };
     case "reapproval.requested":
       return {
         ...mapPhase(run, e.request.phaseId, (p) => ({ ...p, status: "awaiting_reapproval" })),

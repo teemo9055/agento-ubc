@@ -35,7 +35,7 @@ import { suggestionsFor } from "./suggest";
 import { recordOrder, recordSettlement } from "./knowledge";
 import { aiEditMove } from "./edit-move";
 import { offVault, paidInUsdc, type ChatMsg, type Plan, type PlanStep, type Proposal } from "@/lib/types";
-import { PhaseFailure, type AgentCtx, type PlanDraft } from "./agents/types";
+import { PhaseFailure, SkipPhase, type AgentCtx, type PlanDraft } from "./agents/types";
 import { MAINNET_MAX_JOB_USD, chainOf, factoryAbi, liveReady, setupProblems, vaultAbi } from "./chain";
 import type { Net } from "@/lib/networks";
 import { planTree } from "./merkle";
@@ -44,6 +44,8 @@ import { SELLERS } from "./sellers";
 import { PRODUCTS } from "./x402";
 import { checkDelivery, DeliveryError, MaybeChargedError, type DeliveryPromise, type DeliveryVerdict } from "./delivery";
 import { recordDelivery, standing } from "./strikes";
+import { recordOutcome } from "./catalog/store";
+import { tally } from "./verdict";
 
 import { limits } from "./settings";
 import { partsProgress } from "@/lib/parts";
@@ -660,15 +662,30 @@ async function runPhase(ctl: Ctl, phaseId: string): Promise<void> {
   const agent = AGENTS[ctl.run.agent];
   for (;;) {
     if (ctl.cancelled) throw new Cancelled();
-    emit(ctl, { type: "phase.started", phaseId });
+    emit(ctl, { type: "phase.started", phaseId, at: now() });
     const chargedBefore = phaseCharged(ctl, phaseId);
     try {
       await agent.runPhase(phaseId, agentCtx(ctl, phaseId));
-      emit(ctl, { type: "phase.done", phaseId });
+      emit(ctl, { type: "phase.done", phaseId, at: now() });
       return;
     } catch (e) {
       if (e instanceof Cancelled || ctl.cancelled) throw new Cancelled();
       const phase = ctl.run.phases.find((p) => p.id === phaseId)!;
+      // Not needed after all: nothing was paid, and its approved money stays in the vault until close.
+      if (e instanceof SkipPhase) {
+        releaseLine(ctl, phase);
+        emit(ctl, { type: "phase.skipped", phaseId, note: e.message, at: now() });
+        tallyRun(ctl);
+        return;
+      }
+      // An earlier step didn't give what this one needs: the failure stays local, nothing is paid.
+      if (e instanceof PhaseFailure && e.code === "missing_input" && phase.optional) {
+        releaseLine(ctl, phase);
+        log(ctl, { kind: "failure", phaseId, what: `${phase.label}: couldn't run`, why: e.message, outcome: "skipped", by: "system" });
+        emit(ctl, { type: "phase.skipped", phaseId, note: e.message, at: now() });
+        tallyRun(ctl);
+        return;
+      }
       const code: FailureCode = e instanceof PaymentError || e instanceof PhaseFailure ? e.code : "unknown";
       const retryable = !(e instanceof PhaseFailure && e.code === "unknown");
       const failure: Failure = {
@@ -721,6 +738,15 @@ function releaseLine(ctl: Ctl, phase: Phase) {
   if (line) emit(ctl, { type: "line.updated", line: { ...line, approved: line.actual } });
 }
 
+/** Recomputes the live verdict tally when a job has findings to count. */
+function tallyRun(ctl: Ctl) {
+  if (!ctl.run.phases.some((p) => p.finding) && !ctl.run.lanes) return;
+  const v = tally(ctl.run);
+  const was = ctl.run.verdict;
+  if (was && was.lean === v.lean && was.good === v.good && was.warn === v.warn && was.bad === v.bad && was.pending === v.pending) return;
+  emit(ctl, { type: "run.tallied", verdict: v });
+}
+
 const phaseCharged = (ctl: Ctl, phaseId: string) =>
   sum(ctl.run.phases.find((p) => p.id === phaseId)?.payments.filter((p) => p.txState === "settled").map((p) => p.amount) ?? []);
 
@@ -745,7 +771,16 @@ function agentCtx(ctl: Ctl, phaseId: string): AgentCtx {
     },
     buy: (lineId, product, params, key) => buy(ctl, phaseId, lineId, product, params, key),
     order: (o) => emit(ctl, { type: "order.updated", order: o }),
-    buyMarketplace: (lineId, key, product, fetcher) => buyMarketplace(ctl, phaseId, lineId, key, product, fetcher),
+    buyMarketplace: (lineId, key, product, fetcher, check) => buyMarketplace(ctl, phaseId, lineId, key, product, fetcher, check),
+    results: () => ctl.run.results ?? {},
+    skip: (note) => {
+      throw new SkipPhase(note);
+    },
+    update: (pid, patch) => {
+      emit(ctl, { type: "phase.updated", phaseId: pid, patch });
+      if (patch.finding) tallyRun(ctl);
+    },
+    decide: (what, why) => log(ctl, { kind: "card_edit", phaseId, what, why, outcome: "approved", by: "system" }),
   };
 }
 
@@ -790,7 +825,7 @@ async function buy<T>(ctl: Ctl, phaseId: string, lineId: string, product: string
     }
     recordDelivery({ vendor: quote.payTo, ok: true, evidence: result.txHash });
     ctl.cache.set(key, data);
-    emit(ctl, { type: "data.received", key, product, data });
+    emit(ctl, { type: "data.received", key, product, data, phaseId });
     return data as T;
   } catch (e) {
     if (!(e instanceof PhaseFailure && e.code === "bad_delivery")) update({ txState: "failed" });
@@ -849,7 +884,7 @@ async function buyMarketplace<T>(
   key: string,
   product: string,
   fetcher: () => Promise<T & { paid: { amountUsdc: number; payTo: string; via: string } }>,
-  check: { promise?: DeliveryPromise; asked?: Record<string, string> } = {},
+  check: { promise?: DeliveryPromise; asked?: Record<string, string>; resource?: string } = {},
 ): Promise<T> {
   if (ctl.cache.has(key)) return ctl.cache.get(key) as T;
   if (ctl.cancelled) throw new Cancelled();
@@ -875,17 +910,19 @@ async function buyMarketplace<T>(
     const verdict = checkDelivery(got, check.promise, check.asked);
     if (!verdict.ok) throw new DeliveryError(verdict, got);
     recordDelivery({ vendor: line.payee, ok: true });
+    if (check.resource) recordOutcome(check.resource, true);
     const fresh = ctl.run.lines.find((l) => l.id === lineId)!;
     emit(ctl, { type: "line.updated", line: { ...fresh, actual: (BigInt(fresh.actual) + paid).toString() } });
     emit(ctl, { type: "payment.updated", phaseId, payment: { ...payment, txState: "settled", amount: paid.toString(), at: now() } });
     ctl.cache.set(key, got);
-    emit(ctl, { type: "data.received", key, product, data: got });
+    emit(ctl, { type: "data.received", key, product, data: got, phaseId });
     return got;
   } catch (e) {
     if (e instanceof DeliveryError) {
       // An outside seller was paid from the app's own Gateway balance and its answer failed a check.
       // It can't be made to refund, so the app absorbs it: you aren't charged, and the seller gets a strike.
       recordDelivery({ vendor: line.payee, ok: false, reason: `${e.verdict.test}: ${e.verdict.reason}` });
+      if (check.resource) recordOutcome(check.resource, false);
       const refund = { state: "absorbed" as const, amount: unit.toString(), note: "An outside seller that doesn't refund; the app covered it, you weren't charged" };
       emit(ctl, { type: "payment.updated", phaseId, payment: { ...payment, txState: "settled", delivery: { test: e.verdict.test, reason: e.verdict.reason }, refund, at: now() } });
       log(ctl, { kind: "failure", what: `${line.payeeName} didn't deliver`, why: e.verdict.reason, amount: unit.toString(), outcome: "rejected", by: "system" });

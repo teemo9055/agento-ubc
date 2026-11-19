@@ -1,5 +1,7 @@
 import { z } from "zod";
-import { onMainnet } from "./netContext";
+import { currentNet, onMainnet } from "./netContext";
+import { searchCapabilities } from "./catalog/search";
+import { allCapabilities, getCapability, reliability } from "./catalog/store";
 import type { AgentId, MoveAction, MoveCondition, Plan, PlanStep, Proposal, ResearchStep, ToolCall } from "@/lib/types";
 import * as gemini from "./gemini";
 import * as geo from "./geo";
@@ -165,13 +167,39 @@ export const FREE_TOOLS: Record<string, FreeTool> = {
     },
   },
   search_services: {
-    description: `Find paid services on Circle's Agent Marketplace (${CATEGORIES.join(", ")}). payableHere=true: a \`service\` research step can buy it now with its url and input; payable=true lists only those.`,
+    description: `Find paid services on Circle's Agent Marketplace, with typed inputs/outputs. payableHere=true: a \`service\` step can buy it with its url and input; payable=true lists only those.`,
     params: z.object({ query: z.string(), category: z.enum(CATEGORIES).optional(), payable: z.boolean().optional() }),
     async run(a) {
-      const list = await searchServices(String(a.query ?? ""), a.category as string | undefined, 6, Boolean(a.payable));
+      const q = String(a.query ?? "");
+      const main = currentNet() === "mainnet";
+      // The capability map once it has been crawled; the live keyword search until then.
+      if (allCapabilities().length) {
+        const hits = await searchCapabilities(q, { payable: a.payable ? (main ? "mainnet" : "now") : "any", limit: 8, among: a.category ? allCapabilities().filter((c) => c.category === a.category) : undefined });
+        const data = hits.map(({ cap: c }) => {
+          const r = reliability(c.resource);
+          return {
+            name: c.name,
+            provider: c.provider,
+            what: c.description.slice(0, 160),
+            url: c.resource,
+            method: c.method,
+            input: c.inputs.map((x) => `${x.field} (${x.type}${x.required ? "" : ", optional"})`).join(", ") || undefined,
+            priceUsd: c.priceUsd,
+            payableHere: main ? c.payableMainnet : c.payableNow,
+            networks: c.networks.slice(0, 4).map(networkName),
+            inputs: c.inputs,
+            outputs: c.outputs.map((o) => ({ path: o.path, type: o.type, label: o.label })),
+            answers: c.answers,
+            reliability: r.delivered + r.failed ? `${r.delivered} of ${r.delivered + r.failed} delivered` : "no runs yet",
+          };
+        });
+        const here = data.filter((s) => s.payableHere).length;
+        return { data, summary: `${data.length} marketplace services for “${q}” · ${here} payable now` };
+      }
+      const list = await searchServices(q, a.category as string | undefined, 6, Boolean(a.payable));
       const data = list.map((s) => ({ name: s.name, provider: s.provider, what: s.description, url: s.resource, method: s.method, input: s.input, priceUsd: s.priceUsd, payableHere: s.payableHere, networks: s.networks.slice(0, 4).map(networkName) }));
       const here = list.filter((s) => s.payableHere).length;
-      return { data, summary: `${list.length} marketplace services for “${a.query}” · ${here} payable now` };
+      return { data, summary: `${list.length} marketplace services for “${q}” · ${here} payable now` };
     },
   },
   find_recipe: {
@@ -381,6 +409,35 @@ export const ProposalInput = z.object({
 });
 export type ProposalInput = z.infer<typeof ProposalInput>;
 
+/**
+ * A proposal built by code (the composer, a learned recipe): the same move, plus chains between
+ * steps. Never offered to the model as a schema; the model's own moves use ProposalInput.
+ */
+const Ref = z.string().regex(/^\$(given\.[A-Za-z0-9_]+|[A-Za-z][A-Za-z0-9_-]*(\..*)?)$/);
+export const ComposedInput = ProposalInput.extend({
+  research: z
+    .array(
+      z.object({
+        id: z.string().regex(/^[A-Za-z][A-Za-z0-9_-]*$/).optional(),
+        tool: z.enum(Object.keys(RESEARCH) as [string, ...string[]]),
+        args: z.record(z.string(), z.string()),
+        label: z.string().max(60),
+        why: z.string().max(140),
+        bind: z.record(z.string().regex(/^[A-Za-z0-9_.-]+$/), Ref).optional(),
+        when: z.object({ ref: Ref, op: z.enum(["exists", "missing", "==", "!=", ">=", "<=", "contains"]), value: z.union([z.string(), z.number(), z.boolean()]).optional() }).optional(),
+        verify: z.object({ group: z.string().max(40), path: z.string().max(120), kind: z.enum(["same", "close"]), tolerance: z.number().min(0).max(1).optional() }).optional(),
+        onConflict: z.string().max(40).optional(),
+        resource: z.string().optional(),
+        lane: z.string().max(40).optional(),
+      }),
+    )
+    .max(8),
+  givens: z.record(z.string().regex(/^[A-Za-z0-9_]+$/), z.object({ type: z.string(), value: z.string().max(500) })).optional(),
+  compose: z.any().optional(),
+  tier: z.enum(["quick", "thorough", "certain"]).optional(),
+  gaps: z.array(z.object({ fact: z.string(), why: z.string() })).optional(),
+});
+
 import { limits } from "./settings";
 import { mainnetOn } from "@/lib/network";
 import { askOf, plainWords, titleOf } from "@/lib/plain";
@@ -393,10 +450,11 @@ const MIN_EXPIRY_MS = Number(process.env.MIN_ORDER_EXPIRY_MIN ?? 20) * 60_000;
  * Checks a move against the exchange it would trade on and the user's limits.
  * Fixes what's safe to fix (rounding, budget) and says so; refuses the rest with a reason the model can act on.
  */
-export async function validateProposal(agent: AgentId, input: unknown, id: string): Promise<{ proposal: Proposal } | { error: string }> {
-  const parsed = ProposalInput.safeParse(input);
+export async function validateProposal(agent: AgentId, input: unknown, id: string, opts: { composed?: boolean } = {}): Promise<{ proposal: Proposal } | { error: string }> {
+  const parsed = (opts.composed ? ComposedInput : ProposalInput).safeParse(input);
   if (!parsed.success) return { error: `Invalid move: ${parsed.error.issues.map((i) => `${i.path.join(".")} ${i.message}`).join("; ")}` };
-  const p = parsed.data;
+  const p = parsed.data as z.infer<typeof ComposedInput>;
+  if (!opts.composed && p.research.length > 4) return { error: "At most 4 paid lookups in one move" };
   const venue = tradingVenue();
   const adjustments: string[] = [];
   let eventContracts: string[] = [];
@@ -510,6 +568,8 @@ export async function validateProposal(agent: AgentId, input: unknown, id: strin
       // The model names the listing; price, payee and method come from the marketplace and the seller, never from the model.
       const listing = await findService(r.args.url).catch(() => undefined);
       if (!listing) return { error: `${r.args.url} isn't a marketplace service payable on this network. Use a url from search_services with payableHere=true, or tell the user it needs mainnet.` };
+      // Only services that read: one that sends, buys, books or changes something is never planned.
+      if (getCapability(listing.resource)?.readOnly === false) return { error: `${listing.provider} ${listing.name} does something (sends, buys or changes) rather than read; Agento only buys answers. Tell the user it exists and that they'd do that part themselves.` };
       let input: Record<string, unknown>;
       try {
         input = JSON.parse(r.args.input || "{}");
@@ -517,13 +577,19 @@ export async function validateProposal(agent: AgentId, input: unknown, id: strin
       } catch {
         return { error: "service: input must be a JSON object written as a string" };
       }
+      let q: { amount: bigint; payTo: string };
       try {
-        const q = await quoteService(listing, input);
-        if (q.amount > MAX_SERVICE) return { error: `${listing.provider} asks ${Number(q.amount) / 1e6} USDC for this request, above the ${Number(MAX_SERVICE) / 1e6} USDC per-request limit` };
-        r.args = { url: listing.resource, input: JSON.stringify(input), what: (r.args.what || listing.description || listing.name).slice(0, 60), provider: listing.provider, price: q.amount.toString(), payTo: q.payTo };
+        q = await quoteService(listing, input);
       } catch (e) {
-        return { error: `Couldn't get a price from ${listing.provider}: ${(e as Error).message.slice(0, 140)}` };
+        // A step whose input arrives from an earlier answer can't be quoted whole yet: it is priced
+        // from its marketplace listing, and the seller's own quote is checked against that when it runs.
+        const bound = "bind" in r && r.bind && Object.keys(r.bind).length > 0;
+        if (!bound || !listing.amount || !listing.payTo) return { error: `Couldn't get a price from ${listing.provider}: ${(e as Error).message.slice(0, 140)}` };
+        q = { amount: BigInt(listing.amount), payTo: listing.payTo };
       }
+      if (q.amount > MAX_SERVICE) return { error: `${listing.provider} asks ${Number(q.amount) / 1e6} USDC for this request, above the ${Number(MAX_SERVICE) / 1e6} USDC per-request limit` };
+      r.args = { url: listing.resource, input: JSON.stringify(input), what: (r.args.what || listing.description || listing.name).slice(0, 60), provider: listing.provider, price: q.amount.toString(), payTo: q.payTo };
+      r.resource = listing.resource;
     }
   }
 
@@ -556,20 +622,68 @@ export async function validateProposal(agent: AgentId, input: unknown, id: strin
   }
   const condition: MoveCondition | undefined = checks[0];
   const also = checks.slice(1);
-  // The same lookup twice is the same data paid for twice: keep one.
-  const seen = new Set<string>();
-  const unique = p.research.filter((r) => {
-    const k = `${r.tool}:${JSON.stringify(Object.fromEntries(Object.entries(r.args).map(([a, v]) => [a, String(v).toLowerCase()]).sort()))}`;
-    if (seen.has(k)) {
+  // The same lookup twice is the same data paid for twice: keep one. A step that read from the
+  // dropped copy reads from the kept one instead.
+  const seen = new Map<string, string>();
+  const sameAs = new Map<string, string>();
+  const unique = p.research.filter((r, i) => {
+    const oldId = r.id ?? `r${i + 1}`;
+    const bound = r.bind ? JSON.stringify(Object.entries(r.bind).sort()) : "";
+    const k = `${r.tool}:${JSON.stringify(Object.fromEntries(Object.entries(r.args).map(([a, v]) => [a, String(v).toLowerCase()]).sort()))}:${bound}`;
+    const kept = seen.get(k);
+    if (kept && !r.verify && !r.onConflict && !r.when) {
       adjustments.push(`Already includes ${r.label}; not buying it twice`);
+      sameAs.set(oldId, kept);
       return false;
     }
-    seen.add(k);
+    seen.set(k, oldId);
     return true;
   });
   if (venue === "gemini-sandbox" && action && action.kind !== "itinerary" && unique.some((r) => r.tool !== "oracle_price"))
     adjustments.push("Data from the live Gemini market; the order trades on Gemini's test exchange, where prices can differ");
-  const research: ResearchStep[] = unique.map((r, i) => ({ id: `r${i + 1}`, tool: r.tool, args: r.args, label: r.label, why: r.why }));
+  const newId = new Map<string, string>();
+  unique.forEach((r) => newId.set(r.id ?? `r${p.research.indexOf(r) + 1}`, `r${unique.indexOf(r) + 1}`));
+  for (const [dropped, kept] of sameAs) newId.set(dropped, newId.get(kept)!);
+  const givens = p.givens ?? {};
+  // Chains only read backwards: from what the user gave, or from a step that comes earlier.
+  const reref = (ref: string, at: number): string | { error: string } => {
+    const g = /^\$given\.(.+)$/.exec(ref);
+    if (g) return givens[g[1]] ? ref : { error: `A step reads ${ref}, which the user didn't give` };
+    const m = /^\$([A-Za-z][A-Za-z0-9_-]*)(\..*)?$/.exec(ref);
+    const to = m && newId.get(m[1]);
+    if (!m || !to) return { error: `A step reads ${ref}, which isn't a step in this move` };
+    if (Number(to.slice(1)) >= at + 1) return { error: `Step ${at + 1} reads from step ${to.slice(1)}, which runs later` };
+    return `$${to}${m[2] ?? ""}`;
+  };
+  const research: ResearchStep[] = [];
+  for (const [i, r] of unique.entries()) {
+    const step: ResearchStep = { id: `r${i + 1}`, tool: r.tool, args: r.args, label: r.label, why: r.why };
+    if (r.bind) {
+      const cap = r.tool === "service" ? getCapability(r.args.url) : undefined;
+      step.bind = {};
+      for (const [field, ref] of Object.entries(r.bind)) {
+        if (cap?.inputs.length && !cap.inputs.some((x) => x.field === field)) return { error: `${cap.provider} doesn't take a field called ${field}` };
+        const to = reref(ref, i);
+        if (typeof to !== "string") return to;
+        step.bind[field] = to;
+      }
+    }
+    if (r.when) {
+      const to = reref(r.when.ref, i);
+      if (typeof to !== "string") return to;
+      step.when = { ...r.when, ref: to };
+    }
+    if (r.verify) step.verify = r.verify;
+    if (r.onConflict) step.onConflict = r.onConflict;
+    if (r.resource) step.resource = r.resource;
+    if (r.lane) step.lane = r.lane;
+    research.push(step);
+  }
+  for (const r of research.filter((x) => x.onConflict)) {
+    const members = research.filter((x) => x.verify?.group === r.onConflict);
+    if (members.length < 2) return { error: `The tie-breaker ${r.label} needs two steps that answer the same thing (group ${r.onConflict})` };
+    if (Number(r.id.slice(1)) < Math.max(...members.map((m) => Number(m.id.slice(1))))) return { error: `The tie-breaker ${r.label} must come after the steps it settles` };
+  }
   const finish = (p.finish ?? []).map(buildHandoff).filter((h): h is Handoff => Boolean(h));
   if ((p.finish ?? []).length > finish.length) adjustments.push("Left out a booking link that needs a place to go to");
   return {
@@ -589,6 +703,14 @@ export async function validateProposal(agent: AgentId, input: unknown, id: strin
       market,
       adjustments: adjustments.length ? adjustments : undefined,
       finish: finish.length ? finish : undefined,
+      ...(opts.composed
+        ? {
+            givens: Object.keys(givens).length ? givens : undefined,
+            compose: p.compose as Proposal["compose"],
+            tier: p.tier,
+            gaps: p.gaps?.length ? p.gaps : undefined,
+          }
+        : {}),
     },
   };
 }

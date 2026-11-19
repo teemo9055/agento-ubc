@@ -53,7 +53,7 @@ function inputHint(input: unknown): string | undefined {
 }
 
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
-const toService = (i: any, PAY_NETWORK = payNetwork()): Service => {
+export const toService = (i: any, PAY_NETWORK = payNetwork()): Service => {
   const accepts = (i.accepts ?? []) as { network: string; amount?: string; maxAmountRequired?: string; payTo?: string; extra?: { name?: string } }[];
   const prices = accepts.map((a) => Number(a.amount ?? a.maxAmountRequired ?? NaN) / 1e6).filter((x) => Number.isFinite(x));
   const networks = [...new Set(accepts.map((a) => a.network))];
@@ -82,12 +82,18 @@ const toService = (i: any, PAY_NETWORK = payNetwork()): Service => {
   };
 };
 
-async function page(params: Record<string, string>): Promise<{ items: Service[]; total: number }> {
+/** One page of the discovery API as listed, schemas included (the catalog crawler keeps them). */
+export async function rawPage(params: Record<string, string>): Promise<{ items: unknown[]; total: number }> {
   const r = await fetch(`${DISCOVERY}?${new URLSearchParams(params)}`, { headers: { accept: "application/json" }, cache: "no-store", signal: AbortSignal.timeout(12_000) });
   if (!r.ok) throw new Error(`marketplace ${r.status}`);
   const body = (await r.json()) as { items?: unknown[]; pagination?: { total?: number } };
+  return { items: body.items ?? [], total: body.pagination?.total ?? 0 };
+}
+
+async function page(params: Record<string, string>): Promise<{ items: Service[]; total: number }> {
+  const raw = await rawPage(params);
   const net = payNetwork();
-  return { items: (body.items ?? []).map((i) => toService(i, net)), total: body.pagination?.total ?? 0 };
+  return { items: raw.items.map((i) => toService(i, net)), total: raw.total };
 }
 
 /** Search the catalog. With `payableOnly`, only services this app can pay right now. */

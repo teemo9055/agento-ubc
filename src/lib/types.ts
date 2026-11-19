@@ -22,6 +22,7 @@ export type FailureCode =
   | "exchange_rejected"
   | "approval_timeout"
   | "bad_delivery"
+  | "missing_input"
   | "unknown";
 
 export type FailureAction = "retry" | "skip" | "edit" | "cancel" | "topup";
@@ -85,6 +86,24 @@ export interface Phase {
   payments: Payment[];
   alternatives?: { payeeName: string; payee: Hex; service: string; price: string }[];
   error?: { code: FailureCode; message: string };
+  /** What this step found, in a few words, and how it reads. Written by code when the step finishes. */
+  finding?: { text: string; tone: "good" | "warn" | "bad" | "neutral" };
+  /** The question (composer fact) this step helps answer: groups steps into lanes. */
+  lane?: string;
+  /** Values that flowed into this step from earlier ones (from `bind`), for the edge labels. Personal data is masked. */
+  inputs?: { from: string; field: string; preview: string }[];
+  /** Earlier steps whose answers this one reads (`bind`), so the graph can label those edges before the run. */
+  binds?: { from: string; field: string }[];
+  /** Runs only if a condition on an earlier answer holds. */
+  conditional?: string;
+  /** A tie-breaker for this verify group: runs only if its sources disagree. */
+  tieBreaker?: string;
+  /** This step's verify group disagreed (set on every step in the group) or agreed. */
+  conflict?: { group: string; agree: boolean; note: string };
+  /** A placeholder for a fact no service covers: drawn as a gap, never run. */
+  gap?: { fact: string; why: string };
+  startedAt?: string;
+  endedAt?: string;
 }
 
 export interface Decision {
@@ -203,6 +222,36 @@ export interface ResearchStep {
   args: Record<string, string>;
   label: string;
   why: string;
+  /** Inputs filled from earlier steps' outputs when this step starts: field -> "$<stepId>.<json.path>" or "$given.<name>". */
+  bind?: Record<string, string>;
+  /** Run only if this holds on an earlier step's output, checked by code. Otherwise the step is skipped and not charged. */
+  when?: StepWhen;
+  /** Steps that answer the same fact share a group; code compares their answers. */
+  verify?: { group: string; path: string; kind: "same" | "close"; tolerance?: number };
+  /** A tie-breaker: runs only if its verify group disagrees. Pre-approved, so no pop-up is needed. */
+  onConflict?: string;
+  /** The capability this step calls (marketplace resource), for the graph and learned recipes. */
+  resource?: string;
+  /** The question (composer fact) this step helps answer. */
+  lane?: string;
+}
+
+export interface StepWhen {
+  ref: string;
+  op: "exists" | "missing" | "==" | "!=" | ">=" | "<=" | "contains";
+  value?: string | number | boolean;
+}
+
+/** How a composed proposal was found: the funnel and the facts it covers. */
+export interface ComposeTrace {
+  /** Listings in the capability map. */
+  searched: number;
+  /** Distinct services that scored as relevant across all facts. */
+  relevant: number;
+  /** Routes built. */
+  considered: number;
+  facts: { id: string; question: string; covered: boolean; importance?: "must" | "should" | "nice" }[];
+  ms: number;
 }
 
 export type MoveAction =
@@ -282,6 +331,13 @@ export interface Proposal {
   adjustments?: string[];
   /** Steps you finish yourself in another app (a ride, a flight), with a ready link. Nothing is paid here. */
   finish?: import("./handoff").Handoff[];
+  /** What the user gave, extracted once by the composer: name -> value with its type. */
+  givens?: Record<string, { type: string; value: string }>;
+  /** How this proposal was found, for the funnel and the report. */
+  compose?: ComposeTrace;
+  tier?: "quick" | "thorough" | "certain";
+  /** Facts the composer couldn't cover, with the plain reason. */
+  gaps?: { fact: string; why: string }[];
 }
 
 /** gemini: real money · gemini-sandbox: Gemini's test exchange · paper: simulation, nothing is sent. */
@@ -310,6 +366,12 @@ export interface Run {
   mode: "demo" | "live";
   /** Live jobs only: which Arc network the money moves on. Missing on older jobs, which ran on testnet. */
   network?: import("./networks").Net;
+  /** Each finished research step's answer, by step id, so later steps can read it (bind, when, verify). */
+  results?: Record<string, unknown>;
+  /** The questions a composed job answers, one lane each on the graph. */
+  lanes?: { id: string; question: string; importance: "must" | "should" | "nice" }[];
+  /** Live tally of findings, recomputed by code after every finished step. */
+  verdict?: { lean: "looks_fine" | "be_careful" | "do_not_proceed" | "unclear"; good: number; warn: number; bad: number; pending: number };
   faults: FailureCode[];
   status: RunStatus;
   cards: Card[];

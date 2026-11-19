@@ -1,4 +1,9 @@
-import type { AgentId, Card, Deliverable, MoveAction, MoveCondition, OrderResult, Proposal, Run } from "@/lib/types";
+import { BadInput, checkWhen, compareGroup, fillInput, parseRef, refsOf, UnresolvedRef, whenText, type Results } from "../dataflow";
+import { getCapability } from "../catalog/store";
+import { noteFor } from "../catalog/notes";
+import { toneFor } from "../catalog/tone";
+import { maskPreview } from "@/lib/mask";
+import type { AgentId, Card, Deliverable, MoveAction, MoveCondition, OrderResult, Proposal, ResearchStep, Run } from "@/lib/types";
 import { stepName } from "@/lib/plain";
 import { VENDOR_PROMISES } from "../delivery";
 import { SELLERS } from "../sellers";
@@ -118,31 +123,61 @@ export const checksText = (p: Pick<Proposal, "condition" | "also">) => checksOf(
 export const conditionText = (c: MoveCondition) =>
   `${c.metric === "oracle_price" ? `Chainlink ${coin(c.symbol)}` : c.metric === "spot_price" ? `${coin(c.symbol)} price` : c.metric === "yes_price" ? "YES price" : "NO price"} ${c.op === "<=" ? "≤" : "≥"} ${fmtVal(c.metric, c.value)}`;
 
+/** How a research step sits in the chain: what it waits for, what flows into it, its lane. */
+function flowOf(r: ResearchStep, all: ResearchStep[]): Pick<PhaseDraft, "dependsOn" | "binds" | "conditional" | "tieBreaker" | "lane"> {
+  const deps = new Set(refsOf(r));
+  if (r.onConflict) for (const m of all) if (m.verify?.group === r.onConflict) deps.add(m.id);
+  const binds = Object.entries(r.bind ?? {}).flatMap(([field, ref]) => {
+    const x = parseRef(ref);
+    return x?.kind === "step" ? [{ from: x.id, field }] : [];
+  });
+  return {
+    dependsOn: [...deps].filter((d) => all.some((x) => x.id === d)),
+    ...(binds.length ? { binds } : {}),
+    ...(r.when ? { conditional: whenText(r.when) } : {}),
+    ...(r.onConflict ? { tieBreaker: r.onConflict } : {}),
+    ...(r.lane ? { lane: r.lane } : {}),
+  };
+}
+
+/** Compares a verify group and marks every step in it as agreeing or not, for the graph. */
+function markGroup(group: string, research: ResearchStep[], known: Results, ctx: AgentCtx) {
+  const cmp = compareGroup(group, research, known);
+  for (const m of research.filter((r) => r.verify?.group === group)) ctx.update?.(m.id, { conflict: { group, agree: cmp.agree, note: cmp.note } });
+  return cmp;
+}
+
+const usdOf = (units: bigint) => {
+  const x = Number(units) / 1e6;
+  return `$${x < 0.01 ? x.toFixed(4) : x.toFixed(2)}`;
+};
+
+const laneOfGap = (p: Proposal, fact: string) => p.compose?.facts.find((f) => f.question === fact)?.id;
+
 export function planFromProposal(p: Proposal): PlanDraft {
   const lines: LineDraft[] = [];
   const phases: PhaseDraft[] = [];
   for (const r of p.research) {
     const t = RESEARCH[r.tool];
+    // A step that reads an earlier answer (bind, when) waits for it; a tie-breaker waits for the steps it settles.
+    const flow = flowOf(r, p.research);
     if (isVendorTool(r.tool)) {
       const v = VENDOR_TOOLS[r.tool];
       const price = v.price(r.args);
       lines.push({ id: r.id, phaseId: r.id, purpose: stepName(r), service: v.service(r.args), payeeName: v.payeeName(r.args), payee: v.payee(r.args), rail: "gateway", approved: price.toString(), calls: { max: 1, unitPrice: price.toString() } });
-      phases.push({ id: r.id, label: stepName(r), sub: r.why, dependsOn: [], optional: true, lineId: r.id });
+      phases.push({ id: r.id, label: stepName(r), sub: r.why, optional: true, lineId: r.id, ...flow });
       continue;
     }
     const price = PRODUCTS[t.product].price;
     lines.push({ id: r.id, phaseId: r.id, purpose: stepName(r), service: t.product, payeeName: seller.name, payee: seller.address, rail: "x402", approved: price.toString(), calls: { max: 1, unitPrice: price.toString() } });
-    phases.push({
-      id: r.id,
-      label: stepName(r),
-      sub: r.why,
-      dependsOn: [],
-      optional: true,
-      lineId: r.id
-    });
+    phases.push({ id: r.id, label: stepName(r), sub: r.why, optional: true, lineId: r.id, ...flow });
   }
+  // Facts no service covers are drawn as gaps: never priced, never run.
+  (p.gaps ?? []).forEach((g, i) => phases.push({ id: `g${i + 1}`, label: g.fact, sub: g.why, dependsOn: [], optional: true, gap: { fact: g.fact, why: g.why }, lane: laneOfGap(p, g.fact) }));
   const research = p.research.map((r) => r.id);
   const a = p.action;
+  const maybe = p.research.filter((r) => r.when || r.onConflict);
+  const maybeCost = maybe.reduce((x, r) => x + Number(isVendorTool(r.tool) ? VENDOR_TOOLS[r.tool].price(r.args) : PRODUCTS[RESEARCH[r.tool].product].price), 0) / 1e6;
   const template = templateOf(p);
   // The boxes follow the kind of task: no fixed check or report step when it adds nothing.
   if (template === "answer") phases.push({ id: "check", label: "Write it up", sub: "what the data says", dependsOn: research, optional: false });
@@ -168,6 +203,7 @@ export function planFromProposal(p: Proposal): PlanDraft {
       kind: "risk",
       title: a && a.kind !== "itinerary" ? "Limits" : "Read-only",
       points: [
+        ...(maybe.length ? [`Up to $${maybeCost < 0.01 ? maybeCost.toFixed(4) : maybeCost.toFixed(2)} is only spent if ${maybe.some((r) => r.onConflict) ? "sources disagree" : "an earlier answer calls for it"}`] : []),
         ...(p.condition ? [`Skips the move unless ${checksText(p)}`] : []),
         ...(a && a.kind !== "itinerary" ? [`Order capped at $${notionalOf(a).toFixed(2)}`, VENUE_NOTE[p.venue]] : ["Nothing is booked or bought"]),
         "Prices can move after the check",
@@ -358,12 +394,49 @@ export function toolboxAgent(id: AgentId): AgentDef {
       if (step && isVendorTool(step.tool)) {
         const v = VENDOR_TOOLS[step.tool];
         const t = RESEARCH[step.tool];
+        const known = { ...(ctx.results?.() ?? {}), ...mem.data };
+        const givens = p.givens ?? {};
+        // Branch: a step that only matters if an earlier answer calls for it.
+        if (step.when && !checkWhen(step.when, known, givens)) ctx.skip!(`Not needed: ${whenText(step.when)}`);
+        // Tie-breaker: compare the sources first; buy a third only if they disagree.
+        if (step.onConflict) {
+          const cmp = markGroup(step.onConflict, p.research, known, ctx);
+          if (cmp.agree) ctx.skip!(`Sources agreed, tie-breaker not needed · ${usdOf(v.price(step.args))} stays in your vault`);
+          ctx.decide?.("Sources disagreed, bought a third", cmp.note);
+        }
+        let args = step.args;
+        const cap = step.tool === "service" ? getCapability(step.args.url) : undefined;
+        if (step.tool === "service" && step.bind && Object.keys(step.bind).length) {
+          let input: Record<string, unknown>;
+          try {
+            input = await fillInput(step, cap, known, givens);
+          } catch (e) {
+            if (e instanceof UnresolvedRef || e instanceof BadInput) throw new PhaseFailure("missing_input", `${e.message}, so step ${step.id.replace(/^r/, "")} couldn't run.`);
+            throw e;
+          }
+          args = { ...step.args, input: JSON.stringify(input) };
+          const flowed = Object.entries(step.bind ?? {}).map(([field, ref]) => {
+            const r = parseRef(ref);
+            const type = cap?.inputs.find((i) => i.field === field)?.type;
+            return { from: r?.kind === "step" ? r.id : "you", field, preview: maskPreview(type ?? (r?.kind === "given" ? givens[r.name]?.type : undefined), input[field]) };
+          });
+          if (flowed.length) ctx.update?.(step.id, { inputs: flowed });
+        }
         ctx.progress(0.2, step.label);
-        const got = await ctx.buyMarketplace!(step.id, t.key(step.args), t.product, () => v.run(step.args, v.price(step.args)), {
+        const got = await ctx.buyMarketplace!(step.id, t.key(args), t.product, () => v.run(args, v.price(args)), {
           promise: VENDOR_PROMISES[step.tool],
-          asked: { ...(step.args.symbol ? { symbol: step.args.symbol } : {}), ...(step.args.address ? { address: step.args.address } : {}) },
+          asked: { ...(args.symbol ? { symbol: args.symbol } : {}), ...(args.address ? { address: args.address } : {}) },
+          resource: step.tool === "service" ? args.url : undefined,
         });
         mem.data[step.id] = got;
+        const text = step.tool === "service" ? noteFor(cap, got) : v.note(got).slice(0, 48);
+        const tone = step.tool === "service" ? await toneFor(cap, got, p.compose?.facts.find((f) => f.id === step.lane)?.question) : "neutral";
+        ctx.update?.(step.id, { finding: { text, tone } });
+        // When every source for a fact has answered, say whether they agree.
+        if (step.verify) {
+          const members = p.research.filter((r) => r.verify?.group === step.verify!.group);
+          if (members.every((m) => m.id in { ...known, ...mem.data })) markGroup(step.verify.group, p.research, { ...known, ...mem.data }, ctx);
+        }
         ctx.progress(1, v.note(got));
         return;
       }
