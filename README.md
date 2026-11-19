@@ -14,25 +14,52 @@ All three can search [Circle's Agent Marketplace](https://agents.circle.com/serv
 
 ## How it uses Arc
 
+Arc is where every job's money lives. The app runs on **Arc testnet and Arc mainnet side by side**: you pick the network in Settings, each live job records which one it ran on, and everything below (vault, x402 payments, Gateway purchases, refunds, receipts and explorer links) follows that job's network. Practice jobs touch neither. Mainnet is real money, so it stays off until its contracts are deployed and its wallets set (the app lists what's missing), and each mainnet job is capped (`MAINNET_MAX_JOB_USD`, default $5).
+
+Circle tools in use, on Arc:
+
+| Tool | What it does here |
+| ---- | ----------------- |
+| **USDC as gas** | Every fee is paid in USDC; receipts show the fee measured from each transaction. Balances and costs are in dollars, never a volatile gas token. |
+| **Circle Wallets** | The agent and the data seller sign through Circle developer-controlled wallets (testnet); users can pay from their own **Circle modular passkey wallet** (Face ID / Touch ID). |
+| **Paymaster** | The passkey wallet's transactions are gas-sponsored by Circle's paymaster, so a new user needs no gas to fund a job. |
+| **Gateway** | The agent buys from Circle's Agent Marketplace with Gateway nanopayments (one signed authorization per request, batched settlement). On mainnet this unlocks the marketplace's paid checks (reverse image search, reviews, phone-fraud signals). |
+| **CCTP** | "Add money" brings USDC to Arc from Ethereum, Base, Arbitrum, OP or Polygon with Circle's Bridge Kit; the Forwarding Service mints on Arc so you need no Arc gas. |
+| **Onramp** | "Add money" embeds Arc's Onramp widget: buy USDC on Arc with a debit card, Apple Pay, Google Pay or bank transfer (sandbox on testnet, real on mainnet). |
+
 - **Work-order vault.** Approving a plan calls `WorkOrderFactory.open`. The factory clones a `WorkOrderVault` and funds it with the plan's USDC cap. The approved lines (index, payee, cap) are committed as a **Merkle root**, so payees and caps stay private until a line is used.
 - **Proof per payment.** Each payment carries its line and a Merkle proof. The vault pays only lines in the root, only to that line's payee, only up to that line's cap.
-- **x402 from the vault.** Data is sold per request over x402 (`exact` scheme, `eip155:5042002`). The agent calls `vault.authorize(line, proof, payee, amount, …)`. The vault checks the proof, the payee and the line's cap, then approves that exact EIP-3009 `transferWithAuthorization` digest. USDC verifies it through ERC-1271 (`isValidSignature`), so the money moves from the vault straight to the seller. No agent-held balance is ever spent.
+- **x402 from the vault.** Data is sold per request over x402 (`exact` scheme). Each price quote lists every network the seller settles on (`eip155:5042002`, and `eip155:5042` once a mainnet seller key is set); the job pays on its own. The agent calls `vault.authorize(line, proof, payee, amount, …)`. The vault checks the proof, the payee and the line's cap, then approves that exact EIP-3009 `transferWithAuthorization` digest. USDC verifies it through ERC-1271 (`isValidSignature`), so the money moves from the vault straight to the seller. No agent-held balance is ever spent.
 - **Re-approval onchain.** When you approve a change (new price, new payee, extra step), the client wallet calls `vault.setPlan(newRoot)`, and adds funds with `topUp` if needed.
-- **Circle wallets.** The agent and the data sellers are Circle developer-controlled wallets on Arc testnet; their transactions are signed through Circle.
+- **Circle wallets.** The agent and the data sellers are Circle developer-controlled wallets on Arc testnet; their transactions are signed through Circle. On mainnet they use their own keys (`MAINNET_AGENT_PRIVATE_KEY`, …) so real money never shares a key with test money.
 - **Your own passkey wallet.** Users can pay from a Circle modular smart account unlocked with Face ID, Touch ID or a security key (gas sponsored by Circle's paymaster). Funding (`approve` + `open`), plan changes (`setPlan`) and top-ups are signed in the browser; the server only verifies onchain that the vault was opened by that wallet with exactly the approved plan before the agent spends.
 - **Refunds.** `vault.close()` returns the unspent balance to the client and invalidates any unsettled authorization. An authorization that expires unused can be `release`d to free its cap for a retry.
 - **USDC as gas.** Every fee is in USDC. Receipts show the network fee measured from each transaction receipt (`gasUsed × effectiveGasPrice`, 18 decimals).
 
 ### Contracts
 
+Deployed by this project (Foundry; `npm run deploy:testnet` / `npm run deploy:mainnet`, which checks the chain ID and asks before spending real USDC):
+
 | Contract | Address (Arc testnet, chain 5042002) |
 | -------- | ------------------------------------ |
-| USDC | `0x3600000000000000000000000000000000000000` |
 | WorkOrderFactory | [`0x8e6A9725C747034231Fa0eC32845EcbCC5aa09dc`](https://explorer.testnet.arc.io/address/0x8e6A9725C747034231Fa0eC32845EcbCC5aa09dc) (verified) |
 | WorkOrderVault (implementation) | [`0x19895e2092E6353D33f1fE22D571DCF38c90469e`](https://explorer.testnet.arc.io/address/0x19895e2092E6353D33f1fE22D571DCF38c90469e) (verified) |
 | First version, plan stored in the clear (earlier example runs) | factory [`0x1bfB…604A`](https://explorer.testnet.arc.io/address/0x1bfBF0F370Ecd77CCD665FD677eb505c6325604A) |
 
-Source: [`contracts/src`](contracts/src). Tests: `npm run test:contracts`.
+On **Arc mainnet** (chain 5042) the same factory is deployed with `npm run deploy:mainnet` (about 0.1 USDC of gas, measured with a dry run) and its address goes in `MAINNET_FACTORY_ADDRESS`.
+
+Circle's contracts the app uses ([source](https://docs.arc.io/arc/references/contract-addresses)):
+
+| Contract | Arc testnet | Arc mainnet |
+| -------- | ----------- | ----------- |
+| USDC (ERC-20 interface, 6 decimals; also the native gas token) | `0x3600000000000000000000000000000000000000` | `0x3600000000000000000000000000000000000000` |
+| EURC | `0x89B50855Aa3bE2F677cD6303Cec089B5F319D72a` | `0xbEf5f6d51CB62b58e6A8f77868681825C6fe21c1` |
+| CCTP TokenMessengerV2 (domain 26) | `0x8FE6B999Dc680CcFDD5Bf7EB0974218be2542DAA` | `0x28b5a0e9C621a5BadaA536219b3a228C8168cf5d` |
+| CCTP MessageTransmitterV2 | `0xE737e5cEBEEBa77EFE34D4aa090756590b1CE275` | `0x81D40F21F12A8F0E3252Bccb954D722d4c464B64` |
+| Gateway Wallet | `0x0077777d7EBA4688BDeF3E311b846F25870A19B9` | `0x77777777Dcc4d5A8B6E418Fd04D8997ef11000eE` |
+| Gateway Minter | `0x0022222ABE238Cc2C7Bb1f21003F0a260052475B` | `0x2222222d7164433c4C09B0b0D809a9b52C04C205` |
+
+Source: [`contracts/src`](contracts/src). Tests: `npm run test:contracts`. All network settings live in one file, [`src/lib/networks.ts`](src/lib/networks.ts).
 
 ### Example run on Arc testnet
 
