@@ -1,0 +1,265 @@
+{
+ "note": "Sample services with recorded answers, for tests and the 'See it compose' demo. Not real sellers; no money moves.",
+ "services": [
+  {
+   "capability": {
+    "resource": "https://linecheck.demo.agento.test/check",
+    "name": "LineCheck (sample) /check",
+    "provider": "LineCheck (sample)",
+    "category": "DATA_ENRICHMENT",
+    "description": "Phone number fraud risk: line type (VoIP or mobile) and a fraud score",
+    "method": "GET",
+    "priceUsd": 0.004,
+    "networks": [
+     "eip155:5042002"
+    ],
+    "payableNow": true,
+    "payableMainnet": false,
+    "readOnly": true,
+    "payTo": "0x5a3b1e0000000000000000000000000000000d3e",
+    "inputs": [
+     {
+      "field": "phone",
+      "type": "phone",
+      "required": true
+     }
+    ],
+    "outputs": [
+     {
+      "path": "line_type",
+      "type": "risk_signal",
+      "label": "line type"
+     },
+     {
+      "path": "fraud_score",
+      "type": "risk_signal",
+      "label": "fraud score"
+     }
+    ],
+    "answers": [],
+    "taggedBy": "rules",
+    "taggedAt": "2026-11-19T00:00:00Z",
+    "schemaHash": "demo-linecheck"
+   },
+   "answer": {
+    "line_type": "voip",
+    "fraud_score": 0.82,
+    "carrier": "Bandwidth"
+   }
+  },
+  {
+   "capability": {
+    "resource": "https://callertrust.demo.agento.test/check",
+    "name": "CallerTrust (sample) /check",
+    "provider": "CallerTrust (sample)",
+    "category": "DATA_ENRICHMENT",
+    "description": "Caller reputation and scam risk for a phone number",
+    "method": "GET",
+    "priceUsd": 0.005,
+    "networks": [
+     "eip155:5042002"
+    ],
+    "payableNow": true,
+    "payableMainnet": false,
+    "readOnly": true,
+    "payTo": "0x5a3b1e0000000000000000000000000000000d3e",
+    "inputs": [
+     {
+      "field": "number",
+      "type": "phone",
+      "required": true
+     }
+    ],
+    "outputs": [
+     {
+      "path": "risk",
+      "type": "risk_signal",
+      "label": "risk"
+     }
+    ],
+    "answers": [],
+    "taggedBy": "rules",
+    "taggedAt": "2026-11-19T00:00:00Z",
+    "schemaHash": "demo-callertrust"
+   },
+   "answer": {
+    "risk": "low",
+    "line_type": "mobile",
+    "reports": 0
+   }
+  },
+  {
+   "capability": {
+    "resource": "https://numberscore.demo.agento.test/check",
+    "name": "NumberScore (sample) /check",
+    "provider": "NumberScore (sample)",
+    "category": "DATA_ENRICHMENT",
+    "description": "Spam and scam risk score for a phone number",
+    "method": "GET",
+    "priceUsd": 0.006,
+    "networks": [
+     "eip155:5042002"
+    ],
+    "payableNow": true,
+    "payableMainnet": false,
+    "readOnly": true,
+    "payTo": "0x5a3b1e0000000000000000000000000000000d3e",
+    "inputs": [
+     {
+      "field": "msisdn",
+      "type": "phone",
+      "required": true
+     }
+    ],
+    "outputs": [
+     {
+      "path": "spam_risk",
+      "type": "risk_signal",
+      "label": "spam risk"
+     }
+    ],
+    "answers": [],
+    "taggedBy": "rules",
+    "taggedAt": "2026-11-19T00:00:00Z",
+    "schemaHash": "demo-numberscore"
+   },
+   "answer": {
+    "spam_risk": "high",
+    "first_seen": "3 days ago"
+   }
+  },
+  {
+   "capability": {
+    "resource": "https://phototrace.demo.agento.test/check",
+    "name": "PhotoTrace (sample) /check",
+    "provider": "PhotoTrace (sample)",
+    "category": "DATA_ENRICHMENT",
+    "description": "Reverse search a marketplace listing: where its photos appear online",
+    "method": "GET",
+    "priceUsd": 0.004,
+    "networks": [
+     "eip155:5042002"
+    ],
+    "payableNow": true,
+    "payableMainnet": false,
+    "readOnly": true,
+    "payTo": "0x5a3b1e0000000000000000000000000000000d3e",
+    "inputs": [
+     {
+      "field": "url",
+      "type": "listing_url",
+      "required": true
+     }
+    ],
+    "outputs": [
+     {
+      "path": "matches",
+      "type": "web_results",
+      "label": "where it appears online"
+     }
+    ],
+    "answers": [],
+    "taggedBy": "rules",
+    "taggedAt": "2026-11-19T00:00:00Z",
+    "schemaHash": "demo-phototrace"
+   },
+   "answer": {
+    "matches": [
+     {
+      "site": "kijiji (sample)",
+      "title": "Same bike, listed in Toronto"
+     }
+    ]
+   }
+  },
+  {
+   "capability": {
+    "resource": "https://listingreader.demo.agento.test/check",
+    "name": "ListingReader (sample) /check",
+    "provider": "ListingReader (sample)",
+    "category": "DATA_ENRICHMENT",
+    "description": "Read a marketplace listing page: seller name and profile age",
+    "method": "GET",
+    "priceUsd": 0.002,
+    "networks": [
+     "eip155:5042002"
+    ],
+    "payableNow": true,
+    "payableMainnet": false,
+    "readOnly": true,
+    "payTo": "0x5a3b1e0000000000000000000000000000000d3e",
+    "inputs": [
+     {
+      "field": "url",
+      "type": "listing_url",
+      "required": true
+     }
+    ],
+    "outputs": [
+     {
+      "path": "seller.name",
+      "type": "person_name",
+      "label": "seller"
+     },
+     {
+      "path": "seller.joined",
+      "type": "date",
+      "label": "joined"
+     }
+    ],
+    "answers": [],
+    "taggedBy": "rules",
+    "taggedAt": "2026-11-19T00:00:00Z",
+    "schemaHash": "demo-listingreader"
+   },
+   "answer": {
+    "seller": {
+     "name": "Sam Rivera",
+     "joined": "2026-11-12"
+    },
+    "price": 400
+   }
+  },
+  {
+   "capability": {
+    "resource": "https://sellerreviews.demo.agento.test/check",
+    "name": "SellerReviews (sample) /check",
+    "provider": "SellerReviews (sample)",
+    "category": "DATA_ENRICHMENT",
+    "description": "Reviews and mentions of a seller by name",
+    "method": "GET",
+    "priceUsd": 0.003,
+    "networks": [
+     "eip155:5042002"
+    ],
+    "payableNow": true,
+    "payableMainnet": false,
+    "readOnly": true,
+    "payTo": "0x5a3b1e0000000000000000000000000000000d3e",
+    "inputs": [
+     {
+      "field": "seller",
+      "type": "person_name",
+      "required": true
+     }
+    ],
+    "outputs": [
+     {
+      "path": "rating",
+      "type": "reviews",
+      "label": "rating"
+     }
+    ],
+    "answers": [],
+    "taggedBy": "rules",
+    "taggedAt": "2026-11-19T00:00:00Z",
+    "schemaHash": "demo-sellerreviews"
+   },
+   "answer": {
+    "rating": 2.4,
+    "count": 3,
+    "summary": "Two buyers say the item never arrived"
+   }
+  }
+ ]
+}

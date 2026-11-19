@@ -65,6 +65,8 @@ export function ReceiptView({ run }: { run: Run }) {
   const cancelled = r.status === "cancelled";
   // Outside vendors can't be simulated: even in practice mode they are paid from the agent's testnet balance.
   const vendorsPaid = r.lines.some((l) => l.rail === "gateway" && BigInt(l.amount) > 0n);
+  // Sample services (tests and the compose demo) answer from recordings: nothing was paid to anyone.
+  const samples = JSON.stringify(r.lines).includes("(sample)");
   return (
     <section id="receipt" className="paper relative rounded-2xl border border-line bg-panel p-5 sm:p-8" aria-label="Receipt">
       <div className="flex flex-wrap items-start justify-between gap-4 border-b border-line pb-5">
@@ -73,7 +75,7 @@ export function ReceiptView({ run }: { run: Run }) {
             <AgentIcon agent={run.agent} size={30} outfit={runOutfit(run)} mood={cancelled ? "sad" : "happy"} />
             <span className="text-[20px] font-semibold tracking-tight">Receipt</span>
             <span className={`inline-flex h-[22px] items-center gap-1 rounded-md px-2 text-[12px] font-semibold ${cancelled ? "bg-[#f1f0ec] text-ink-2" : r.mode === "demo" ? "bg-warn/20 text-warn-ink" : "bg-good/10 text-good"}`}>
-              {cancelled ? "Job cancelled" : r.mode === "demo" ? (vendorsPaid ? "Practice vault · vendors paid on testnet" : "Practice · not a real payment") : "Paid"}
+              {cancelled ? "Job cancelled" : r.mode === "demo" ? (samples ? "Practice · sample services, no money moved" : vendorsPaid ? "Practice vault · vendors paid on testnet" : "Practice · not a real payment") : "Paid"}
             </span>
           </div>
           <div className="mt-3 text-[12px] text-ink-3">Total paid</div>
@@ -119,7 +121,7 @@ export function ReceiptView({ run }: { run: Run }) {
         <div>
           <div className="text-[11.5px] font-semibold uppercase tracking-wide text-ink-3">Paid with</div>
           <div className="mt-1">USDC on {r.chain.name}</div>
-          <div className="text-ink-3">{r.mode === "demo" ? (vendorsPaid ? "Practice mode: the vault is simulated; marketplace vendors were paid for real through Circle Gateway" : "Practice mode: nothing settled onchain") : "Pay-per-request (x402) from a spend-limited vault"}</div>
+          <div className="text-ink-3">{r.mode === "demo" ? (samples ? "Practice mode with sample services: recorded answers, no money moved" : vendorsPaid ? "Practice mode: the vault is simulated; marketplace vendors were paid for real through Circle Gateway" : "Practice mode: nothing settled onchain") : "Pay-per-request (x402) from a spend-limited vault"}</div>
         </div>
       </div>
 

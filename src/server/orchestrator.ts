@@ -46,6 +46,7 @@ import { checkDelivery, DeliveryError, MaybeChargedError, type DeliveryPromise, 
 import { recordDelivery, standing } from "./strikes";
 import { recordOutcome } from "./catalog/store";
 import { tally } from "./verdict";
+import { isDemoResource } from "./catalog/demo";
 import { buildReport } from "./report";
 import { learnFromRun } from "./learn";
 
@@ -307,6 +308,20 @@ async function adoptProposal(ctl: Ctl, proposal: Proposal) {
   // A composed job is drawn in lanes, one per question it answers.
   const lanes = proposal.compose?.facts.map((f) => ({ id: f.id, question: f.question, importance: f.importance ?? "should" }));
   emit(ctl, { type: "workorder.updated", run: { ...ctl.run, ...plan, status: "draft", proposal, planning: false, editNote: undefined, lanes, verdict: undefined } });
+}
+
+/** Drops a question no service covers from the plan: a quick change, no model. */
+export async function skipGap(runId: string, fact: string) {
+  const ctl = ctlOf(runId);
+  if (ctl.run.status !== "draft" || !ctl.run.proposal) throw new Error("only before approval");
+  const p = ctl.run.proposal;
+  const gaps = (p.gaps ?? []).filter((g) => g.fact !== fact);
+  if (gaps.length === (p.gaps ?? []).length) throw new Error("that gap isn't in this plan");
+  const next: Proposal = { ...p, gaps: gaps.length ? gaps : undefined, compose: p.compose ? { ...p.compose, facts: p.compose.facts.filter((f) => f.question !== fact || f.covered) } : undefined };
+  ctl.run = { ...ctl.run, chat: (ctl.run.chat ?? []).map((m) => (m.proposal?.id === p.id ? { ...m, proposal: next } : m)) };
+  await adoptProposal(ctl, next);
+  log(ctl, { kind: "card_edit", what: `Left out: ${fact}`.slice(0, 200), why: "No service covers it", outcome: "edited", by: "user" });
+  return ctl.run;
 }
 
 /** A proposal anywhere in the chat: the move a message shows, or one of the composer's other plans. */
@@ -955,9 +970,11 @@ async function buyMarketplace<T>(
   const unit = BigInt(line.calls?.unitPrice ?? line.approved);
   const verdict = checkSpend(ctl.run, { lineId, payee: line.payee, amount: unit });
   if (!verdict.ok) throw new PhaseFailure("policy_block", verdict.detail);
-  await ensureGatewayFunds().catch((e) => {
-    throw e instanceof GatewayFundsError ? new PaymentError("payment_rejected", e.message) : e;
-  });
+  // A sample service (tests and the compose demo) pays nothing, so the Gateway balance isn't touched.
+  if (!(check.resource && isDemoResource(check.resource)))
+    await ensureGatewayFunds().catch((e) => {
+      throw e instanceof GatewayFundsError ? new PaymentError("payment_rejected", e.message) : e;
+    });
   const missed = ctl.run.phases.find((p) => p.id === phaseId)?.payments.filter((p) => (p.id === key || p.id.startsWith(`${key}#`)) && p.refund).length ?? 0;
   const payment: Payment = { id: missed ? `${key}#${missed + 1}` : key, lineId, txState: "signing", amount: unit.toString(), via: "Circle Gateway nanopayment" };
   emit(ctl, { type: "payment.updated", phaseId, payment: { ...payment, at: now() } });

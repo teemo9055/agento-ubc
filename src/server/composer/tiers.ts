@@ -92,7 +92,7 @@ function assemble(chosen: { fact: Fact; route: Route; role: "answer" | "verify" 
         label: short(last ? (myRole === "tie" ? `Tie-breaker: ${s.capability.provider}` : `${s.capability.provider}: ${fact.question.replace(/\?$/, "")}`) : `${s.capability.provider}: find the ${s.outType.replace(/_/g, " ")}`, 60),
         why: short(last ? fact.why || what : `Feeds the next step`, 140),
         ...(Object.keys(bind).length ? { bind } : {}),
-        ...(myRole === "verify" || (myRole === "answer" && chosen.some((c) => c.fact.id === fact.id && c.role === "verify")) ? { verify: { group: fact.id, path: s.outPath || "@tone", kind: s.outPath ? kind : "same", ...(kind === "close" && s.outPath ? { tolerance: 0.02 } : {}) } } : {}),
+        ...(myRole === "verify" || (myRole === "answer" && chosen.some((c) => c.fact.id === fact.id && c.role === "verify")) ? { verify: { group: fact.id, path: TONED.includes(s.outType) || !s.outPath ? "@tone" : s.outPath, kind: TONED.includes(s.outType) || !s.outPath ? "same" : kind, ...(kind === "close" && s.outPath && !TONED.includes(s.outType) ? { tolerance: 0.02 } : {}) } } : {}),
         ...(myRole === "tie" ? { onConflict: fact.id } : {}),
         resource: s.capability.resource,
         lane: fact.id,

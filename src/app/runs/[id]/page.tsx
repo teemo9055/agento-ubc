@@ -529,6 +529,26 @@ export default function RunPage({
               </motion.p>
             )}
           </AnimatePresence>
+          {run.proposal?.compose && (
+            <section className="rounded-2xl border border-line bg-panel px-3 py-5 sm:px-5" aria-label="How it runs" data-testid="draft-graph">
+              <PhaseGraph
+                phases={run.phases}
+                lines={run.lines}
+                simulated={run.mode === "demo"}
+                run={run}
+                draft
+                onGap={
+                  run.status === "draft"
+                    ? (fact, action) =>
+                        (action === "skip"
+                          ? post(`/api/runs/${run.id}/gap-skip`, { fact })
+                          : post(`/api/runs/${run.id}/chat`, { text: `Find another way for: ${fact}` })
+                        ).catch((e) => toast((e as Error).message, "bad"))
+                    : undefined
+                }
+              />
+            </section>
+          )}
           <ReviewCards
             run={run}
             onEdit={run.status === "draft" ? editCard : undefined}
@@ -567,6 +587,7 @@ export default function RunPage({
               phases={run.phases}
               lines={run.lines}
               simulated={run.mode === "demo"}
+              run={run}
             />
           </section>
           {run.proposal?.action?.kind === "prediction_order" &&
@@ -620,6 +641,11 @@ export default function RunPage({
               />
             )}
           <LearnedBanner run={run} />
+          {run.proposal?.compose && (
+            <section className="rounded-2xl border border-line bg-panel px-3 py-5 sm:px-5" aria-label="Steps" data-testid="done-graph">
+              <PhaseGraph phases={run.phases} lines={run.lines} simulated={run.mode === "demo"} run={run} />
+            </section>
+          )}
           {run.report && (
             <div className="space-y-1.5">
               <Report run={run} />

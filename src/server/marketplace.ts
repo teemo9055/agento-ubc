@@ -9,6 +9,7 @@ import { currentNet } from "./netContext";
  */
 const DISCOVERY = process.env.MARKETPLACE_URL ?? "https://api.circle.com/v2/x402/discovery/resources";
 import { mainnetOn } from "@/lib/network";
+import { demoAnswer, demoCapability, demoOn, isDemoResource } from "./catalog/demo";
 
 export const ARC_TESTNET = "eip155:5042002";
 export const ARC_MAINNET = "eip155:5042";
@@ -120,7 +121,13 @@ export async function payableServices(): Promise<Service[]> {
   return list;
 }
 
-export const findService = async (resource: string): Promise<Service | undefined> => (await payableServices()).find((s) => s.resource === resource || s.resource === `${resource}/` || `${s.resource}/` === resource);
+export const findService = async (resource: string): Promise<Service | undefined> => {
+  if (demoOn() && isDemoResource(resource)) {
+    const c = demoCapability(resource);
+    return c ? { name: c.name, provider: c.provider, category: c.category, description: c.description, resource: c.resource, method: "GET", priceUsd: c.priceUsd, networks: c.networks, payableHere: true, payTo: c.payTo as Hex, amount: String(Math.round((c.priceUsd ?? 0) * 1e6)) } : undefined;
+  }
+  return (await payableServices()).find((s) => s.resource === resource || s.resource === `${resource}/` || `${s.resource}/` === resource);
+};
 
 let statsCache: { at: number; value: CatalogStats } | undefined;
 export interface CatalogStats {
@@ -173,6 +180,8 @@ export interface ServiceQuote {
 
 /** What the seller asks for this exact request, without paying. Must match its listing. */
 export async function quoteService(s: Service, input: Record<string, unknown>): Promise<ServiceQuote> {
+  // A sample service quotes its listed price; nothing leaves the server.
+  if (demoOn() && isDemoResource(s.resource)) return { amount: BigInt(s.amount ?? 0), payTo: s.payTo! };
   const { url, init } = serviceRequest(s, input);
   const q = await quote(url, init);
   const payTo = q.option.payTo as Hex;
@@ -189,6 +198,8 @@ export interface ServiceResult {
 
 /** Pays one request to a marketplace service and returns what it answered. */
 export async function callService(s: Service, input: Record<string, unknown>, maxAmount?: bigint, payTo?: string): Promise<ServiceResult> {
+  // A sample service answers from its recording, in practice: no request, no payment.
+  if (demoOn() && isDemoResource(s.resource)) return { provider: s.provider, resource: s.resource, data: demoAnswer(s.resource), paid: { amountUsdc: Number(s.amount ?? 0) / 1e6, payTo: (payTo ?? s.payTo) as Hex, via: `${s.provider} · sample answer, no money moved`, at: new Date().toISOString() } };
   const { url, init } = serviceRequest(s, input);
   const r = await payRequest<unknown>(url, init, maxAmount, payTo ?? s.payTo);
   const tx = (r.settlement as { transaction?: unknown } | undefined)?.transaction;

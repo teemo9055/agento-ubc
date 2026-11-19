@@ -1,5 +1,6 @@
 import { openDb, type Db } from "../sqlite";
 import type { Capability, Reliability } from "./types";
+import { demoServices } from "./demo";
 
 /**
  * Where the capability map lives: the same SQLite file as jobs, or memory when persistence is off.
@@ -51,6 +52,8 @@ function load() {
   }
   loaded = true;
   checkedAt = Date.now();
+  // Sample services with recorded answers, while replaying recorded data or with DEMO_CATALOG=on.
+  for (const c of demoServices()) mem.set(c.resource, c);
   if (!d) return;
   try {
     version = dbVersion(d);
