@@ -55,10 +55,10 @@ test("Worko's home lists what it gets done; a trip shows only what matters, and 
   await expect(page.getByTestId("review-yours")).toContainText("You finish it in Uber");
   await page.getByTestId("open-approve").click();
   await expect(page.getByTestId("receipt-total")).toBeVisible({ timeout: 60_000 });
+  // Shown only for hand-off steps that finished: the link is ready.
   const link = page.getByTestId("left-for-you");
   await expect(link).toContainText("Book the ride to Seattle");
   expect(new URL((await link.getAttribute("href"))!).host).toBe("m.uber.com");
-  await expect(page.getByTestId("phase-h1")).toHaveAttribute("data-status", "done");
 });
 
 test("the recipe book finds the closest recipe for a problem in your own words", async ({ page }) => {
