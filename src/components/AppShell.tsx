@@ -99,6 +99,7 @@ export function MainNav() {
     { href: "/agents", label: "Agents", icon: "agents", active: path.startsWith("/agents") },
     { href: "/recipes", label: "Recipes", icon: "receipt", active: path.startsWith("/recipes") },
     { href: "/town", label: "Town", icon: "graph", active: path.startsWith("/town") },
+    { href: "/wallet", label: "Add money", icon: "wallet", active: path.startsWith("/wallet") },
     { href: "/settings", label: "Settings", icon: "shield", active: path.startsWith("/settings") },
   ];
   return (
@@ -107,11 +108,13 @@ export function MainNav() {
         <Link
           key={t.href}
           href={t.href}
+          title={t.label}
           aria-current={t.active ? "page" : undefined}
           className={`inline-flex h-[34px] items-center gap-1.5 rounded-[7px] px-3 text-sm font-medium transition-colors ${t.active ? "bg-panel text-ink shadow-[0_0_0_1px_var(--color-line)]" : "text-ink-2 hover:text-ink"}`}
         >
           <Icon name={t.icon} size={16} />
-          {t.label}
+          {/* Six items fit with labels from lg up; between sm and lg the icons carry them (still read out). */}
+          <span className="sr-only lg:not-sr-only">{t.label}</span>
         </Link>
       ))}
     </nav>

@@ -204,6 +204,12 @@ export default function Settings() {
         )}
       </Block>
 
+      <Block id="s-money" title="Add money" sub="Get USDC onto Arc testnet or mainnet: buy it with a card or bank, bring it from another chain, or get free test USDC.">
+        <Link href="/wallet" className="pix-press inline-flex h-10 items-center gap-2 rounded-lg border-[1.5px] border-ink bg-ink px-4 text-sm font-semibold text-white" data-testid="settings-add-money">
+          <Icon name="wallet" size={16} /> Add money
+        </Link>
+      </Block>
+
       <Block id="s-exchange" title="Exchange" sub="Where approved orders are placed.">
         <div className="-mt-3">
           <ExchangePanel />
