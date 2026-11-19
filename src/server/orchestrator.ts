@@ -46,6 +46,7 @@ import { checkDelivery, DeliveryError, MaybeChargedError, type DeliveryPromise, 
 import { recordDelivery, standing } from "./strikes";
 import { recordOutcome } from "./catalog/store";
 import { tally } from "./verdict";
+import { buildReport } from "./report";
 
 import { limits } from "./settings";
 import { partsProgress } from "@/lib/parts";
@@ -677,7 +678,15 @@ async function finish(ctl: Ctl) {
     }
   }
   const { refunded, txHash } = await closeVault(ctl.run);
-  emit(ctl, { type: "run.done", deliverable, refunded: refunded.toString(), refundTx: txHash, at: now() });
+  // The write-up: claims tied to the paid steps behind them; conflicts, gaps and spend by code.
+  const built = await buildReport(ctl.run).catch((e) => {
+    console.warn("report:", (e as Error).message);
+    return null;
+  });
+  if (built?.usage) trackAi(ctl, "report", built.usage);
+  const report = built?.report;
+  if (report?.headline && report.by === "ai") deliverable.summary = report.headline;
+  emit(ctl, { type: "run.done", deliverable, refunded: refunded.toString(), refundTx: txHash, at: now(), report });
 }
 
 /** Closes the vault and refunds what's left; nothing to do when no vault was opened. */
@@ -920,7 +929,7 @@ async function buyMarketplace<T>(
   lineId: string,
   key: string,
   product: string,
-  fetcher: () => Promise<T & { paid: { amountUsdc: number; payTo: string; via: string } }>,
+  fetcher: () => Promise<T & { paid: { amountUsdc: number; payTo: string; via: string; tx?: Hex } }>,
   check: { promise?: DeliveryPromise; asked?: Record<string, string>; resource?: string } = {},
 ): Promise<T> {
   if (ctl.cache.has(key)) return ctl.cache.get(key) as T;
@@ -950,7 +959,7 @@ async function buyMarketplace<T>(
     if (check.resource) recordOutcome(check.resource, true);
     const fresh = ctl.run.lines.find((l) => l.id === lineId)!;
     emit(ctl, { type: "line.updated", line: { ...fresh, actual: (BigInt(fresh.actual) + paid).toString() } });
-    emit(ctl, { type: "payment.updated", phaseId, payment: { ...payment, txState: "settled", amount: paid.toString(), at: now() } });
+    emit(ctl, { type: "payment.updated", phaseId, payment: { ...payment, txState: "settled", amount: paid.toString(), txHash: got.paid.tx, at: now() } });
     ctl.cache.set(key, got);
     emit(ctl, { type: "data.received", key, product, data: got, phaseId });
     return got;

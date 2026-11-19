@@ -460,17 +460,21 @@ body {
     visibility: hidden;
   }
   #receipt,
-  #receipt * {
+  #receipt *,
+  #report,
+  #report * {
     visibility: visible;
   }
-  #receipt {
+  #receipt,
+  #report {
     position: absolute;
     inset: 0;
     padding: 0;
     box-shadow: none;
     border: 0;
   }
-  #receipt .no-print {
+  #receipt .no-print,
+  #report .no-print {
     display: none;
   }
   #receipt tr,

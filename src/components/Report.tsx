@@ -1,0 +1,130 @@
+"use client";
+import { useEffect, useRef, useState } from "react";
+import type { Report as ReportT, Run } from "@/lib/types";
+import { fmt } from "@/lib/money";
+import { txUrl } from "@/lib/format";
+import { Icon } from "./Icon";
+
+const VERDICT: Record<NonNullable<ReportT["verdict"]>, { text: string; cls: string }> = {
+  looks_fine: { text: "Looks fine", cls: "bg-good/10 text-good border-good/40" },
+  be_careful: { text: "Be careful", cls: "bg-warn/20 text-warn-ink border-warn" },
+  do_not_proceed: { text: "Don't go ahead", cls: "bg-bad/10 text-bad border-bad/40" },
+  unclear: { text: "Not clear yet", cls: "bg-[#f1f0ec] text-ink-2 border-line" },
+};
+
+const CIRCLED = "①②③④⑤⑥⑦⑧⑨⑩⑪⑫";
+
+/** A numbered chip on a claim: opens what backs it (the step, the seller, the price, the transaction). */
+function Evidence({ run, phaseId, n }: { run: Run; phaseId: string; n: number }) {
+  const [open, setOpen] = useState(false);
+  const ref = useRef<HTMLSpanElement>(null);
+  useEffect(() => {
+    if (!open) return;
+    const close = (e: MouseEvent) => !ref.current?.contains(e.target as Node) && setOpen(false);
+    const esc = (e: KeyboardEvent) => e.key === "Escape" && setOpen(false);
+    document.addEventListener("mousedown", close);
+    document.addEventListener("keydown", esc);
+    return () => {
+      document.removeEventListener("mousedown", close);
+      document.removeEventListener("keydown", esc);
+    };
+  }, [open]);
+  const p = run.phases.find((x) => x.id === phaseId);
+  const line = run.lines.find((l) => l.id === p?.lineId);
+  const pay = p?.payments.find((x) => x.txState === "settled");
+  if (!p) return null;
+  return (
+    <span ref={ref} className="relative inline-block align-super">
+      <button type="button" onClick={() => setOpen((v) => !v)} aria-expanded={open} aria-label={`Evidence ${n}: ${p.label}`} className="mx-[1px] rounded px-[1px] text-[12px] font-semibold leading-none text-agent-ink hover:bg-agent-soft" data-testid={`evidence-${phaseId}`}>
+        {CIRCLED[n - 1] ?? `(${n})`}
+      </button>
+      {open && (
+        <span role="dialog" className="absolute left-0 top-5 z-20 block w-64 rounded-xl border-[1.5px] border-ink bg-panel p-3 text-left text-[12.5px] leading-snug shadow-[3px_3px_0_0_var(--agent)]" data-testid="evidence-popover">
+          <span className="block font-semibold text-ink">{p.label}</span>
+          {line && <span className="mt-1 block text-ink-2">From {line.payeeName.replace(/ \(Agent Marketplace\)$/, "")}</span>}
+          {line && <span className="num block text-ink-2">Paid ${fmt(line.actual)} USDC</span>}
+          {p.finding && <span className="mt-1 block text-ink-3">Found: {p.finding.text}</span>}
+          {pay?.txHash ? (
+            <a href={txUrl(pay.txHash, run.network)} target="_blank" rel="noreferrer" className="mt-1.5 inline-flex items-center gap-1 font-medium text-ink underline decoration-line underline-offset-2" data-testid="evidence-tx">
+              Payment on Arc <Icon name="external" size={11} />
+            </a>
+          ) : (
+            <span className="mt-1.5 block text-ink-3">{run.mode === "demo" ? "Practice: no money moved" : "Paid through Circle Gateway (settled in a batch)"}</span>
+          )}
+        </span>
+      )}
+    </span>
+  );
+}
+
+/**
+ * The write-up: one sentence, a verdict, what was found with the evidence behind each claim, where
+ * sources disagreed and how that was settled, and what this didn't cover.
+ */
+export function Report({ run, id }: { run: Run; /** Set on the page made for printing. */ id?: string }) {
+  const r = run.report;
+  if (!r) return null;
+  const v = r.verdict ? VERDICT[r.verdict] : null;
+  const order = [...new Set(r.claims.flatMap((c) => c.evidence))];
+  return (
+    <section id={id} className="rounded-2xl border-[1.5px] border-ink bg-panel shadow-[4px_4px_0_0_var(--agent)]" aria-label="Report" data-testid="report">
+      <div className="px-4 pb-3 pt-3.5">
+        <div className="flex flex-wrap items-center justify-between gap-2">
+          <span className="font-pixel text-[12px] text-agent-ink">Report</span>
+          {v && (
+            <span className={`rounded-md border px-2 py-0.5 text-[12.5px] font-semibold ${v.cls}`} data-testid="report-verdict" data-verdict={r.verdict}>
+              {v.text}
+            </span>
+          )}
+        </div>
+        <h2 className="mt-1 text-[18px] font-semibold leading-snug" data-testid="report-headline">
+          {r.headline}
+        </h2>
+      </div>
+      {r.claims.length > 0 && (
+        <ul className="space-y-1.5 border-t border-[#f1f0ec] px-4 py-3 text-[14px] leading-snug" aria-label="What was found">
+          {r.claims.map((c, i) => (
+            <li key={i} className="flex gap-2" data-testid="report-claim">
+              <span aria-hidden className="mt-[7px] h-1.5 w-1.5 shrink-0 rounded-full bg-ink/60" />
+              <span className="min-w-0">
+                {c.text}
+                {c.evidence.map((e) => (
+                  <Evidence key={e} run={run} phaseId={e} n={order.indexOf(e) + 1} />
+                ))}
+                {c.unverified?.length ? <span className="ml-1 text-[12px] text-warn-ink" title="These figures weren't in the data">(unchecked: {c.unverified.join(", ")})</span> : null}
+              </span>
+            </li>
+          ))}
+        </ul>
+      )}
+      {r.conflicts.length > 0 && (
+        <div className="mx-4 mb-3 space-y-2 rounded-xl border border-warn bg-warn/10 px-3 py-2.5 text-[13px]" data-testid="report-conflicts">
+          {r.conflicts.map((c) => (
+            <div key={c.fact}>
+              <div className="font-semibold">{c.fact}</div>
+              <div className="text-ink-2">{c.values.map((x) => `${x.source}: ${x.value}`).join(" · ")}</div>
+              <div className="text-ink-2">
+                {c.outcome}
+                {c.resolvedBy ? ` Settled by ${c.resolvedBy}.` : ""}
+              </div>
+            </div>
+          ))}
+        </div>
+      )}
+      {r.gaps.length > 0 && (
+        <div className="border-t border-[#f1f0ec] px-4 py-3 text-[13px]" data-testid="report-gaps">
+          <div className="text-[11.5px] font-semibold uppercase tracking-wide text-ink-3">What this didn&apos;t cover</div>
+          <ul className="mt-1 space-y-0.5 text-ink-2">
+            {r.gaps.map((g) => (
+              <li key={g}>– {g}</li>
+            ))}
+          </ul>
+        </div>
+      )}
+      <p className="num border-t border-[#f1f0ec] px-4 py-2.5 text-[12.5px] text-ink-3" data-testid="report-spent">
+        ${fmt(r.spent.total)} spent on {r.spent.sources} check{r.spent.sources === 1 ? "" : "s"} from {r.spent.sellers} seller{r.spent.sellers === 1 ? "" : "s"}
+        {r.by === "ai" ? " · worded by the model, every claim checked by code" : ""}
+      </p>
+    </section>
+  );
+}

@@ -184,14 +184,15 @@ export interface ServiceResult {
   provider: string;
   resource: string;
   data: unknown;
-  paid: { amountUsdc: number; payTo: Hex; via: string; at: string };
+  paid: { amountUsdc: number; payTo: Hex; via: string; at: string; /** The settlement transaction, when the seller reports one. */ tx?: Hex };
 }
 
 /** Pays one request to a marketplace service and returns what it answered. */
 export async function callService(s: Service, input: Record<string, unknown>, maxAmount?: bigint, payTo?: string): Promise<ServiceResult> {
   const { url, init } = serviceRequest(s, input);
   const r = await payRequest<unknown>(url, init, maxAmount, payTo ?? s.payTo);
-  return { provider: s.provider, resource: s.resource, data: r.data, paid: { amountUsdc: Number(r.amount) / 1e6, payTo: r.payTo, via: `${s.provider} x402 · Circle Gateway nanopayment`, at: r.at } };
+  const tx = (r.settlement as { transaction?: unknown } | undefined)?.transaction;
+  return { provider: s.provider, resource: s.resource, data: r.data, paid: { amountUsdc: Number(r.amount) / 1e6, payTo: r.payTo, via: `${s.provider} x402 · Circle Gateway nanopayment`, at: r.at, ...(typeof tx === "string" && /^0x[0-9a-fA-F]{64}$/.test(tx) ? { tx: tx as Hex } : {}) } };
 }
 
 export const CATEGORIES = ["FINANCIAL_ANALYSIS", "WEB_SEARCH_RESEARCH", "TRAVEL_SHOPPING", "DATA_ENRICHMENT", "SOCIAL_INTELLIGENCE", "INFERENCE", "COMMUNICATION", "CREATIVE", "INFRASTRUCTURE"] as const;

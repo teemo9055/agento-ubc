@@ -96,7 +96,7 @@ export function reduce(run: Run | null, e: SeqEvent): Run | null {
     case "decision.logged":
       return { ...run, decisions: [...run.decisions, e.decision] };
     case "run.done":
-      return { ...run, status: "done", deliverable: e.deliverable, refunded: e.refunded, refundTx: e.refundTx, finishedAt: e.at };
+      return { ...run, status: "done", deliverable: e.deliverable, refunded: e.refunded, refundTx: e.refundTx, finishedAt: e.at, report: e.report ?? run.report };
     case "run.cancelled":
       return {
         ...run,

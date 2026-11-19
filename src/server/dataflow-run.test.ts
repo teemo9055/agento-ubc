@@ -132,6 +132,15 @@ describe("a chained job", () => {
     expect(spent(run, "r5")).toBe("0");
     expect(phase(run, "r2").finding).toEqual({ text: "Risk: high", tone: "bad" });
     expect(run.verdict?.lean).toBe("do_not_proceed");
+    // The report: a claim per delivered step, each pointing at a paid step; the conflict and its settling by code.
+    const rep = run.report!;
+    expect(rep.headline).toBe("Here's what each check found");
+    expect(rep.claims.map((c) => c.evidence[0])).toEqual(["r1", "r2", "r3", "r4"]);
+    expect(rep.claims.every((c) => c.evidence.every((e) => phase(run, e).payments.some((p) => p.txState === "settled")))).toBe(true);
+    expect(rep.conflicts).toEqual([
+      { fact: "The same question", values: [{ source: "a.test", value: "Risk: high" }, { source: "b.test", value: "Risk: low" }], resolvedBy: "c.test", outcome: "They disagreed, so a third source was bought: Risk: high." },
+    ]);
+    expect(rep.spent).toEqual({ total: "40000", sources: 4, sellers: 1 });
   });
 
   it("sources agree: the tie-breaker isn't bought, and its money is never spent", async () => {

@@ -1,5 +1,6 @@
 "use client";
 import { ComposePanel } from "@/components/TierPicker";
+import { Report } from "@/components/Report";
 import { use, useEffect, useRef, useState } from "react";
 import Link from "next/link";
 import dynamic from "next/dynamic";
@@ -617,6 +618,14 @@ export default function RunPage({
                 }
               />
             )}
+          {run.report && (
+            <div className="space-y-1.5">
+              <Report run={run} />
+              <Link href={`/runs/${run.id}/report`} className="inline-flex items-center gap-1 text-[13px] text-ink-2 underline decoration-line underline-offset-2 hover:text-ink" data-testid="report-page">
+                Report on its own page <Icon name="external" size={12} />
+              </Link>
+            </div>
+          )}
           {hasVisual && (
             <section
               className="min-w-0 rounded-2xl border border-line bg-panel p-4"

@@ -153,6 +153,23 @@ export interface Deliverable {
   notes?: string[];
 }
 
+/** The write-up of a finished job: every claim points to the paid steps behind it. */
+export interface Report {
+  /** One sentence that answers the question. */
+  headline: string;
+  verdict?: "looks_fine" | "be_careful" | "do_not_proceed" | "unclear";
+  /** What was found; `evidence` are the ids of delivered, paid steps. */
+  claims: { text: string; evidence: string[]; /** Figures the data doesn't contain. */ unverified?: string[] }[];
+  /** Cross-checked questions: what each source said and how it was settled. Written by code. */
+  conflicts: { fact: string; values: { source: string; value: string }[]; resolvedBy?: string; outcome: string }[];
+  /** What this didn't cover, with why. Written by code. */
+  gaps: string[];
+  /** From the receipt: USDC base units, steps paid, sellers paid. */
+  spent: { total: string; sources: number; sellers: number };
+  /** Who worded it: code alone, or the model checked by code. */
+  by: "code" | "ai";
+}
+
 export interface AiStats {
   model: string;
   calls: number;
@@ -392,6 +409,8 @@ export interface Run {
   results?: Record<string, unknown>;
   /** The questions a composed job answers, one lane each on the graph. */
   lanes?: { id: string; question: string; importance: "must" | "should" | "nice" }[];
+  /** The write-up once the job is done. */
+  report?: Report;
   /** Live tally of findings, recomputed by code after every finished step. */
   verdict?: { lean: "looks_fine" | "be_careful" | "do_not_proceed" | "unclear"; good: number; warn: number; bad: number; pending: number };
   faults: FailureCode[];

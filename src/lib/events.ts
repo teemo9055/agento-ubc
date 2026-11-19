@@ -1,4 +1,4 @@
-import type { Plan, AiStats, ChatMsg, OrderResult, CostLine, Decision, Deliverable, Failure, FailureAction, Hex, Payment, Phase, ReapprovalRequest, Run, Settlement } from "./types";
+import type { Plan, AiStats, ChatMsg, OrderResult, CostLine, Decision, Deliverable, Failure, FailureAction, Hex, Payment, Phase, ReapprovalRequest, Report, Run, Settlement } from "./types";
 
 export type RunEvent =
   | { type: "workorder.updated"; run: Run }
@@ -28,7 +28,7 @@ export type RunEvent =
   | { type: "failure.raised"; failure: Failure }
   | { type: "failure.resolved"; failureId: string; action: FailureAction }
   | { type: "decision.logged"; decision: Decision }
-  | { type: "run.done"; deliverable: Deliverable; refunded: string; refundTx?: Hex; at: string }
+  | { type: "run.done"; deliverable: Deliverable; refunded: string; refundTx?: Hex; at: string; report?: Report }
   | { type: "run.cancelled"; refunded: string; refundTx?: Hex; at: string };
 
 export type SeqEvent = RunEvent & { seq: number };
