@@ -198,7 +198,7 @@ test("dashboard lists jobs by folder and status, and opens them", async ({ page 
   await expect(page).toHaveURL(url);
 });
 
-test("a plan across agents runs step by step and says what it can't do", async ({ page }) => {
+test("a plan across agents runs step by step, and a booking it can't make rides along as a link", async ({ page }) => {
   await prefs(page);
   await page.goto("/new");
   await page.fill("#task", "What are BTC odds right now, then plan a drive from Vancouver to Seattle, and book a hotel in Seattle");
@@ -206,7 +206,8 @@ test("a plan across agents runs step by step and says what it can't do", async (
   const card = page.getByTestId("plan-card");
   await expect(card).toBeVisible({ timeout: 30_000 });
   await expect(card.getByTestId("plan-step")).toHaveCount(2);
-  await expect(card.getByTestId("plan-unavailable")).toContainText("hotel");
+  // The hotel needs your own account: it isn't refused, it comes with the drive as a ready link.
+  await expect(card.getByTestId("plan-unavailable")).toHaveCount(0);
   // Several jobs together are a project: its own page, one review totalled across the jobs.
   await expect(page).toHaveURL(/\/projects\//);
   await expect(page.getByTestId("project-title")).not.toBeEmpty();
@@ -219,6 +220,7 @@ test("a plan across agents runs step by step and says what it can't do", async (
   await expect(page.getByTestId("back-to-plan")).toContainText("Part of:");
   await expect(page.getByTestId("handoff")).toContainText("Inso");
   await expect(page.getByTestId("receipt-total")).toBeVisible();
+  await expect(page.getByTestId("left-for-you")).toContainText("Book a stay in Seattle");
 });
 
 test("an empty project can be made and filled by hand", async ({ page, request }) => {
