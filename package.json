@@ -36,8 +36,11 @@
     "ws": "^8.23.0"
   },
   "dependencies": {
+    "@circle-fin/adapter-viem-v2": "^1.20.2",
+    "@circle-fin/bridge-kit": "^1.17.2",
     "@circle-fin/developer-controlled-wallets": "^10.8.1",
     "@circle-fin/modular-wallets-core": "^1.0.16",
+    "@circle-fin/onramp-kit": "^1.0.9",
     "@circle-fin/x402-batching": "^4.0.0",
     "@fontsource-variable/inter": "^5.3.0",
     "@fontsource-variable/jetbrains-mono": "^5.3.0",

@@ -10,6 +10,8 @@ export interface Prefs {
   /** Failures to inject, for testing how the agent handles them. */
   faults: FailureCode[];
   accessCode?: string;
+  /** Which Arc network the Add money page works on (default testnet). */
+  network?: "testnet" | "mainnet";
 }
 
 const KEY = "agento:prefs";
