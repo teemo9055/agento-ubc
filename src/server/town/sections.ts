@@ -3,6 +3,7 @@
  * so pages, the browser and the agent formats all read the same list.
  */
 export const SECTIONS = {
+  recipes: "Recipe book",
   basics: "Fundamental actions",
   combos: "Combined actions",
   tools: "Tools and prices",
@@ -16,6 +17,7 @@ export type Section = keyof typeof SECTIONS;
 
 /** One line per category, for its tile on the Library's front page. */
 export const SECTION_BLURB: Record<Section, string> = {
+  recipes: "Everyday problems, solved by a few steps put together.",
   basics: "One thing at a time: pay, read a price, place an order.",
   combos: "Several steps that work together.",
   tools: "Every lookup, what it costs, who can use it.",

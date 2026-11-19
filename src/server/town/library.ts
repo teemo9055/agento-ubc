@@ -10,6 +10,7 @@ import { networkName, PAY_NETWORK } from "../marketplace";
 import { limits } from "../settings";
 import { all, get, put } from "./db";
 import { SECTIONS, type Section } from "./sections";
+import { KIND_TEXT, RECIPES, recipeCost, recipeReady, WHERE_TEXT } from "@/lib/recipes";
 
 export { SECTIONS, type Section } from "./sections";
 
@@ -196,7 +197,7 @@ const BASICS: LibraryEntry[] = [
     price: "Free",
     updated: SEEDED,
     source: "src/server/chain-tools.ts, src/server/tools.ts (read_arc)",
-    agents: ["inso", "trado", "travo"],
+    agents: ["inso", "trado", "worko"],
     steps: ["Pick what to read: balance, tx, vault or authorization.", "Call look_up with tool read_arc and the address or hash.", "Read the answer. Nothing is signed and nothing is charged."],
     seeAlso: ["tool-read_arc", "glossary-arc", "glossary-vault"],
   },
@@ -209,7 +210,7 @@ const BASICS: LibraryEntry[] = [
     price: "Free to search",
     updated: SEEDED,
     source: "src/server/marketplace.ts (searchServices)",
-    agents: ["inso", "trado", "travo"],
+    agents: ["inso", "trado", "worko"],
     steps: ["Search by a word, like weather or gas.", "Keep the ones marked payable now: those take Arc testnet.", "Ask an agent to add one as a paid step (the service tool), priced from the seller's own quote."],
     curl: 'curl "{BASE}/api/town/store?q=weather"',
     seeAlso: ["tool-search_services", "tool-service", "gotcha-mainnet-services", "glossary-agent-marketplace"],
@@ -237,12 +238,12 @@ const BASICS: LibraryEntry[] = [
     id: "ask-an-agent",
     section: "basics",
     title: "Ask one of the agents",
-    body: "Start a chat with Inso (prediction markets and cover), Trado (coins) or Travo (trips). It looks things up for free and may propose a move for the person to approve.",
+    body: "Start a chat with Inso (prediction markets and cover), Trado (coins) or Worko (trips). It looks things up for free and may propose a move for the person to approve.",
     tool: 'ask_agent { agent: "inso", message: "How have BTC odds moved today?" } then get_job { id }',
     price: "Free until a move is approved",
     updated: SEEDED,
     source: "src/server/mcp.ts (ask_agent)",
-    agents: ["inso", "trado", "travo"],
+    agents: ["inso", "trado", "worko"],
     steps: ["Connect your AI to Agento's MCP server at {BASE}/api/mcp.", "Call ask_agent with the agent and your question.", "Follow the job with get_job; a proposed move comes back as a draft with a link for the person."],
     curl: "claude mcp add --transport http agento {BASE}/api/mcp",
     seeAlso: ["place-an-order", "glossary-mcp", "gotcha-no-approve"],
@@ -312,15 +313,15 @@ const COMBOS: LibraryEntry[] = [
     id: "plan-a-drive",
     section: "combos",
     title: "Plan a drive, then where to stay",
-    body: "Travo buys the driving route, splits it into days that fit your hours on the road and lists a few places to sleep where each day ends, from OpenStreetMap. It doesn't check prices or book.",
-    tool: 'propose_move { agent: "travo", move: { action: { kind: "itinerary", stops: ["Vancouver", "Seattle"], hoursPerDay: 6 } } }',
+    body: "Worko buys the driving route, splits it into days that fit your hours on the road and lists a few places to sleep where each day ends, from OpenStreetMap. It doesn't check prices or book.",
+    tool: 'propose_move { agent: "worko", move: { action: { kind: "itinerary", stops: ["Vancouver", "Seattle"], hoursPerDay: 6 } } }',
     price: perRequest(researchPrice("drive_route")),
     priceUsdc: researchPrice("drive_route").toString(),
     updated: SEEDED,
     source: "src/server/tools.ts (drive_route), src/server/x402.ts (routes.drive)",
-    agents: ["travo"],
+    agents: ["worko"],
     network: X402_NET,
-    steps: ["Give the stops in order and your hours on the road per day.", "Travo buys the driving route.", "It splits the route into days and lists a few places to sleep near each day's end."],
+    steps: ["Give the stops in order and your hours on the road per day.", "Worko buys the driving route.", "It splits the route into days and lists a few places to sleep near each day's end."],
     storeId: "agento-routes.drive",
     seeAlso: ["tool-drive_route", "tool-find_nearby", "sold-routes.drive"],
   },
@@ -366,7 +367,7 @@ const TOOL_TITLE: Record<string, string> = {
   drive_route: "Driving route",
 };
 
-const AGENT_IDS: AgentId[] = ["inso", "trado", "travo"];
+const AGENT_IDS: AgentId[] = ["inso", "trado", "worko"];
 /** A short title from a sentence: up to the first ": " or ". ", cut at a word, never mid-word. */
 const short = (text: string, max = 64) => {
   const first = text
@@ -529,7 +530,28 @@ function learnedEntries(): LibraryEntry[] {
   });
 }
 
+/** The recipe book, for agents: each recipe as an article with its steps, who does each and where it runs. */
+function recipeEntries(): LibraryEntry[] {
+  return RECIPES.map((r) => {
+    const cost = recipeCost(r);
+    return {
+      id: `recipe-${r.id}`,
+      section: "recipes" as const,
+      title: r.worry,
+      body: `${r.title}. You get: ${r.gets} ${WHERE_TEXT[recipeReady(r)]}${recipeReady(r) === "now" ? "" : ": steps marked otherwise below can't be paid on this network yet"}. Start it by asking ${r.agent} the opening line; the agent tailors it before anything is paid.`,
+      tool: `propose_move or ask ${r.agent}: "${r.say}"`,
+      price: cost > 0 ? `About $${cost < 0.01 ? cost.toFixed(4) : cost.toFixed(2)} a run in paid steps` : "Free lookups; an order costs what you approve",
+      updated: SEEDED,
+      source: "src/lib/recipes.ts",
+      agents: [r.agent],
+      steps: r.steps.map((s) => `${s.label}: ${s.by}${s.cost ? `, $${s.cost}` : ""} (${KIND_TEXT[s.kind]}; ${WHERE_TEXT[s.where]})`),
+      seeAlso: (r.next ?? []).map((n) => `recipe-${n}`),
+    };
+  });
+}
+
 const KIND: Record<Section, string> = {
+  recipes: "Recipe",
   basics: "Fundamental action",
   combos: "Combined action",
   tools: "Tool",
@@ -544,7 +566,7 @@ const KIND: Record<Section, string> = {
 export function allEntries(): LibraryEntry[] {
   const published = all<LibraryEntry>("town_library");
   const byId = new Map<string, LibraryEntry>();
-  for (const e of [...BASICS, ...COMBOS, ...toolEntries(), ...limitEntries(), ...practiceEntries(), ...updateEntries(), ...GLOSSARY, ...learnedEntries()]) byId.set(e.id, e);
+  for (const e of [...recipeEntries(), ...BASICS, ...COMBOS, ...toolEntries(), ...limitEntries(), ...practiceEntries(), ...updateEntries(), ...GLOSSARY, ...learnedEntries()]) byId.set(e.id, e);
   for (const e of [...published].reverse()) byId.set(e.id, { ...byId.get(e.id), ...e, kind: e.credit ? "From the Lab" : e.kind });
   return [...byId.values()].map((e) => ({ ...e, kind: e.kind ?? KIND[e.section] }));
 }

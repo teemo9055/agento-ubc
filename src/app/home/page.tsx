@@ -133,6 +133,9 @@ function Dashboard() {
             {folder === "all" || folder === "saved" ? "Most recently opened first." : THEMES[folder].tagline}
           </p>
         </div>
+        <Link href="/recipes" className="pressable inline-flex h-10 items-center gap-2 rounded-lg border border-line bg-panel px-3.5 text-[13px] font-medium hover:border-ink" data-testid="home-recipes">
+          <Icon name="receipt" size={15} /> Recipe book: ideas for everyday problems
+        </Link>
         {connection === "reconnecting" && (
           <span className="inline-flex h-10 items-center gap-1.5 rounded-lg border border-warn bg-warn/15 px-3 text-[13px] text-warn-ink" role="status">
             <Spinner /> Reconnecting

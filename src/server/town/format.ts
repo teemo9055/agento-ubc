@@ -35,7 +35,7 @@ const table = (rows: [string, unknown][]) => ["| | |", "| --- | --- |", ...rows.
 const fence = (lang: string, code: string) => `\`\`\`${lang}\n${code}\n\`\`\``;
 const building = (id: BuildingId) => BUILDINGS.find((b) => b.id === id)!;
 const newest = (dates: (string | undefined)[], fallback = new Date(0).toISOString()) => dates.filter(Boolean).sort().at(-1) ?? fallback;
-const AGENT_NAME: Record<string, string> = { inso: "Inso", trado: "Trado", travo: "Travo" };
+const AGENT_NAME: Record<string, string> = { inso: "Inso", trado: "Trado", worko: "Worko" };
 const usd = (x: number | null | undefined) => (x == null ? "Price not given" : x === 0 ? "Free" : x < 0.01 ? `$${x.toFixed(4).replace(/0+$/, "")}` : `$${x.toFixed(2)}`);
 const base6 = (x: number | null | undefined) => (x == null ? null : String(Math.round(x * 1e6)));
 

@@ -36,8 +36,8 @@ export function useAgentRecords(): { records: Record<AgentId, AgentRecord> | nul
   const records = useMemo(() => {
     if (!runs) return null;
     const empty = (): AgentRecord => ({ jobs: [], done: 0, running: 0, spent: 0n, returned: 0n, topics: [] });
-    const out: Record<AgentId, AgentRecord> = { inso: empty(), trado: empty(), travo: empty() };
-    const counts: Record<AgentId, Map<Outfit, number>> = { inso: new Map(), trado: new Map(), travo: new Map() };
+    const out: Record<AgentId, AgentRecord> = { inso: empty(), trado: empty(), worko: empty() };
+    const counts: Record<AgentId, Map<Outfit, number>> = { inso: new Map(), trado: new Map(), worko: new Map() };
     for (const r of runs) {
       const rec = out[r.agent];
       if (!rec) continue;

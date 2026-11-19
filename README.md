@@ -2,13 +2,13 @@
 
 Ask an agent anything; it looks things up for free. When there's something worth doing, it proposes one concrete move ("Buy 7 YES on Phoenix at 39¢ or less if the odds are still under 40%?"). Say yes and the move becomes a priced work order: you approve once, the agent pays for its research in USDC on Arc from a vault that only pays what you approved, re-checks the condition on fresh data, then acts. You get the result and an itemized receipt.
 
-Three agents share one runtime; none runs a fixed recipe. Each move's steps come from the conversation.
+Three agents share one runtime. Each move's steps come from the conversation, often starting from a recipe in the recipe book (below) that the agent then tailors.
 
 | Agent | Domain | Explores with (free) | Paid research (x402) | Moves |
 | ----- | ------ | -------------------- | -------------------- | ----- |
 | **Inso** | Prediction markets | Gemini Prediction Markets search and contracts | Odds history, trade tape | Limit order on a YES/NO contract |
 | **Trado** | Trading | Gemini spot prices, related markets | Spot candles | Spot limit order |
-| **Travo** | Travel | Place lookup (OpenStreetMap) | Driving route | Day-by-day driving plan |
+| **Worko** | Errands (was Travo) | Place lookup (OpenStreetMap), recipe book | Driving route; any payable marketplace service (checks before you pay, on Arc mainnet) | Day-by-day driving plan; bookings made ready for you to finish |
 
 All three can search [Circle's Agent Marketplace](https://agents.circle.com/services) catalog to show what other x402 services exist and whether they accept Arc testnet.
 
@@ -188,7 +188,7 @@ A prediction order shows its market live: what the side costs to buy and what se
 - **Landing (`/`).** Four panels say what Agento does: say what you want done, see the work as steps, approve once, watch it happen. "Open Agento" or Skip goes to the app.
 - **Home (`/home`).** Your jobs as a grid of cards, most recently opened first, with a New job tile first. Each card has a small picture of the job's steps on a pattern in its agent's colour, a status badge (Complete, Running, In progress, Needs you, Stopped), the agent handling it, the job's own title and one line on where it stands. Projects are folder cards; the jobs inside them are found in the project. Filter by agent or Saved, and search.
 - **A job page shows one job, in four stages.** The work is on the left and the conversation on the right.
-  - **Shape it.** Every agent uses the same layout: its live instrument for the move on top (Inso: the market and the distance to the line; Trado: the price with your limit marked; Travo: the route and the days), then the drawing of what it reads, checks, does and what you get, then the most it can cost. The agent's lookups are one quiet row, closed by default ("Looked at 6 markets"), that opens to the list. Suggestions are written out in full ("Buy 1 more (total $3.30)", "Spend less: 1 fewer ($2.20)") and apply to the left side at once, without the model; they only name things the conversation is about.
+  - **Shape it.** Every agent uses the same layout: its live instrument for the move on top (Inso: the market and the distance to the line; Trado: the price with your limit marked; Worko: the route and the days), then the drawing of what it reads, checks, does and what you get, then the most it can cost. The agent's lookups are one quiet row, closed by default ("Looked at 6 markets"), that opens to the list. Suggestions are written out in full ("Buy 1 more (total $3.30)", "Spend less: 1 fewer ($2.20)") and apply to the left side at once, without the model; they only name things the conversation is about.
   - **Review.** A banner with the title, what happens as numbered steps and the approve button. Below it four answers, each changeable in the chat: what you get, how it's done (each service and lookup it pays for, who sells it, each price), limits (the risks of this job, such as "It isn't $65,100 or above when it closes at 10:48 PM UTC: you lose the $2.75", and what happens if a step fails), and the price of the job itself. Then the total in dollars ("At most $2.87"), with the split one tap away.
   - **Run.** One line on what is happening now and the steps as a graph laid out on a grid: done steps green, the running step in the agent's colour with a marching line into it, waiting steps grey and dashed, a step that needs you yellow, a failed one red.
   - **Done.** The summary is the receipt: how it ended, the result, and the invoice-style receipt with every payment, what came back and the approval trail. It also has its own printable page and exports to CSV and JSON.
@@ -201,7 +201,7 @@ A prediction order shows its market live: what the side costs to buy and what se
 
 Ask for several things at once ("check gold and Bitcoin fees, and separately plan a drive from Dallas to Austin, then buy 3 YES on BTC") and the host agent breaks it into the steps that really make it up:
 
-- **Each step is built by the agent that owns it.** The host writes a short brief per step; the owning agent (Inso, Trado or Travo) turns it into a checked move with its own tools and knowledge. The host never writes another agent's order.
+- **Each step is built by the agent that owns it.** The host writes a short brief per step; the owning agent (Inso, Trado or Worko) turns it into a checked move with its own tools and knowledge. The host never writes another agent's order.
 - **Steps say what they wait for.** Independent steps run at the same time; a step that waits starts when the ones before it finish, or, with a fill gate, only once their orders have actually filled.
 - **A step can spend what an earlier one brought in.** "Sell X, then use the money for Y": Y's budget is set from the sell's proceeds when it starts, and the move is re-checked at that size.
 - **A failure stays local.** A failed or cancelled step only skips the steps that depended on it. Everything else carries on.
@@ -215,9 +215,23 @@ The ask screen lists what really executes, grouped by where: on Arc testnet toda
 
 **See it work** on the ask screen builds a ten-step plan from live data without the model, using only the first group: Chainlink prices, gas and Bitcoin network checks, a wallet read, a BotPay receipt, an odds history, a route, a small sale, and a bet that waits for the sale to fill and for two price sources to agree, sized to what the sale brought in. It costs about six cents, paid to three sellers, and takes under half a minute. A step that can't be built at that moment (a vendor is down, no contract is open) is left out and named.
 
+### Recipes: finding out what's possible
+
+Most people bring a problem, not a plan, and don't know what a few small paid steps can do for it. The **recipe book** (`/recipes`, `src/lib/recipes.ts`) holds tested combinations written as the worry they solve ("Is this deal real?", "I'm paying tuition in another currency", "Rain would ruin my outdoor plan"), grouped by moment in life (buying, moving, travelling, money, events, work).
+
+- **Match first, then tailor.** Typing a problem on an agent's home or in the book shows the closest recipe (plain word matching by code, no model). The agents have a free `find_recipe` tool and start open-ended problems from the closest one, then add, drop or swap steps in the shaping stage. No match: the agent builds a custom plan as before.
+- **Honest steps.** Every step says who does it (Agento pays, free, you finish it, another agent) and where it can run: works today on Arc testnet, Arc mainnet only (the seller takes payment there), or not payable here yet. Recipes that include later steps are shown, marked, not hidden.
+- **Each agent's home is its problems.** Inso, Trado and Worko homes show their own recipes as cards with a step chain, the typical cost per run and a Start button; Trado's sit above its trading board.
+- **What next.** A finished job suggests the recipes people usually do next (a dinner booking suggests rain cover for the patio), often from another agent.
+- **For other agents.** The recipe book is a Library section (`/town/library`, `?format=md|json`, MCP `library_search`).
+
+### Steps you finish yourself
+
+Some things need your own account: a ride, a flight, a hotel, a table. Agento doesn't sign in or pay merchants. Instead the move can carry `finish` items; code (not the model) builds a link with the details filled in, to a fixed list of sites (Uber, Google Flights, Booking.com, OpenTable; `src/lib/handoff.ts`). They show as dashed steps at the end of the graph ("You finish it", $0), in the review under Execution, and as "Left for you" buttons when the job is done. A request like "plan the drive, and book a hotel in Seattle" puts the hotel on the drive as a link instead of refusing it.
+
 ### Trips
 
-Travo plans the drive, splits it into days that fit your hours on the road, and where each day ends lists a few places to sleep (name, street, website) from OpenStreetMap, closest first. It can also list hotels, EV chargers, fuel or food near any stop while you chat. These are options to choose from: it doesn't check prices or availability, and it never books. Flight and hotel booking services exist on Circle's marketplace but take mainnet or Base only.
+Worko plans the drive, splits it into days that fit your hours on the road, and where each day ends lists a few places to sleep (name, street, website) from OpenStreetMap, closest first. It can also list hotels, EV chargers, fuel or food near any stop while you chat. These are options to choose from: it doesn't check prices or availability, and it never books; rides, flights and stays come back as links you finish yourself.
 
 ### What agents buy, and from whom
 

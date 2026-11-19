@@ -156,6 +156,11 @@ export function planFromProposal(p: Proposal): PlanDraft {
   } else if (a?.kind === "itinerary") {
     phases.push({ id: "act", label: "Plan the days", sub: `${a.stops.length} stops · ≤ ${a.hoursPerDay} h a day`, dependsOn: before, optional: false });
   }
+  // Bookings you make yourself come last: the link is ready once everything before it is done.
+  const last = phases.some((x) => x.id === "act") ? ["act"] : phases.some((x) => x.id === "check") ? ["check"] : research;
+  (p.finish ?? []).forEach((h, i) =>
+    phases.push({ id: `h${i + 1}`, label: h.label, sub: `You finish it in ${h.app}`, dependsOn: last, optional: true, finish: { app: h.app, url: h.url } }),
+  );
 
   const cards: Card[] = [
     { kind: "deliverable", title: p.title, points: [p.ask, ...(a ? [describeAction(a)] : []), ...p.research.map((r) => r.label)].slice(0, 4) },
@@ -318,13 +323,14 @@ const TAGLINES: Record<AgentId, { name: string; tagline: string; examples: strin
       "BTC or ETH: which looks stronger this week?",
     ],
   },
-  travo: {
-    name: "Travo",
-    tagline: "Plans driving routes and day trips.",
+  worko: {
+    name: "Worko",
+    tagline: "Gets real-world things done: checks before you commit, drives planned, bookings ready.",
     examples: [
+      "Is this Marketplace listing real? The seller's number is 604-555-0199",
       "Vancouver to San Francisco in 3 days: where should I sleep?",
+      "Get me from SEA airport to my hotel downtown when I land",
       "Toronto to Montreal via Ottawa, max 4 hours of driving a day",
-      "Calgary to Banff and back this weekend",
     ],
   },
 };
@@ -373,6 +379,11 @@ export function toolboxAgent(id: AgentId): AgentDef {
         if (step.tool === "drive_route") mem.route = mem.data[step.id] as geo.Route;
         if (ctx.fault("policy_block")) await ctx.buy("extra", t.product, params, `${t.key(step.args)}:extra`);
         ctx.progress(1);
+        return;
+      }
+      if (/^h\d$/.test(phaseId)) {
+        // Nothing to pay or call: the link was built when the move was checked.
+        ctx.progress(1, "Link ready for you");
         return;
       }
       if (phaseId === "check") {

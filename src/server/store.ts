@@ -25,6 +25,8 @@ function open(): Db | null {
       CREATE TABLE IF NOT EXISTS events (run_id TEXT NOT NULL, seq INTEGER NOT NULL, body TEXT NOT NULL, PRIMARY KEY (run_id, seq));
       CREATE TABLE IF NOT EXISTS meta (run_id TEXT PRIMARY KEY, body TEXT NOT NULL, created_at TEXT NOT NULL);
     `);
+    // Travo was renamed Worko: jobs saved before the rename keep working.
+    db.exec(`UPDATE events SET body = REPLACE(body, '"agent":"travo"', '"agent":"worko"') WHERE body LIKE '%"agent":"travo"%'`);
   } catch (e) {
     console.warn("persistence off:", (e as Error).message);
     db = null;

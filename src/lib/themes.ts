@@ -34,17 +34,17 @@ export const THEMES: Record<AgentId, AgentTheme> = {
       cancelled: "Stopped. Unspent USDC returned.",
     },
   },
-  travo: {
-    name: "Travo",
-    domain: "Travel",
-    tagline: "Plans driving routes and day trips.",
+  worko: {
+    name: "Worko",
+    domain: "Errands",
+    tagline: "Gets real-world things done: checks before you commit, drives planned, bookings ready.",
     copy: {
-      exploring: "Where are you going? Lookups are free.",
-      draft: "Here's the route plan, priced. Change anything before you approve.",
+      exploring: "What needs doing? Lookups are free.",
+      draft: "Here's the plan, priced. Change anything before you approve.",
       funding: "Funding the vault…",
-      running: "Working out the route.",
+      running: "On it.",
       done: "Done. Your receipt is below.",
-      cancelled: "Trip cancelled. Unspent USDC returned.",
+      cancelled: "Stopped. Unspent USDC returned.",
     },
   },
 };

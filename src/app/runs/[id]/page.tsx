@@ -12,6 +12,7 @@ import { Chat, stepTarget, targetKey, type EditTarget } from "@/components/Chat"
 import { OrderStatus } from "@/components/OrderStatus";
 import { Details, ReviewCard, ReviewCards, ReviewTotal, StatusCard } from "@/components/JobBrief";
 import { ReceiptView } from "@/components/ReceiptView";
+import { NextSteps } from "@/components/NextSteps";
 import { LiveMarket } from "@/components/Live";
 import { PlanBoard, planOf } from "@/components/PlanBoard";
 import { BriefCard, briefOf } from "@/components/BriefCard";
@@ -389,6 +390,7 @@ export default function RunPage({ params }: { params: Promise<{ id: string }> })
               Receipt on its own page <Icon name="external" size={12} />
             </Link>
           </div>
+          <NextSteps run={run} />
         </>
       )}
     </div>

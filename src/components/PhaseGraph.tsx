@@ -40,6 +40,9 @@ const FRAME: Record<Tone, string> = {
   skipped: "border border-dashed border-line bg-panel opacity-55",
 };
 
+/** A step you finish yourself looks different: a dashed, warm card, so it's clear the agent stops there. */
+const YOURS = { open: "border-[1.5px] border-dashed border-ink/45 bg-[#fbf7ee]", done: "border-[1.5px] border-dashed border-ink bg-[#fbf7ee] shadow-[3px_3px_0_0_var(--agent)]" };
+
 const STATE_TEXT: Record<Tone, string> = { done: "Done", running: "Running", waiting: "Waiting", needs: "Needs you", failed: "Failed", skipped: "Skipped" };
 
 function Mark({ tone, step }: { tone: Tone; step: number }) {
@@ -73,7 +76,7 @@ function Node({ p, line, step, simulated, onEdit, focused, dim, x, y }: { p: Pha
       onClick={onEdit}
       aria-pressed={onEdit ? Boolean(focused) : undefined}
       aria-label={onEdit ? `Step ${step}: ${p.label}. Edit in chat` : undefined}
-      className={`node-in group absolute flex flex-col overflow-hidden rounded-xl px-3.5 pb-2.5 pt-3 text-left transition-[box-shadow,border-color,opacity,transform,background-color] duration-300 motion-reduce:transition-none ${FRAME[tone]} ${focused ? "!border-ink shadow-[3px_3px_0_0_var(--agent)]" : ""} ${
+      className={`node-in group absolute flex flex-col overflow-hidden rounded-xl px-3.5 pb-2.5 pt-3 text-left transition-[box-shadow,border-color,opacity,transform,background-color] duration-300 motion-reduce:transition-none ${p.finish && tone !== "skipped" ? YOURS[tone === "done" ? "done" : "open"] : FRAME[tone]} ${focused ? "!border-ink shadow-[3px_3px_0_0_var(--agent)]" : ""} ${
         onEdit && !focused ? "cursor-pointer hover:-translate-y-0.5 hover:border-ink" : ""
       } ${dim ? "opacity-55" : ""}`}
       style={{ left: x, top: y, width: NODE_W, height: NODE_H, animationDelay: `${(step - 1) * 60}ms` }}
@@ -92,8 +95,20 @@ function Node({ p, line, step, simulated, onEdit, focused, dim, x, y }: { p: Pha
         </div>
       </div>
       <div className="mt-auto flex items-center justify-between gap-2 text-[12px]">
-        <span className="num truncate text-ink-3">{line ? (tone === "waiting" || tone === "skipped" ? `$${fmt(line.approved)}` : `$${fmt(line.actual)} of $${fmt(line.approved)}`) : "Free"}</span>
-        {onEdit ? (
+        <span className="num truncate text-ink-3" data-kind={p.finish ? "yours" : line ? "pays" : "free"}>
+          {p.finish ? (
+            <span className="font-semibold text-ink-2">You finish it</span>
+          ) : line ? (
+            tone === "waiting" || tone === "skipped" ? `Agento pays $${fmt(line.approved)}` : `$${fmt(line.actual)} of $${fmt(line.approved)}`
+          ) : (
+            "Free"
+          )}
+        </span>
+        {p.finish && tone === "done" ? (
+          <a href={p.finish.url} target="_blank" rel="noreferrer" onClick={(e) => e.stopPropagation()} className="inline-flex shrink-0 items-center gap-0.5 rounded-md bg-ink px-1.5 py-0.5 text-[11px] font-semibold text-white hover:bg-ink/85" data-testid={`finish-${p.id}`}>
+            Open {p.finish.app} <Icon name="external" size={11} />
+          </a>
+        ) : onEdit ? (
           <span className={`inline-flex shrink-0 items-center gap-1 rounded-md px-1.5 py-0.5 text-[11px] font-semibold ${focused ? "bg-ink text-white" : "bg-[#f1f0ec] text-ink-2 opacity-0 group-hover:opacity-100 group-focus-visible:opacity-100"}`} aria-hidden>
             <Icon name={focused ? "chat" : "edit"} size={11} /> {focused ? "In chat" : "Edit"}
           </span>

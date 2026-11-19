@@ -8,7 +8,7 @@ import { agentFor, partsOf } from "./explore";
  * Clear cases are decided by rules; the rest by a small, fast model call. Inso is the default
  * because it can also plan across agents.
  */
-const Pick = z.object({ agent: z.enum(["inso", "trado", "travo"]) });
+const Pick = z.object({ agent: z.enum(["inso", "trado", "worko"]) });
 
 export function routeByRules(task: string): AgentId | null {
   const agents = [...new Set(partsOf(task).map(agentFor).filter(Boolean))] as AgentId[];
@@ -18,7 +18,7 @@ export function routeByRules(task: string): AgentId | null {
   const t = task.toLowerCase();
   if (/\b(hedge|protect|insur|odds|bet|chance|probab|will .+\?)\b/.test(t)) return "inso";
   if (/\b(trade|chart|trend|candle|dip)\b/.test(t)) return "trado";
-  if (/\b(trip|drive|route|road)\b/.test(t)) return "travo";
+  if (/\b(trip|drive|route|road|errand|listing|seller|scam|apartment|landlord|ride|flight|hotel)\b/.test(t)) return "worko";
   return null;
 }
 
@@ -30,7 +30,7 @@ export async function routeAgent(task: string): Promise<AgentId> {
     model: FAST_MODEL,
     maxTokens: 40,
     system:
-      "Pick the agent for a request. inso: prediction markets (odds, bets, hedging a cost, selling positions) and anything that needs several agents. trado: buying or selling a crypto coin at spot, price trends. travo: driving routes and road-trip plans. If unsure, inso.",
+      "Pick the agent for a request. inso: prediction markets (odds, bets, hedging a cost, selling positions) and anything that needs several agents. trado: buying or selling a crypto coin at spot, price trends. worko: real-world errands (checking a listing, seller or place before paying, driving routes, getting a ride, flight or hotel ready to book). If unsure, inso.",
     user: task,
   }).catch(() => null);
   return r?.value.agent ?? "inso";

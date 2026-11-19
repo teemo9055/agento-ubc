@@ -76,7 +76,7 @@ function runTilesF(corners: P[]): P[] {
 const WALKS: { agent: AgentId; corners: P[]; seconds: number }[] = [
   { agent: "inso", corners: [[9, 8], [9, 5], [8, 4], [5, 4], [5, 3]], seconds: 16 },
   { agent: "trado", corners: [[8, 9], [2, 9], [2, 7]], seconds: 14 },
-  { agent: "travo", corners: [[1, 4], [1, 3], [2, 2], [3, 1]], seconds: 8 },
+  { agent: "worko", corners: [[1, 4], [1, 3], [2, 2], [3, 1]], seconds: 8 },
 ];
 
 const SIGN_UP: Record<Lot, number> = { library: 172, store: 132, hall: 200, lab: 150, forum: 118, hq: 168 };

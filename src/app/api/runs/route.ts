@@ -13,7 +13,7 @@ const FAULTS = ["seller_402_timeout", "payment_rejected", "settle_fails", "insuf
 
 const Body = z.object({
   // "auto": the server picks the agent that fits the request.
-  agent: z.enum(["auto", "inso", "trado", "travo"]),
+  agent: z.enum(["auto", "inso", "trado", "worko"]),
   task: z.string().min(3).max(1000),
   mode: z.enum(["demo", "live"]).default("demo"),
   faults: z.array(z.enum(FAULTS)).default([]),

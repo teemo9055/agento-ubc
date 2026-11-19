@@ -1,4 +1,5 @@
 import { z } from "zod";
+import { buildHandoff, type HandoffAsk } from "@/lib/handoff";
 import type { Plan, AgentId, ChatMsg, Proposal, ToolCall } from "@/lib/types";
 import { aiChat, aiEnabled, type AiUsage, type ChatTurn, type ToolSpec } from "./ai";
 import * as gemini from "./gemini";
@@ -29,9 +30,9 @@ const PERSONA: Record<AgentId, string> = {
     "You are Trado, a crypto spot agent. You read Gemini spot prices and can place small spot limit orders. You may also cite prediction-market odds for crypto prices.",
     "Voice: a brisk trading-desk pro. Numbers first, no hype, a little sceptical. Short sentences ('ETH's down 8% on the day. Not an uptrend.').",
   ].join(" "),
-  travo: [
-    "You are Travo, a road-trip agent. You find places and plan driving days; the plan lists a few places to sleep where each day ends. With find_nearby you can also list hotels, EV chargers, fuel or food near any stop. These are options from the map, not bookings: you can't check prices or availability and you can't book anything. Your move is a day-by-day driving plan. Driving times and distances come from the route in that plan: don't quote hours or kilometres before it has run.",
-    "Voice: a friendly, practical road-trip buddy. Warm but efficient; you think about real driving days, breaks and where to sleep ('That's a long first day; I'd split it at Portland.').",
+  worko: [
+    "You are Worko, an errands agent: you get real-world things done. Checks before someone commits (a listing, a seller, a place): paid marketplace services as `service` steps (search_services; only payableHere ones). Drives: drive_route + an itinerary. Bookings (ride, flight, hotel, table): put them in `finish`; the person completes them in their own app. You never book, sign in or pay a merchant. If no payable service fits, say which one would and that it isn't payable here yet. Hours and distances only from a route that has run.",
+    "Voice: a calm, capable fixer. Practical and warm; you think in next steps ('First I'd check the seller's photos, then the number.').",
   ].join(" "),
 };
 
@@ -69,11 +70,11 @@ function system(agent: AgentId) {
       ? "CHAINLINK: you CAN check crypto prices against Chainlink's oracle (BTC, ETH, SOL, LINK). It isn't a free lookup: add a research step {tool: oracle_price, args: {symbol: 'btcusd'}} to the move, and to make the order depend on it add condition {metric: 'oracle_price', symbol: 'btcusd', op, value}. It's bought for 0.0001 USDC right before the check. Never tell the user you can't access Chainlink."
       : "",
     `PAID RESEARCH you can attach to a move (bought after approval; Gemini data from the user's vault over x402 on Arc, everything else from vendors on Circle's Agent Marketplace with Gateway nanopayments):\n${researchMenu(agent)}\nAttach 1-2 lookups only when they could change the decision and say why in each; skip research the free tools already answered. Research symbols must be live markets with data.`,
-    `PROBLEMS: when the user describes a worry or a situation and not what to do about it ('my costs keep jumping', 'I get paid in crypto and it stresses me out', 'money is tight on this trip'), don't pick one thing for them. Look around first (markets, prices, services), then call propose_plan with \`understood\` (their problem in one sentence) and \`drivers\`: the 2-5 things behind it, each marked now or partly (a step handles it; give the step number), mainnet (a real service or market would, named in \`how\`, but it takes mainnet), or no (nothing here helps; say why). Write a step for every driver you can handle, for whichever agent owns it, sized small unless they gave an amount. Use \`leftOpen\` for what stays uncovered. Ask first (ask_user) only if you can't tell what the drivers are, and only offer answers you could act on. ${mainnetOn() ? "Mainnet is ON: anything search_services lists as payable can be a step now, so don't mark things mainnet." : "This runs on testnet. Crypto and commodity markets (oil, gold) CAN be ordered here, so cover on those is now. Mark mainnet ONLY for weather, sports or rates markets, or a service you actually found with search_services (name its provider); anything else you can't do is no."}`,
+    `PROBLEMS: when the user describes a worry or a situation and not what to do about it, don't pick one thing for them. Call find_recipe, then look around (markets, prices, services), then call propose_plan with \`understood\` (their problem in one sentence) and \`drivers\`: the 2-5 things behind it, each marked now or partly (a step handles it; give the step number), mainnet (a real service or market would, named in \`how\`, but it takes mainnet), or no (nothing here helps; say why). Write a step for every driver you can handle, for whichever agent owns it, sized small unless they gave an amount. Use \`leftOpen\` for what stays uncovered. Ask first (ask_user) only if you can't tell what the drivers are, and only offer answers you could act on. ${mainnetOn() ? "Mainnet is ON: anything search_services lists as payable can be a step now, so don't mark things mainnet." : "This runs on testnet. Crypto and commodity markets (oil, gold) CAN be ordered here, so cover on those is now. Mark mainnet ONLY for weather, sports or rates markets, or a service you actually found with search_services (name its provider); anything else you can't do is no."}`,
     `KNOW-HOW for problems:\n- ${PLAYBOOKS.join("\n- ")}`,
-    "PLANS: when a request has several parts (more than one move, or work for more than one agent), call propose_plan instead of propose_move. Break it into the steps that really make it up, one per thing to get done (as many as the task needs, up to 12; long workflows are fine), and for each write a brief the owning agent can act on alone (inso: prediction orders, hedges, sells; trado: spot orders and onchain checks like gas, Bitcoin fees or a wallet balance; travo: driving itineraries). Put real names and numbers in the brief; look them up first. Say what each step waits for in `after`: leave it empty for steps that don't depend on anything, so they run at the same time; use gate 'filled' when a step should only start once the order it waits for has filled, useProceeds when it should spend what that sell brought in, and usesFindings when WHAT it does depends on what those steps find. Put anything no agent can do here in `unavailable` with the honest reason (hotels and flights: the booking services on Circle's marketplace take mainnet only). Never pretend a step books something.",
+    "PLANS: when a request has several parts (more than one move, or work for more than one agent), call propose_plan instead of propose_move. Break it into the steps that really make it up, one per thing to get done (as many as the task needs, up to 12; long workflows are fine), and for each write a brief the owning agent can act on alone (inso: prediction orders, hedges, sells; trado: spot orders and onchain checks like gas, Bitcoin fees or a wallet balance; worko: errands, checks and drives). Put real names and numbers in the brief; look them up first. Say what each step waits for in `after`: leave it empty for steps that don't depend on anything, so they run at the same time; use gate 'filled' when a step should only start once the order it waits for has filled, useProceeds when it should spend what that sell brought in, and usesFindings when WHAT it does depends on what those steps find. Hotels, flights and rides go in a worko step's `finish` (the person books them). Put anything else no agent can do in `unavailable` with the honest reason. Never pretend a step books something.",
     `PROVIDERS YOU KNOW (say plainly what each sells and whether you can use it now):\n${providerDirectory()}`,
-    "MARKETPLACE: you can buy from ANY Circle Agent Marketplace listing with payableHere=true (search_services): add a `service` research step with its url and input; code reads the seller's price and payee. Prefer your typed lookups (oracle_price, gas_price…) when one fits; use `service` for the rest. Be honest about the others: most listings charge on Arc mainnet or Base with real USDC, so say 'that one needs mainnet' instead of pretending.",
+    "MARKETPLACE: prefer your typed lookups; use a `service` step for any other payableHere listing. Most listings charge on Arc mainnet or Base: say 'that one needs mainnet' rather than pretend.",
     `KNOWLEDGE (shared notes; use them, don't recite them):\n- ${[...PRIMERS[agent], ...lessonLines(agent).map((l) => `Learned from past jobs: ${l}`)].join("\n- ")}`,
     "TRUTH: never invent tickers, symbols, prices, odds or places; use what the tools returned in this conversation (see 'facts' in earlier turns) or look them up again. Prices of prediction contracts are 0-1; say them as cents or %. Don't promise fills or profits. This isn't financial advice; say so only if asked for advice.",
     [
@@ -242,7 +243,7 @@ async function specialistMove(agent: AgentId, brief: string, id: string, onTool:
   if (r.proposal) return { proposal: r.proposal };
   return { error: `${NAMES[agent]} couldn't build this step: ${r.text.slice(0, 200)}${r.options?.length ? ` (it needs one of: ${r.options.join(", ")})` : ""}` };
 }
-const NAMES: Record<AgentId, string> = { inso: "Inso", trado: "Trado", travo: "Travo" };
+const NAMES: Record<AgentId, string> = { inso: "Inso", trado: "Trado", worko: "Worko" };
 
 /** A step added or changed by hand on the plan board: its agent builds the move, the same way as in a proposed plan. */
 export async function buildPlanStep(agent: AgentId, brief: string, id: string): Promise<{ proposal: Proposal; usage: AiUsage[] } | { error: string }> {
@@ -390,7 +391,8 @@ const clean = (s: string) => s.replace(/[.?!]+$/, "").replace(/^(a |the )/i, "")
 /** "Road trip from Vancouver to Seattle via Whistler" -> [Vancouver, Whistler, Seattle] */
 export function stopsIn(text: string): string[] {
   const t = text.replace(/\s+/g, " ").trim();
-  const m = t.match(/from (.+?) to (.+?)(?: via (.+?))?(?: in \d+ days?)?$/i);
+  // The trip ends where the sentence about it ends: "to Austin, I land at 6pm" goes to Austin.
+  const m = t.split(/[.;!?](?:\s|$)|,\s*(?=(?:i|we|my|our|and|then|when|but|please|also)\b)/i)[0].match(/from (.+?) to (.+?)(?: via (.+?))?(?: in \d+ days?)?$/i);
   if (m) return [clean(m[1]), ...(m[3] ? m[3].split(/,| and /i).map(clean).filter(Boolean) : []), clean(m[2])];
   const parts = t.replace(/^.*?:/, "").split(/ to | -> |→/i).map(clean).filter(Boolean);
   return parts.length >= 2 ? parts.slice(0, 6) : [];
@@ -424,8 +426,9 @@ export function partsOf(text: string): string[] {
 /** Which agent does a part of a request. */
 export function agentFor(part: string): AgentId | null {
   const t = part.toLowerCase();
+  // A booking on its own needs your account: it's handed to you as a link (see rulesPlan), not given to an agent.
   if (/\b(hotel|flight|airbnb|room|accommodation|stay)\b/.test(t) && !/\b(drive|trip|route)\b/.test(t)) return null;
-  if (/\b(drive|driving|road ?trip|itinerary|route)\b/.test(t) || /\bfrom \S.* to \S/.test(t)) return "travo";
+  if (/\b(drive|driving|road ?trip|itinerary|route|ride|uber|errand|listing|seller|scam)\b/.test(t) || /\bfrom \S.* to \S/.test(t)) return "worko";
   if (/\b(position|odds|bet|contract|prediction|market)s?\b/.test(t) || /\bsell\b/.test(t)) return "inso";
   if (/\b(spot|coin|dca)\b/.test(t) || /\bbuy\b.*\b(btc|eth|sol|bitcoin|ethereum|solana|doge|xrp|link)\b/.test(t)) return "trado";
   return null;
@@ -441,7 +444,13 @@ async function rulesPlan(text: string, onTool: (note: string) => void, pid: stri
   const steps: Plan["steps"] = [];
   const unavailable: Plan["unavailable"] = [];
   const notes: string[] = [];
+  const bookings: { part: string; ask: HandoffAsk }[] = [];
   for (const r of routed) {
+    const place = /\b(?:in|at|near|to)\s+([A-Z][\w.' -]{1,40})/.exec(r.part)?.[1]?.trim();
+    if (!r.agent && place && /hotel|room|stay|accommodation|airbnb/i.test(r.part)) {
+      bookings.push({ part: r.part, ask: { kind: "hotel", to: place } });
+      continue;
+    }
     if (!r.agent) {
       unavailable.push({ what: r.part.slice(0, 80), why: /hotel|room|stay|accommodation|airbnb/i.test(r.part) ? "Hotel booking services on Circle's marketplace take Arc mainnet only; this app pays on Arc testnet" : /flight/i.test(r.part) ? "Flight booking services on Circle's marketplace take Arc mainnet only" : "No agent here does this" });
       continue;
@@ -456,6 +465,13 @@ async function rulesPlan(text: string, onTool: (note: string) => void, pid: stri
     const spendsProceeds = /\b(proceeds|money|cash|that|it)\b/i.test(r.part) && prev?.kind === "prediction_order" && prev.trade === "sell";
     // Without the model the order the user said things in is the order they run in.
     steps.push({ id: `s${steps.length + 1}`, agent: r.agent, proposal: sub.proposal, after: steps.length ? [`s${steps.length}`] : [], gate: spendsProceeds ? "filled" : "done", brief: r.part, useProceeds: spendsProceeds || undefined, status: "waiting" });
+  }
+  // Bookings ride along with the trip as links you finish yourself; with no trip, they're named as yours to do.
+  const trip = steps.find((x) => x.agent === "worko");
+  for (const b of bookings) {
+    const h = buildHandoff(b.ask);
+    if (trip && h) trip.proposal = { ...trip.proposal, finish: [...(trip.proposal.finish ?? []), h] };
+    else unavailable.push({ what: b.part.slice(0, 80), why: "Booking needs your own account; Worko can get the link ready as part of a trip" });
   }
   const cant = unavailable.length ? ` I can't do ${unavailable.map((u) => u.what).join(" or ")} here: ${unavailable[0].why}.` : "";
   // One doable part is just a move, with an honest note about the rest.
@@ -475,7 +491,7 @@ async function rulesPlan(text: string, onTool: (note: string) => void, pid: stri
 export function guide(agent: AgentId, text: string): { question: string; options: string[] } | null {
   const t = text.toLowerCase();
   const named = /\b(btc|bitcoin|eth|ethereum|sol|solana|fed|rate|temperature|cold|heat|lakers|gold|oil|\$?\d)/.test(t);
-  if (agent === "travo") return stopsIn(text).length >= 2 || / to /.test(t) ? null : { question: "Where does the drive start and end?", options: ["Vancouver to Seattle", "Calgary to Banff", "Toronto to Montreal"] };
+  if (agent === "worko") return /\b(drive|driving|road ?trip|route)\b/.test(t) && stopsIn(text).length < 2 && !/ to /.test(t) ? { question: "Where does the drive start and end?", options: ["Vancouver to Seattle", "Calgary to Banff", "Toronto to Montreal"] } : null;
   if (/\b(protect|hedge|insur|cover|worried)\b/.test(t) && !named) return { question: "What would cost you money if it happened?", options: ["BTC falling this month", "A cold day in NYC tomorrow", "ETH falling this month"] };
   if (/\b(bet|wager|predict)\b/.test(t) && !named) return { question: "What do you want to bet on?", options: ["BTC price this month", "ETH price this month", "Tomorrow's temperature in NYC"] };
   if (agent === "trado" && /\b(trade|buy|sell)\b/.test(t) && !/\b(btc|bitcoin|eth|ethereum|sol|solana|doge|xrp|link)\b/.test(t)) return { question: "Which coin?", options: ["BTC", "ETH", "SOL"] };
@@ -523,9 +539,15 @@ async function rulesTurn(agent: AgentId, chat: ChatMsg[], onTool: (note: string)
     return { text: `You hold: ${list}. The calmest is ${pick.label}.${failText(v)}`, tools, proposal: "proposal" in v ? v.proposal : undefined, suggestions: ["proposal" in v ? "Yes, set it up" : "BTC markets", "Not now"], usage: [] };
   }
 
-  if (agent === "travo") {
+  if (agent === "worko") {
     const stops = stopsIn(userText).length ? stopsIn(userText) : stopsIn(task);
-    if (stops.length < 2) return { text: "Where are you starting and where do you want to end up?", tools, suggestions: ["From Vancouver to Seattle", "From Calgary to Banff"], usage: [] };
+    if (stops.length < 2)
+      return {
+        text: /\b(drive|driving|road ?trip|route)\b/i.test(task) ? "Where are you starting and where do you want to end up?" : "I can check a listing or seller before you pay, plan a drive, or get a ride, flight or hotel ready for you to book. Which one?",
+        tools,
+        suggestions: ["From Vancouver to Seattle", "Check a listing before I pay", "A ride from the airport"],
+        usage: [],
+      };
     const days = Number(task.match(/(\d+)\s*days?/)?.[1] ?? 0);
     const v = await validateProposal(agent, {
       title: `Drive ${stops[0]} → ${stops[stops.length - 1]}`,
@@ -535,6 +557,11 @@ async function rulesTurn(agent: AgentId, chat: ChatMsg[], onTool: (note: string)
       action: { kind: "itinerary", stops, hoursPerDay: days ? 8 : 6 },
       condition: null,
       budgetUsd: null,
+      // Bookings it can't make for you come back as ready links.
+      finish: [
+        ...(/\b(ride|uber|lyft|taxi|airport|land)\b/i.test(task) ? [{ kind: "ride" as const, from: stops[0], to: stops[stops.length - 1] }] : []),
+        ...(/\b(hotel|stay|sleep|room)\b/i.test(task) ? [{ kind: "hotel" as const, to: stops[stops.length - 1] }] : []),
+      ],
     }, pid);
     return { text: "proposal" in v ? "Here's a plan for that drive." : `I couldn't plan that drive.${failText(v)}`, tools, proposal: "proposal" in v ? v.proposal : undefined, suggestions: ["Yes, set it up", "Max 5 hours a day", "Not now"], usage: [] };
   }

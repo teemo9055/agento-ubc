@@ -41,13 +41,13 @@ describe("plans for outside AIs (MCP)", () => {
   });
 
   it("checks every move and the plan's shape, then leaves starting it to the user", async () => {
-    const r = await call("propose_plan", { task: "Bet on BTC, then plan my drive", title: "Bet, then drive", why: "Two things, one after the other", steps: [{ agent: "inso", move: order }, { agent: "travo", move: trip, after: [1] }] });
+    const r = await call("propose_plan", { task: "Bet on BTC, then plan my drive", title: "Bet, then drive", why: "Two things, one after the other", steps: [{ agent: "inso", move: order }, { agent: "worko", move: trip, after: [1] }] });
     expect(r.error).toBe(false);
     const job = r.json();
     expect(job.plan).toMatchObject({ title: "Bet, then drive", status: "proposed" });
     expect(job.plan.steps.map((s: { agent: string; waitsFor: string[]; status: string }) => [s.agent, s.waitsFor, s.status])).toEqual([
       ["inso", [], "waiting"],
-      ["travo", ["s1"], "waiting"],
+      ["worko", ["s1"], "waiting"],
     ]);
     expect(job.nextStep).toMatch(/waiting for the user to start it at http:\/\/app\.test\/runs\/.+ You cannot start it/);
     // Nothing is priced, funded or run until the user starts it.
@@ -66,10 +66,10 @@ describe("plans for outside AIs (MCP)", () => {
   });
 
   it("refuses a plan with a bad move or a bad shape, with the reason", async () => {
-    const wrongAgent = await call("propose_plan", { task: "x y z", title: "t", why: "w", steps: [{ agent: "travo", move: order }, { agent: "travo", move: trip }] });
+    const wrongAgent = await call("propose_plan", { task: "x y z", title: "t", why: "w", steps: [{ agent: "worko", move: order }, { agent: "worko", move: trip }] });
     expect(wrongAgent.error).toBe(true);
-    expect(wrongAgent.text).toMatch(/Step 1 \(travo\): This agent can't do prediction_order/);
-    const noOrder = await call("propose_plan", { task: "x y z", title: "t", why: "w", steps: [{ agent: "travo", move: trip }, { agent: "inso", move: order, after: [1], gate: "filled" }] });
+    expect(wrongAgent.text).toMatch(/Step 1 \(worko\): This agent can't do prediction_order/);
+    const noOrder = await call("propose_plan", { task: "x y z", title: "t", why: "w", steps: [{ agent: "worko", move: trip }, { agent: "inso", move: order, after: [1], gate: "filled" }] });
     expect(noOrder.error).toBe(true);
     expect(noOrder.text).toMatch(/places an order/);
   });

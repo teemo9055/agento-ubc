@@ -10,7 +10,7 @@ import { TOOLKIT, researchPrice } from "./tools";
 const DEFAULTS: Record<AgentId, string[]> = {
   inso: ["What's trading on BTC?", "Hedge a cost I'm worried about", "Show my positions"],
   trado: ["How's BTC doing today?", "Buy $10 of ETH on a 2% dip", "Compare BTC and ETH"],
-  travo: ["Plan a drive from Vancouver to Seattle", "Split it into 4-hour days"],
+  worko: ["Check a listing before I pay", "Plan a drive from Vancouver to Seattle", "A ride from the airport"],
 };
 
 const price = (tool: string) => {

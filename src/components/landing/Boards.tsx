@@ -11,13 +11,13 @@ export const BOARD_H = 320;
 const AGENTS: { id: AgentId; name: string; does: string; x: number; y: number; tilt: number }[] = [
   { id: "inso", name: "Inso", does: "Markets & cover", x: 16, y: 150, tilt: -6 },
   { id: "trado", name: "Trado", does: "Coins", x: 126, y: 168, tilt: 4 },
-  { id: "travo", name: "Travo", does: "Trips", x: 236, y: 146, tilt: -3 },
+  { id: "worko", name: "Worko", does: "Errands", x: 236, y: 146, tilt: -3 },
 ];
 
 /** 1. The ask box and the three agents. */
 export function AskBoard() {
   return (
-    <Board w={BOARD_W} h={BOARD_H} label="An ask box reading “Cover me if BTC drops below $60k”, and the three agents: Inso for markets and cover, Trado for coins, Travo for trips.">
+    <Board w={BOARD_W} h={BOARD_H} label="An ask box reading “Cover me if BTC drops below $60k”, and the three agents: Inso for markets and cover, Trado for coins, Worko for errands.">
       <Sticker x={14} y={22} w={312} tilt={-2}>
         <Cut radius={20}>
           <div data-agent="inso" className="rounded-[14px] border-[1.5px] border-ink bg-white px-4 pb-3.5 pt-3">
@@ -91,7 +91,7 @@ function ReportDrawing() {
 const STEPS: { n: number; agent: AgentId; label: string; x: number; y: number; tilt: number; draw: () => React.ReactNode }[] = [
   { n: 1, agent: "inso", label: "Odds history", x: 18, y: 24, tilt: -4, draw: OddsDrawing },
   { n: 2, agent: "trado", label: "Place the order", x: 198, y: 112, tilt: 3, draw: OrderDrawing },
-  { n: 3, agent: "travo", label: "Report", x: 34, y: 202, tilt: -2, draw: ReportDrawing },
+  { n: 3, agent: "worko", label: "Report", x: 34, y: 202, tilt: -2, draw: ReportDrawing },
 ];
 
 /** 2. The job as a little map of steps joined by a dashed path. */
@@ -168,7 +168,7 @@ export function ApproveBoard() {
       </Sticker>
       <Sticker x={276} y={-14} tilt={12} delay={260}>
         <Cut radius={14}>
-          <div data-agent="travo" className="flex h-[54px] w-[54px] items-center justify-center rounded-[10px] border-[1.5px] border-ink bg-agent-soft">
+          <div data-agent="worko" className="flex h-[54px] w-[54px] items-center justify-center rounded-[10px] border-[1.5px] border-ink bg-agent-soft">
             <svg viewBox="0 0 32 32" width="32" height="32" aria-hidden>
               <path d="M10 14v-4a6 6 0 0 1 12 0v4" fill="none" stroke="#0b0b0b" strokeWidth="2.6" />
               <rect x="6.5" y="13.5" width="19" height="15" rx="3" fill="var(--agent)" stroke="#0b0b0b" strokeWidth="2" />
@@ -179,7 +179,7 @@ export function ApproveBoard() {
       </Sticker>
       <Sticker x={12} y={292} tilt={-3} delay={380}>
         <Cut radius={14}>
-          <div data-agent="travo" className="flex items-center gap-2 px-3 py-1.5">
+          <div data-agent="worko" className="flex items-center gap-2 px-3 py-1.5">
             <svg viewBox="0 0 24 24" width="22" height="22" aria-hidden className="text-agent-ink" fill="none" stroke="currentColor" strokeWidth="2.4" strokeLinecap="round" strokeLinejoin="round">
               <path d="M9 14 4 9l5-5" />
               <path d="M4 9h10.5a5.5 5.5 0 0 1 0 11H11" />

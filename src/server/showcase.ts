@@ -75,14 +75,14 @@ export async function buildShowcase(id: string): Promise<{ plan: Plan } | { erro
     },
     {
       key: "trip",
-      agent: "travo",
+      agent: "worko",
       after: [],
       move: { title: "Weekend drive: Dallas to San Antonio via Austin", why: "A two-day route with places to stay each night.", ask: "Plan the two-day drive?", research: [lookup("drive_route", { stops: "Dallas, TX|Austin, TX|San Antonio, TX" }, "Driving route", "distance and hours per leg")], action: { kind: "itinerary", stops: ["Dallas, TX", "Austin, TX", "San Antonio, TX"], hoursPerDay: 4 }, condition: null, budgetUsd: null },
     },
     { key: "wallet", agent: "trado", after: ["network"], move: info("Wallet check: the agent's own USDC on Base", "A read of a real wallet on another chain.", "Read the agent wallet's balance on Base?", [lookup("wallet_balance", { chain: "base", address: addresses.agent ?? "" }, "Agent wallet on Base", "balance on another chain")]) },
     {
       key: "fx",
-      agent: "travo",
+      agent: "worko",
       after: ["trip"],
       move: info("Trip budget: euro and pound rates", "Exchange rates for budgeting, from Chainlink.", "Check the euro and pound rates?", [lookup("oracle_price", { symbol: "eurusd" }, "Euro rate", "trip budget"), lookup("oracle_price", { symbol: "gbpusd" }, "Pound rate", "trip budget")]),
     },

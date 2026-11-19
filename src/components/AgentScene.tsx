@@ -4,7 +4,7 @@ import type { AgentId } from "@/lib/types";
 
 /**
  * A small live picture of each agent's work, shown before the graph exists:
- * Inso's odds bars trade places, Trado's candles print with a price line, Travo's route draws between pins.
+ * Inso's odds bars trade places, Trado's candles print with a price line, Worko's route draws between pins.
  * Pure SVG + CSS; still when the user prefers reduced motion.
  */
 export function AgentScene({ agent, className = "" }: { agent: AgentId; className?: string }) {
@@ -12,7 +12,7 @@ export function AgentScene({ agent, className = "" }: { agent: AgentId; classNam
     <svg viewBox="0 0 240 96" width="240" height="96" className={`scene ${className}`} aria-hidden shapeRendering="crispEdges">
       {agent === "inso" && <Odds />}
       {agent === "trado" && <Candles />}
-      {agent === "travo" && <Route />}
+      {agent === "worko" && <Route />}
     </svg>
   );
 }

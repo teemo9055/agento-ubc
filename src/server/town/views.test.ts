@@ -40,7 +40,7 @@ describe("every Library entry matches the code it describes", () => {
       expect(e.priceUsdc).toBe("0");
       expect(e.tool).toContain(`"${name}"`);
       expect(mcpToolOf(e)).toBe("look_up");
-      expect(e.agents).toEqual((["inso", "trado", "travo"] as const).filter((a) => TOOLKIT[a].free.includes(name)));
+      expect(e.agents).toEqual((["inso", "trado", "worko"] as const).filter((a) => TOOLKIT[a].free.includes(name)));
     }
   });
 
@@ -49,7 +49,7 @@ describe("every Library entry matches the code it describes", () => {
       const e = readEntry(`tool-${name}`)!;
       expect(e, name).toBeDefined();
       expect(e.tool).toContain(`"${name}"`);
-      expect(e.agents).toEqual((["inso", "trado", "travo"] as const).filter((a) => TOOLKIT[a].research.includes(name)));
+      expect(e.agents).toEqual((["inso", "trado", "worko"] as const).filter((a) => TOOLKIT[a].research.includes(name)));
       if (name === "service") continue; // priced by each seller
       expect(e.priceUsdc).toBe(researchPrice(name).toString());
       expect(e.price).toBe(perRequest(researchPrice(name)));

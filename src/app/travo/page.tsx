@@ -1,9 +1,6 @@
-import type { Metadata } from "next";
-import { AgentHome } from "@/components/AgentHome";
+import { redirect } from "next/navigation";
 
-export const metadata: Metadata = { title: "Travo · Agento" };
-
-/** Travo's own home: how it starts, and your jobs with it. */
-export default function Page() {
-  return <AgentHome agent="travo" />;
+/** Travo became Worko: old links still land in the right place. */
+export default function Travo() {
+  redirect("/worko");
 }

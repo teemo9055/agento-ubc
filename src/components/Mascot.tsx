@@ -46,8 +46,8 @@ const HEAD: Record<AgentId, string[]> = {
   inso: ["_______ll_______", "_______kk_______", "________________", "_______ww_______"],
   // Trado: horns
   trado: ["__kk________kk__", "___kk______kk___", "________________", "________________"],
-  // Travo: cap with a brim
-  travo: ["________________", "____kkkkkkkk____", "___kddddddddkkk_", "________________"],
+  // Worko: cap with a brim
+  worko: ["________________", "____kkkkkkkk____", "___kddddddddkkk_", "________________"],
 };
 
 const OUTFITS: Record<Outfit, Record<number, string>> = {

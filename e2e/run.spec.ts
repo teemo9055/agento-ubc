@@ -167,10 +167,10 @@ test("dismissed re-approval stays pending, never auto-approved", async ({ page }
   await receipt(page);
 });
 
-test("trado and travo run end to end", async ({ page }) => {
+test("trado and worko run end to end", async ({ page }) => {
   await start(page, [], "Is BTC trending this week?", "Trado");
   await receipt(page);
-  await start(page, [], "Drive from Vancouver to Seattle", "Travo");
+  await start(page, [], "Drive from Vancouver to Seattle", "Worko");
   await receipt(page);
   await expect(page.getByRole("img", { name: "Route map" })).toBeVisible();
   // Where the driving day ends there's a shortlist of places to sleep, and a plain note that nothing is booked.
@@ -189,7 +189,7 @@ test("dashboard lists jobs by folder and status, and opens them", async ({ page 
   await expect(card).toBeVisible();
   await expect(card.getByTestId("card-status")).toHaveText(/Complete/);
   await expect(card).toContainText("Inso");
-  await page.goto("/home?folder=travo");
+  await page.goto("/home?folder=worko");
   await expect(card).toHaveCount(0);
   await page.goto("/home");
   await expect(page.getByTestId("new-job-tile")).toBeVisible();

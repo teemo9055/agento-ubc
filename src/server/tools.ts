@@ -11,6 +11,21 @@ import { PRODUCTS } from "./x402";
 import { marketBase, positions as heldPositions, spotFeeBps, tradingVenue, VENUE_NAME } from "./exchange";
 import { FEEDS } from "./chainlink";
 import { checkQuestion, readArc } from "./chain-tools";
+import { buildHandoff, type Handoff, type HandoffAsk } from "@/lib/handoff";
+import { KIND_TEXT, matchRecipes, WHERE_TEXT } from "@/lib/recipes";
+
+/** The details a ready-made booking link was built from, read back out of its link. */
+function handoffAskOf(h: Handoff): HandoffAsk {
+  const u = new URL(h.url);
+  const get = (k: string) => u.searchParams.get(k);
+  if (h.kind === "ride") return { kind: "ride", from: get("pickup[formatted_address]"), to: get("dropoff[formatted_address]") };
+  if (h.kind === "flight") {
+    const m = /^Flights from (.+) to (.+?)(?: on (\d{4}-\d{2}-\d{2}))?$/.exec(get("q") ?? "");
+    return { kind: "flight", from: m?.[1] ?? null, to: m?.[2] ?? null, date: m?.[3] ?? null };
+  }
+  if (h.kind === "hotel") return { kind: "hotel", to: get("ss"), date: get("checkin") };
+  return { kind: "table", to: get("term"), date: get("dateTime")?.slice(0, 10) ?? null };
+}
 
 /**
  * Two kinds of tools.
@@ -31,7 +46,7 @@ const pctOf = (p: number | null) => (p == null ? "—" : `${Math.round(p * 100)}
 export const FREE_TOOLS: Record<string, FreeTool> = {
   search_markets: {
     description:
-      "Search active prediction markets on Gemini by keyword (e.g. 'BTC', 'Fed', 'Lakers'). Returns live markets with YES prices (0-1). When a test exchange is connected, `tradable` lists the markets you can actually place orders on there, with that exchange's own prices; orders must use those.",
+      "Search active prediction markets on Gemini by keyword (e.g. 'BTC', 'Fed', 'Lakers'). Returns live markets with YES prices (0-1). With a test exchange connected, `tradable` lists what can be ordered there, at its own prices; orders must use those.",
     params: z.object({ query: z.string().describe("Keyword, asset ticker or team"), limit: z.number().int().min(1).max(6).optional() }),
     async run(a) {
       const shape = (events: gemini.MarketEvent[]) =>
@@ -53,7 +68,7 @@ export const FREE_TOOLS: Record<string, FreeTool> = {
     },
   },
   get_market: {
-    description: "Full detail of one prediction-market event by ticker: every contract with last, bid and ask. Set tradable=true to read it from the connected exchange (its own prices).",
+    description: "One prediction-market event by ticker: every contract with last, bid and ask. tradable=true reads it from the connected exchange.",
     params: z.object({ ticker: z.string(), tradable: z.boolean().optional() }),
     async run(a) {
       const e = await gemini.getEvent(String(a.ticker), a.tradable ? marketBase() : undefined);
@@ -158,6 +173,15 @@ export const FREE_TOOLS: Record<string, FreeTool> = {
       return { data, summary: `${list.length} marketplace services for “${a.query}” · ${here} payable now` };
     },
   },
+  find_recipe: {
+    description: "Tested step combos for common problems. Start open-ended ones from the closest; tailor it.",
+    params: z.object({ query: z.string() }),
+    async run(a) {
+      const found = matchRecipes(String(a.query ?? ""), { limit: 2 });
+      const data = found.map(({ recipe: r }) => ({ id: r.id, agent: r.agent, worry: r.worry, gets: r.gets, steps: r.steps.map((s) => `${s.label} · ${s.by}${s.cost ? ` · $${s.cost}` : ""} · ${KIND_TEXT[s.kind]} · ${WHERE_TEXT[s.where]}`) }));
+      return { data: data.length ? data : { none: "No recipe fits; build it from the tools." }, summary: found.length ? `Recipe: ${found[0].recipe.worry}` : "No recipe for that yet" };
+    },
+  },
   read_arc: {
     description: "Read Arc testnet, free: what=balance (address), tx (hash: status, USDC moved), vault (address: funded, left, closed), payment (from+nonce: collected?). Only addresses/hashes you were given.",
     params: z.object({ what: z.enum(["balance", "tx", "vault", "payment"]), address: z.string().optional(), hash: z.string().optional(), from: z.string().optional(), nonce: z.string().optional() }),
@@ -248,7 +272,7 @@ export const RESEARCH: Record<string, ResearchTool> = {
   },
   service: {
     product: "marketplace.service",
-    description: "One paid request to ANY marketplace service with payableHere=true from search_services (args: url, exactly as listed; input, a JSON object as a string with what the service takes: query fields for GET, the body for POST, or {\"method\",\"params\"} for a JSON-RPC node; what, 3-6 words on what you're buying). Code reads the seller's price and payee and adds them to the plan. Reads only: nothing that sends or signs",
+    description: "One paid request to a payableHere service from search_services (args: url as listed; input, a JSON string: query fields for GET, the body for POST, or {\"method\",\"params\"} for JSON-RPC; what, 3-6 words). Code reads the seller's price and payee. Reads only",
     args: ["url"],
     key: (a) => `service:${a.url}:${a.input ?? ""}`,
     params: (a) => ({ url: a.url, input: a.input ?? "{}" }),
@@ -270,10 +294,10 @@ const MAX_SERVICE = BigInt(process.env.MARKETPLACE_MAX_PER_REQUEST ?? 10_000);
 
 /** Each agent's own harness: what it can look up for free, what it can buy, and what it can do. */
 export const TOOLKIT: Record<AgentId, { free: string[]; research: string[] }> = {
-  inso: { free: ["search_markets", "get_market", "browse_markets", "combo_quote", "my_positions", "spot_price", "search_services", "read_arc"], research: ["odds_history", "trade_tape", "oracle_price", "service"] },
-  trado: { free: ["spot_price", "search_markets", "get_market", "browse_markets", "my_positions", "search_services", "read_arc"], research: ["spot_candles", "oracle_price", "odds_history", "gas_price", "btc_network", "wallet_balance", "service"] },
+  inso: { free: ["search_markets", "get_market", "browse_markets", "combo_quote", "my_positions", "spot_price", "search_services", "find_recipe", "read_arc"], research: ["odds_history", "trade_tape", "oracle_price", "service"] },
+  trado: { free: ["spot_price", "search_markets", "get_market", "browse_markets", "my_positions", "search_services", "find_recipe", "read_arc"], research: ["spot_candles", "oracle_price", "odds_history", "gas_price", "btc_network", "wallet_balance", "service"] },
   // The trip agent can look at markets too, so a brief about a trip can name the fuel cover Inso would build.
-  travo: { free: ["find_place", "find_nearby", "search_markets", "my_positions", "search_services", "read_arc"], research: ["drive_route", "oracle_price", "service"] },
+  worko: { free: ["find_place", "find_nearby", "search_markets", "my_positions", "search_services", "find_recipe", "read_arc"], research: ["drive_route", "oracle_price", "service"] },
 };
 
 export const researchMenu = (agent?: AgentId) =>
@@ -286,7 +310,7 @@ export const researchMenu = (agent?: AgentId) =>
 export const ACTIONS: Record<AgentId, MoveAction["kind"][]> = {
   inso: ["prediction_order"],
   trado: ["spot_order", "prediction_order"],
-  travo: ["itinerary"],
+  worko: ["itinerary"],
 };
 
 // ---------- proposal schema (shared by the built-in agent and outside AIs over MCP) ----------
@@ -340,13 +364,19 @@ export const ProposalInput = z.object({
     .max(2)
     .nullable()
     .optional()
-    .describe("More checks that must ALL hold together with `condition`, for 'only if A and B' (e.g. Chainlink BTC ≥ 64k AND Gemini spot BTC ≥ 64k, so two independent sources agree). Same rules as `condition`."),
+    .describe("More checks that must ALL hold with `condition` ('only if A and B', e.g. Chainlink and Gemini spot BTC both ≥ 64k). Same rules."),
   budgetUsd: z.number().positive().nullable().describe("The most the user said they'd spend on this order in USD, if they said; enforced."),
   hedge: z
     .object({ protects: z.string().max(80).describe("What the user stands to lose, in their words: 'a pricier Uber if it's freezing Saturday'"), lossUsd: z.number().positive().max(1000).describe("Roughly what that would cost them in USD") })
     .nullable()
     .optional()
-    .describe("Set when the order is insurance: the user loses money if some event happens, so they buy the side that pays out if it does. Code then sizes the order to cover lossUsd (or to fit budgetUsd) and shows cost vs payout. prediction_order buys only."),
+    .describe("Set when the order is insurance (the user loses money if an event happens; buy the side that pays then). Code sizes it to cover lossUsd or fit budgetUsd. prediction_order buys only."),
+  finish: z
+    .array(z.object({ kind: z.enum(["ride", "flight", "hotel", "table"]), from: z.string().nullable().optional(), to: z.string().nullable().optional(), date: z.string().nullable().optional().describe("YYYY-MM-DD") }))
+    .max(3)
+    .nullable()
+    .optional()
+    .describe("Bookings the person makes in their own app; code adds the link."),
 });
 export type ProposalInput = z.infer<typeof ProposalInput>;
 
@@ -539,6 +569,8 @@ export async function validateProposal(agent: AgentId, input: unknown, id: strin
   if (venue === "gemini-sandbox" && action && action.kind !== "itinerary" && unique.some((r) => r.tool !== "oracle_price"))
     adjustments.push("Data from the live Gemini market; the order trades on Gemini's test exchange, where prices can differ");
   const research: ResearchStep[] = unique.map((r, i) => ({ id: `r${i + 1}`, tool: r.tool, args: r.args, label: r.label, why: r.why }));
+  const finish = (p.finish ?? []).map(buildHandoff).filter((h): h is Handoff => Boolean(h));
+  if ((p.finish ?? []).length > finish.length) adjustments.push("Left out a booking link that needs a place to go to");
   return {
     proposal: {
       id,
@@ -555,6 +587,7 @@ export async function validateProposal(agent: AgentId, input: unknown, id: strin
       hedge: hedgeOf(p.hedge, action),
       market,
       adjustments: adjustments.length ? adjustments : undefined,
+      finish: finish.length ? finish : undefined,
     },
   };
 }
@@ -641,6 +674,7 @@ export function toProposalInput(p: Proposal): ProposalInput {
     alsoRequire: p.also?.length ? p.also : null,
     budgetUsd: p.budgetUsd ?? null,
     hedge: p.hedge ? { protects: p.hedge.protects, lossUsd: p.hedge.lossUsd } : null,
+    finish: p.finish?.length ? p.finish.map(handoffAskOf) : null,
   } as ProposalInput;
 }
 
@@ -667,7 +701,7 @@ export const PlanInput = z.object({
   steps: z
     .array(
       z.object({
-        agent: z.enum(["inso", "trado", "travo"]).describe("inso: prediction-market orders, hedges and sells. trado: spot crypto orders and onchain checks. travo: driving itineraries."),
+        agent: z.enum(["inso", "trado", "worko"]).describe("inso: prediction-market orders, hedges and sells. trado: spot crypto orders and onchain checks. worko: errands, checks and driving itineraries."),
         brief: z.string().min(8).max(260).describe("What this agent should do, complete on its own: name the market, coin, places and amounts. That agent builds the move with its own tools; it never sees this conversation."),
         after: z.array(z.number().int().min(1).max(12)).max(6).describe("Numbers of the earlier steps this one must wait for. Empty when it doesn't depend on any: independent steps run at the same time."),
         gate: z.enum(["done", "filled"]).describe("done: start once the steps in `after` finish. filled: only once their orders have actually filled."),

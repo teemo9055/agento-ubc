@@ -22,9 +22,11 @@ export const PRIMERS: Record<AgentId, string[]> = {
     "A buy limit below the market waits on the book; above the market it fills at once at the best ask.",
     "Daily moves above ~5% on BTC/ETH are large; on SOL and smaller coins they're common.",
   ],
-  travo: [
+  worko: [
     "OSRM routes assume legal speeds and no traffic; real trips take 10-20% longer.",
     "Border crossings (e.g. Vancouver → Seattle) add 30-90 minutes and need documents.",
+    "Scam signs: photos that appear elsewhere online, a phone number that is internet-only (VoIP) or recently moved to a new SIM, payment asked for upfront or off-platform.",
+    "Rideshare and airline accounts can't be used from here: get the trip ready and hand the person a link to finish it.",
   ],
 };
 
@@ -65,7 +67,8 @@ function open(): Db | null {
     mkdirSync(dir, { recursive: true });
     db = new DatabaseSync(path.join(dir, "agento.db"));
     db.exec(`CREATE TABLE IF NOT EXISTS lessons (id TEXT PRIMARY KEY, agent TEXT NOT NULL, topic TEXT NOT NULL, kind TEXT NOT NULL, data TEXT NOT NULL, run_id TEXT, created_at TEXT NOT NULL);
-      CREATE UNIQUE INDEX IF NOT EXISTS lessons_once ON lessons (run_id, kind);`);
+      CREATE UNIQUE INDEX IF NOT EXISTS lessons_once ON lessons (run_id, kind);
+      UPDATE lessons SET agent = 'worko' WHERE agent = 'travo';`);
   } catch (e) {
     console.warn("knowledge store off:", (e as Error).message);
     db = null;

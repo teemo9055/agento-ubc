@@ -42,10 +42,10 @@ describe("the showcase workflow", () => {
       ["s3", "inso", "", "done"],
       ["s4", "trado", "", "done"],
       ["s5", "trado", "", "done"],
-      ["s6", "travo", "", "done"],
+      ["s6", "worko", "", "done"],
       ["s7", "inso", "s1+s3+s5", "filled"],
       ["s8", "trado", "s2", "done"],
-      ["s9", "travo", "s6", "done"],
+      ["s9", "worko", "s6", "done"],
       ["s10", "inso", "s7", "done"],
     ]);
     expect(r.plan.unavailable).toEqual([]);

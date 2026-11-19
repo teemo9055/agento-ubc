@@ -273,12 +273,12 @@ describe("explore, then act", () => {
     }
   });
 
-  it("travo plans driving days from a route", async () => {
+  it("worko plans driving days from a route", async () => {
     const geo = await import("@/server/geo");
     vi.spyOn(geo, "geocode").mockImplementation(async (q) => ({ name: q, lat: 49 + q.length / 10, lon: -123 }));
     vi.spyOn(geo, "drive").mockImplementation(async (stops) => ({ distanceKm: 300, hours: 9, path: stops.map((s) => [s.lon, s.lat]), legs: stops.slice(1).map(() => ({ distanceKm: 150, hours: 4.5 })) }));
     vi.spyOn(geo, "nearby").mockImplementation(async (at) => (at.name === "Seattle" ? [{ name: "Harbor Inn", where: "1 Pier St, Seattle", website: "https://harbor.example", lat: at.lat, lon: at.lon }] : []));
-    const { run } = await drive("Drive from Vancouver to Portland via Seattle", [], {}, "travo");
+    const { run } = await drive("Drive from Vancouver to Portland via Seattle", [], {}, "worko");
     expect(run.status).toBe("done");
     const days = (run.deliverable?.data as { days: { to: string; stay?: { name: string }[] }[] }).days;
     expect(days.length).toBeGreaterThan(0);

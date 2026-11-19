@@ -3,7 +3,7 @@ import { __promptForTest, compact } from "./explore";
 
 // Every chat turn sends the whole prompt; keep it lean so replies stay fast and cheap.
 it("system prompt plus tool specs stay under budget", () => {
-  for (const a of ["inso", "trado", "travo"] as const) {
+  for (const a of ["inso", "trado", "worko"] as const) {
     const p = __promptForTest(a);
     const chars = p.system.length + JSON.stringify(p.tools).length;
     console.log(a, "system", p.system.length, "tools", JSON.stringify(p.tools).length);

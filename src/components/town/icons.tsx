@@ -3,6 +3,11 @@
  * Decorative: a name always sits next to them.
  */
 const G: Record<string, { grid: string[]; a: string; soft: string }> = {
+  recipes: {
+    a: "#eb6834",
+    soft: "#fdeee7",
+    grid: ["..kkkkkkkk..", ".kwwwwwwwwk.", ".kwkkkkkkwk.", ".kwwwwwwwwk.", ".kwkkkkwwwk.", ".kwwwwwwwwk.", ".kwkkkkkkwk.", ".kwwwwwwwwk.", ".kwkkkwwwwk.", ".kwwwwwwwwk.", "..kkkkkkkk..", "............"],
+  },
   basics: {
     a: "#6250d6",
     soft: "#efedfc",

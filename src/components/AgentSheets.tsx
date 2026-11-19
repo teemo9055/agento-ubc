@@ -249,7 +249,7 @@ export function tripParts(text: string) {
 }
 
 /**
- * Travo: the details of the trip, only the parts that matter for this request (arrival, the ride,
+ * Worko: the details of the trip, only the parts that matter for this request (arrival, the ride,
  * the drive, where to stay, where to eat), each with what's known so far.
  */
 export function TripSheet({ p, task }: { p?: Proposal; task: string }) {
@@ -258,11 +258,11 @@ export function TripSheet({ p, task }: { p?: Proposal; task: string }) {
   const lookups = p?.research ?? [];
   const has = (re: RegExp) => lookups.find((r) => re.test(`${r.tool} ${r.label} ${JSON.stringify(r.args)}`));
   const rows: { k: string; v: React.ReactNode; show: boolean; testid: string }[] = [
-    { k: "Arrival", show: parts.arrival, testid: "trip-arrival", v: <span className="text-ink-2">{/\bairport\b/i.test(task) ? "At the airport" : "When you land"}. Tell Travo the flight and time if it isn't in your message.</span> },
-    { k: "Ride", show: parts.ride, testid: "trip-ride", v: <span className="text-ink-2">{has(/route|drive/) ? "Travo prices the route and time for the ride." : "Travo finds the route and how long the ride takes."} Booking the car needs a ride service that takes payment here; Travo says when one doesn't.</span> },
+    { k: "Arrival", show: parts.arrival, testid: "trip-arrival", v: <span className="text-ink-2">{/\bairport\b/i.test(task) ? "At the airport" : "When you land"}. Tell Worko the flight and time if it isn't in your message.</span> },
+    { k: "Ride", show: parts.ride, testid: "trip-ride", v: <span className="text-ink-2">{has(/route|drive/) ? "Worko prices the route and time for the ride." : "Worko finds the route and how long the ride takes."} Booking the car needs a ride service that takes payment here; Worko says when one doesn't.</span> },
     { k: "Drive", show: Boolean(a) || parts.drive, testid: "trip-drive", v: a ? <span><span className="font-medium">{a.stops.join(" → ")}</span><span className="block text-ink-2">at most {a.hoursPerDay} h of driving a day</span></span> : <span className="text-ink-2">Say where from and where to.</span> },
-    { k: "Stay", show: parts.stay, testid: "trip-stay", v: <span className="text-ink-2">{has(/hotel|stay|lodging/) ? "Travo looks up places to stay near each stop." : "Travo can find places to stay near each night's stop."}</span> },
-    { k: "Food", show: parts.food, testid: "trip-food", v: <span className="text-ink-2">Travo finds places to eat nearby; reservations need a booking service that takes payment here.</span> },
+    { k: "Stay", show: parts.stay, testid: "trip-stay", v: <span className="text-ink-2">{has(/hotel|stay|lodging/) ? "Worko looks up places to stay near each stop." : "Worko can find places to stay near each night's stop."}</span> },
+    { k: "Food", show: parts.food, testid: "trip-food", v: <span className="text-ink-2">Worko finds places to eat nearby; reservations need a booking service that takes payment here.</span> },
   ];
   const shown = rows.filter((r) => r.show);
   if (!shown.length) return null;

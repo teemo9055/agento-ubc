@@ -97,6 +97,7 @@ export function MainNav() {
   const items: { href: string; label: string; icon: IconName; active: boolean }[] = [
     { href: "/home", label: "Jobs", icon: "jobs", active: path === "/home" || path.startsWith("/runs") || path.startsWith("/projects") },
     { href: "/agents", label: "Agents", icon: "agents", active: path.startsWith("/agents") },
+    { href: "/recipes", label: "Recipes", icon: "receipt", active: path.startsWith("/recipes") },
     { href: "/town", label: "Town", icon: "graph", active: path.startsWith("/town") },
     { href: "/settings", label: "Settings", icon: "shield", active: path.startsWith("/settings") },
   ];

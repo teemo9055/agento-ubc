@@ -69,21 +69,21 @@ export const KITS: Record<AgentId, AgentKit> = {
       "Trado looks up live spot prices while you chat, for free. When a trade makes sense, it buys the candles it needs to read the trend, can confirm the price against Chainlink (bought from Circle's Agent Marketplace), checks again on fresh data, and places a limit order no bigger than the amount you approved.",
     quirk: "Calls it a “position”. It's ten dollars.",
   },
-  travo: {
-    free: ["Look up places", "Places to stay, charge, fuel or eat near a stop", "Search Circle's marketplace"],
+  worko: {
+    free: ["Look up places", "Places to stay, charge, fuel or eat near a stop", "Search Circle's marketplace", "Booking links ready for your own app"],
     paid: [
       { label: "Driving route", price: "0.03" },
       { label: "Exchange rate: euro, pound, yen (Circle marketplace)", price: "0.0001" },
     ],
-    can: ["Plan a drive between places", "Split it into days that fit your hours on the road", "Show the route on a map with distance and time per leg", "List places to stay where each day ends (and chargers, fuel or food near any stop)", "Check the euro, pound or yen rate for a trip budget"],
-    cant: ["Book hotels or flights (booking services on Circle's marketplace take Arc mainnet only)", "Transit, walking or flying routes"],
-    acts: "Plan the route, split it into days and list places to stay",
-    never: "Book, buy or reserve anything",
-    result: "A route map and a day-by-day plan",
-    title: "Road-Trip Planner (Non-Booking)",
-    headline: "Travel · Routes and day plans, never reservations",
+    can: ["Check a listing, seller or place before you pay (on Arc mainnet)", "Plan a drive and split it into days that fit your hours on the road", "List places to stay, eat, charge or fuel near any stop", "Get a ride, flight, hotel or table ready for you to book in your own app", "Check the euro, pound or yen rate for a budget"],
+    cant: ["Book, sign in or pay a merchant for you (you finish bookings in your own app)", "Make phone calls (the calling service isn't payable on Arc yet)"],
+    acts: "Run the checks, plan the route, and get bookings ready for you",
+    never: "Book, sign in to your accounts or pay a merchant",
+    result: "A verdict with its evidence, a day-by-day plan, and links ready to book",
+    title: "Errand Runner & Fixer",
+    headline: "Errands · Checks, drives and bookings made ready for you",
     about:
-      "Travo finds your places while you chat, for free. Once you agree on the trip, it buys the driving route, splits it into days that fit your hours on the road, and hands you a map and a plan. It never books anything.",
-    quirk: "Has strong opinions about rest stops. Keeps them to itself.",
+      "Worko gets real-world things done. It checks a listing, seller or place before you commit, plans drives, and gets rides, flights, hotels and tables ready for you to finish in your own app. It pays for checks from your job's vault and never books or signs in for you.",
+    quirk: "Writes the to-do list before you've finished your sentence.",
   },
 };

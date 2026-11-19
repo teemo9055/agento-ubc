@@ -16,7 +16,7 @@ const RULES: [Outfit, RegExp][] = [
 /** Picks the mascot's outfit from what the job is about. */
 export function outfitFor(agent: AgentId, text: string): Outfit {
   for (const [o, re] of RULES) if (re.test(text)) return o;
-  if (agent === "travo") return "travel";
+  if (agent === "worko") return "travel";
   if (agent === "trado") return "crypto";
   return "none";
 }

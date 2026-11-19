@@ -83,7 +83,7 @@ describe("splitting a request into parts", () => {
   it("finds the parts and who does each", () => {
     const parts = explore.partsOf(ASK);
     expect(parts).toHaveLength(3);
-    expect(parts.map(explore.agentFor)).toEqual(["inso", "travo", null]);
+    expect(parts.map(explore.agentFor)).toEqual(["inso", "worko", null]);
     expect(explore.partsOf("What are BTC odds right now?")).toHaveLength(1);
   });
 });
@@ -94,9 +94,11 @@ describe("plans across agents", () => {
     const plan = r.chat!.find((m) => m.plan)?.plan;
     expect(plan?.steps.map((s) => [s.agent, s.proposal.action?.kind])).toEqual([
       ["inso", "prediction_order"],
-      ["travo", "itinerary"],
+      ["worko", "itinerary"],
     ]);
-    expect(plan?.unavailable[0].why).toMatch(/Arc mainnet only/);
+    // The hotel can't be booked from here: it rides along with the drive as a link you finish yourself.
+    expect(plan?.unavailable).toEqual([]);
+    expect(plan?.steps[1].proposal.finish?.[0]).toMatchObject({ kind: "hotel", app: "Booking.com", label: "Book a stay in Seattle" });
     expect(r.lines).toHaveLength(0); // nothing priced or paid yet
   });
 
@@ -110,7 +112,7 @@ describe("plans across agents", () => {
     const kids = done.plan!.steps.map((s) => orch.getRun(s.runId!)!);
     expect(kids.map((k) => [k.agent, k.status, k.parentId, k.stepId])).toEqual([
       ["inso", "done", r.id, "s1"],
-      ["travo", "done", r.id, "s2"],
+      ["worko", "done", r.id, "s2"],
     ]);
     // Step 2 started only after step 1 finished.
     expect(Date.parse(kids[1].createdAt)).toBeGreaterThanOrEqual(Date.parse(kids[0].finishedAt!));
@@ -145,7 +147,7 @@ describe("plans across agents", () => {
     const beans = { what: "Bean prices", help: "no", how: "No market for coffee" };
 
     it("several doable parts make a plan, with each driver tied to its step", async () => {
-      const v = await brief({ drivers: [fuel, { what: "The drive", help: "partly", how: "Plan the route", step: 2 }, cold, beans], steps: [step("inso", "order"), step("travo", "drive")], leftOpen: "Bean prices" });
+      const v = await brief({ drivers: [fuel, { what: "The drive", help: "partly", how: "Plan the route", step: 2 }, cold, beans], steps: [step("inso", "order"), step("worko", "drive")], leftOpen: "Bean prices" });
       if ("error" in v) throw new Error(v.error);
       expect(v.plan?.steps).toHaveLength(2);
       expect(v.brief).toMatchObject({ understood: "Your costs swing with fuel and the weather.", leftOpen: "Bean prices" });
@@ -188,7 +190,7 @@ describe("plans across agents", () => {
 
   it("a step that depends on earlier findings is rebuilt from them when it starts, never above what was approved", async () => {
     const run = async (qty: number) => {
-      const p = await plan([step("travo", "drive"), step("inso", "order", [1])]);
+      const p = await plan([step("worko", "drive"), step("inso", "order", [1])]);
       p.steps[1] = { ...p.steps[1], usesFindings: true };
       let got = "";
       rebuild.next = async (agent, brief, id) => {
@@ -218,7 +220,7 @@ describe("plans across agents", () => {
 
   it("stop cancels the running step and skips the rest", async () => {
     pause();
-    const p = await plan([step("travo", "drive"), step("inso", "order", [1])]);
+    const p = await plan([step("worko", "drive"), step("inso", "order", [1])]);
     const id = await begin(p);
     await until(() => orch.getRun(id)!.plan?.steps[0].status === "running", "step 1 to start");
     await orch.stopPlan(id);
@@ -231,21 +233,21 @@ describe("plans across agents", () => {
 
   it("each step is built by its own agent, and the plan's shape is checked", async () => {
     const check = (steps: ReturnType<typeof step>[]) => tools.validatePlan({ title: "x", why: "y", unavailable: [], steps }, "px", (a, b, i) => build(a, b.trim(), i));
-    const wrongAgent = await check([step("inso", "drive"), step("travo", "drive")]);
+    const wrongAgent = await check([step("inso", "drive"), step("worko", "drive")]);
     expect("error" in wrongAgent && wrongAgent.error).toMatch(/Step 1 \(inso\): This agent can't do itinerary/);
-    const forward = await check([step("travo", "drive", [2]), step("travo", "drive")]);
+    const forward = await check([step("worko", "drive", [2]), step("worko", "drive")]);
     expect("error" in forward && forward.error).toMatch(/can only wait for steps before it/);
-    const noOrder = await check([step("travo", "drive"), step("inso", "order", [1], "filled")]);
+    const noOrder = await check([step("worko", "drive"), step("inso", "order", [1], "filled")]);
     expect("error" in noOrder && noOrder.error).toMatch(/places an order/);
     const noSell = await check([step("inso", "order"), step("inso", "order", [1], "filled", true)]);
     expect("error" in noSell && noSell.error).toMatch(/exactly one step that sells/);
-    const ok = await check([step("trado", "sell"), step("inso", "order", [1], "filled", true), step("travo", "drive")]);
+    const ok = await check([step("trado", "sell"), step("inso", "order", [1], "filled", true), step("worko", "drive")]);
     expect("plan" in ok && ok.plan!.steps.map((s) => s.after)).toEqual([[], ["s1"], []]);
   });
 
   it("steps that don't depend on each other run at the same time; the one that waits starts after both", async () => {
     pause();
-    const id = await begin(await plan([step("travo", "drive"), step("travo", "drive"), step("travo", "drive", [1, 2])]));
+    const id = await begin(await plan([step("worko", "drive"), step("worko", "drive"), step("worko", "drive", [1, 2])]));
     await until(() => orch.getRun(id)!.plan!.steps.slice(0, 2).every((s) => s.status === "running"), "both independent steps to be running together");
     expect(orch.getRun(id)!.plan!.steps[2].status).toBe("waiting");
     hold.release();
@@ -255,7 +257,7 @@ describe("plans across agents", () => {
     const [a, b, c] = done.steps.map((s) => orch.getRun(s.runId!)!);
     expect(Date.parse(c.createdAt)).toBeGreaterThanOrEqual(Math.max(Date.parse(a.finishedAt!), Date.parse(b.finishedAt!)));
     // The step that waited was told what the two before it did.
-    expect(c.handoff).toMatch(/Travo: .+ · Travo: /);
+    expect(c.handoff).toMatch(/Worko: .+ · Worko: /);
   });
 
   it("a step can spend what an earlier sell brought in", async () => {
@@ -272,7 +274,7 @@ describe("plans across agents", () => {
 
   it("a failed step only stops the steps that depended on it", async () => {
     pause();
-    const id = await begin(await plan([step("travo", "drive"), step("inso", "order"), step("travo", "drive", [1])]));
+    const id = await begin(await plan([step("worko", "drive"), step("inso", "order"), step("worko", "drive", [1])]));
     await until(() => orch.getRun(id)!.plan!.steps[0].status === "running" && Boolean(orch.getRun(id)!.plan!.steps[0].runId), "step 1 to start");
     await orch.cancel(orch.getRun(id)!.plan!.steps[0].runId!);
     hold.release();
@@ -290,22 +292,22 @@ describe("plans across agents", () => {
   const shape = (id: string) => orch.getRun(id)!.plan!.steps.map((x) => [x.id, x.agent, x.after.join("+"), x.gate]);
 
   it("a plan can be reshaped by hand before it starts, and stays valid", async () => {
-    const id = await offer(await plan([step("inso", "order"), step("travo", "drive", [1])]));
+    const id = await offer(await plan([step("inso", "order"), step("worko", "drive", [1])]));
     // Add a step in plain words: the right agent is picked and builds it.
     await orch.editPlanOf(id, { op: "add", agent: "auto", brief: "Drive from Calgary to Banff" });
     expect(shape(id)).toEqual([
       ["s1", "inso", "", "done"],
-      ["s2", "travo", "s1", "done"],
-      ["s3", "travo", "", "done"],
+      ["s2", "worko", "s1", "done"],
+      ["s3", "worko", "", "done"],
     ]);
     expect(orch.getRun(id)!.plan!.steps[2].proposal.action).toMatchObject({ kind: "itinerary", stops: ["Calgary", "Banff"] });
 
     // Make the first step wait for the new one: the steps are put back in running order and renumbered.
     await orch.editPlanOf(id, { op: "wire", step: "s1", after: ["s3"] });
     expect(shape(id)).toEqual([
-      ["s1", "travo", "", "done"],
+      ["s1", "worko", "", "done"],
       ["s2", "inso", "s1", "done"],
-      ["s3", "travo", "s2", "done"],
+      ["s3", "worko", "s2", "done"],
     ]);
 
     // Things that can't work are refused with the reason, and nothing changes.
@@ -316,23 +318,23 @@ describe("plans across agents", () => {
     // Removing a step frees whatever was waiting on it.
     await orch.editPlanOf(id, { op: "remove", step: "s2" });
     expect(shape(id)).toEqual([
-      ["s1", "travo", "", "done"],
-      ["s2", "travo", "", "done"],
+      ["s1", "worko", "", "done"],
+      ["s2", "worko", "", "done"],
     ]);
 
     // What starts is the plan as edited, not as first proposed.
     await orch.startPlan(id, orch.getRun(id)!.plan!.id);
     await until(() => orch.getRun(id)!.plan?.status === "done", "the edited plan to finish");
     expect(orch.getRun(id)!.plan!.steps.map((x) => [x.agent, x.status])).toEqual([
-      ["travo", "done"],
-      ["travo", "done"],
+      ["worko", "done"],
+      ["worko", "done"],
     ]);
     await expect(orch.editPlanOf(id, { op: "remove", step: "s1" })).rejects.toThrow(/before it starts/);
   });
 
   it("a step that didn't go through can be retried, and what was skipped because of it gets its turn back", async () => {
     pause();
-    const id = await begin(await plan([step("travo", "drive"), step("inso", "order", [1])]));
+    const id = await begin(await plan([step("worko", "drive"), step("inso", "order", [1])]));
     await until(() => orch.getRun(id)!.plan!.steps[0].status === "running" && Boolean(orch.getRun(id)!.plan!.steps[0].runId), "step 1 to start");
     await orch.cancel(orch.getRun(id)!.plan!.steps[0].runId!);
     hold.release();
@@ -348,12 +350,12 @@ describe("plans across agents", () => {
   it("long workflows: a dozen steps in stages run through to the end", async () => {
     // Four independent lookups, four orders each waiting on one of them, three trips after pairs, one last step after everything.
     const p = await plan([
-      ...[0, 1, 2, 3].map(() => step("travo", "drive")),
+      ...[0, 1, 2, 3].map(() => step("worko", "drive")),
       ...[1, 2, 3, 4].map((n) => step("inso", "order", [n])),
-      step("travo", "drive", [5, 6]),
-      step("travo", "drive", [7, 8]),
+      step("worko", "drive", [5, 6]),
+      step("worko", "drive", [7, 8]),
       step("inso", "order", [9, 10]),
-      step("travo", "drive", [11]),
+      step("worko", "drive", [11]),
     ]);
     expect(p.steps).toHaveLength(12);
     const id = await begin(p);

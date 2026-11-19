@@ -4,7 +4,7 @@ import type { AgentId } from "@/lib/types";
 
 export const dynamic = "force-dynamic";
 
-const AGENTS: AgentId[] = ["inso", "trado", "travo"];
+const AGENTS: AgentId[] = ["inso", "trado", "worko"];
 
 /** What the agents know: built-in primers, lessons learned from past moves, and the raw outcomes behind them. */
 export async function GET(req: NextRequest) {

@@ -17,7 +17,7 @@ const Adopt = z.object({ proposalId: z.string() });
 const StartPlan = z.object({ planId: z.string() });
 const StepId = z.string().regex(/^s\d{1,2}$/);
 const PlanEdit = z.discriminatedUnion("op", [
-  z.object({ op: z.literal("add"), agent: z.enum(["auto", "inso", "trado", "travo"]), brief: z.string().min(4).max(260), after: z.array(StepId).max(6).optional() }),
+  z.object({ op: z.literal("add"), agent: z.enum(["auto", "inso", "trado", "worko"]), brief: z.string().min(4).max(260), after: z.array(StepId).max(6).optional() }),
   z.object({ op: z.literal("change"), step: StepId, brief: z.string().min(2).max(200) }),
   z.object({ op: z.literal("remove"), step: StepId }),
   z.object({ op: z.literal("wire"), step: StepId, after: z.array(StepId).max(6), gate: z.enum(["done", "filled"]).optional(), useProceeds: z.boolean().optional() }),

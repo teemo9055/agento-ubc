@@ -112,7 +112,7 @@ export function AgentView({ p }: { p: Proposal }) {
 
 /**
  * The left side while a job is taking shape. Every agent gets the same layout: its live instrument
- * for the move on top (Inso: the market and the line; Trado: the price with your limit; Travo: the
+ * for the move on top (Inso: the market and the line; Trado: the price with your limit; Worko: the
  * route and days), then the drawing of what it reads, checks, does and what you get, then the cost.
  * Before there is a move it shows the outline of the work being asked for.
  */
@@ -131,7 +131,7 @@ export function Workspace({ run, onExample, onAdjust }: { run: Run; onExample?: 
     Boolean(move) &&
     (run.agent === "trado" ||
       (run.agent === "inso" && move?.action?.kind === "prediction_order" && move.action.trade !== "sell") ||
-      (run.agent === "travo" && (move?.action?.kind === "itinerary" || Object.values(tripParts(said)).some(Boolean))));
+      (run.agent === "worko" && (move?.action?.kind === "itinerary" || Object.values(tripParts(said)).some(Boolean))));
   const lanes = sheet ? { ...bp, lanes: bp.lanes.filter((l) => l.key === "reads" || l.key === "checks") } : bp;
   const stepper =
     move && onAdjust && size && !run.thinking ? (
@@ -168,10 +168,10 @@ export function Workspace({ run, onExample, onAdjust }: { run: Run; onExample?: 
         </div>
 
         <div className="space-y-4 p-4">
-          {/* Each agent's own view of the work: Inso the cover, Trado the trading board, Travo the trip. */}
+          {/* Each agent's own view of the work: Inso the cover, Trado the trading board, Worko the trip. */}
           {run.agent === "inso" && move && <CoverSheet p={move} />}
           {run.agent === "trado" && <TradeBoard p={move} />}
-          {run.agent === "travo" && <TripSheet p={move} task={said} />}
+          {run.agent === "worko" && <TripSheet p={move} task={said} />}
           {sheet && stepper && (
             <div className="flex items-center justify-between gap-3 rounded-xl border border-line bg-panel px-4 py-2" data-testid="size-row">
               <span className="text-[13px] text-ink-2">{size?.unit === "hours" ? "Hours of driving a day" : size?.unit === "cover" ? "How much to cover" : "Size of the order"}</span>

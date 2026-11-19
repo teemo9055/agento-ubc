@@ -11,7 +11,7 @@ const APP = "/home";
 const PANELS: { agent: AgentId; lead: string; accent: string; sub: string; Board: ComponentType }[] = [
   { agent: "inso", lead: "Say what you", accent: "want done", sub: "Type it in plain words, like a message to a friend. An agent picks it up.", Board: AskBoard },
   { agent: "trado", lead: "See the work", accent: "on a map", sub: "Each job is drawn as steps, so you can see what happens, and in what order.", Board: MapBoard },
-  { agent: "travo", lead: "Approve", accent: "once", sub: "Read what it will do, what could go wrong and the most it costs. Then say yes.", Board: ApproveBoard },
+  { agent: "worko", lead: "Approve", accent: "once", sub: "Read what it will do, what could go wrong and the most it costs. Then say yes.", Board: ApproveBoard },
   { agent: "inso", lead: "Watch it", accent: "happen", sub: "Follow each step as it runs. You get the result, a receipt and your change back.", Board: DoneBoard },
 ];
 

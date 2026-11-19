@@ -30,7 +30,7 @@ const GOALS: { title: string; sub: string; agent: AgentId; say: string }[] = [
   { title: "Bet on an outcome", sub: "Crypto, rates, weather, sports", agent: "inso", say: "I want to bet on something" },
   { title: "See what the odds say", sub: "What the market thinks will happen", agent: "inso", say: "What are the markets saying?" },
   { title: "Buy or sell crypto", sub: "With a price limit you set", agent: "trado", say: "I want to trade a coin" },
-  { title: "Plan a drive", sub: "Route, distance and day-by-day stops", agent: "travo", say: "Plan a road trip for me" },
+  { title: "Get something done", sub: "Check a seller, plan a drive, get a booking ready", agent: "worko", say: "I need something done" },
   { title: "Check what I hold", sub: "Your positions, and selling them", agent: "inso", say: "Show my positions" },
 ];
 
@@ -127,7 +127,7 @@ export default function NewJob() {
         />
         <div className="mt-2 flex flex-wrap items-center justify-between gap-3">
           <div className="flex min-w-0 flex-wrap items-center gap-1 text-[12.5px]" role="tablist" aria-label="Who takes it">
-            {(["auto", "inso", "trado", "travo"] as const).map((id) => (
+            {(["auto", "inso", "trado", "worko"] as const).map((id) => (
               <button
                 key={id}
                 type="button"
@@ -165,7 +165,7 @@ export default function NewJob() {
         data-testid="showcase"
       >
         <span className="flex shrink-0 -space-x-2">
-          {(["inso", "trado", "travo"] as const).map((a) => (
+          {(["inso", "trado", "worko"] as const).map((a) => (
             <span key={a} data-agent={a}>
               <AgentIcon agent={a} size={34} mood={busy === "showcase" ? "working" : "happy"} />
             </span>
@@ -191,7 +191,12 @@ export default function NewJob() {
       </nav>
 
       <section aria-label="Start from a goal">
-        <h2 className="mb-2 text-[13px] font-semibold text-ink-2">Or start from a goal</h2>
+        <div className="mb-2 flex items-baseline justify-between gap-3">
+          <h2 className="text-[13px] font-semibold text-ink-2">Or start from a goal</h2>
+          <Link href="/recipes" className="text-[13px] font-medium underline underline-offset-2" data-testid="to-recipes">
+            Not sure? Browse the recipe book
+          </Link>
+        </div>
         <div className="grid gap-2 sm:grid-cols-2" data-testid="goals">
           {GOALS.map((g, i) => (
             <motion.button

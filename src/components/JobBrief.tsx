@@ -131,6 +131,7 @@ export function ReviewCards({ run, onEdit, focused }: { run: Run; onEdit?: (k: "
   const data = Number(sum(paid.map((l) => l.approved))) / 1e6;
   const risks = risksOf(run);
   const specific = risks.filter((r) => !GENERIC.test(r.if));
+  const yours = run.phases.filter((ph) => ph.finish);
   const cards: { kind: "deliverable" | "method" | "risk"; title: string; sub: string; body: React.ReactNode }[] = [
     {
       kind: "deliverable",
@@ -172,7 +173,16 @@ export function ReviewCards({ run, onEdit, focused }: { run: Run; onEdit?: (k: "
               </span>
             </li>
           ))}
-          {!paid.length && !exchange.length && <li className="text-ink-2">Free lookups only.</li>}
+          {yours.map((ph, i) => (
+            <li key={ph.id} className="flex gap-2" data-testid="review-yours">
+              <span className="num shrink-0 text-ink-3">{paid.length + exchange.length + i + 1}.</span>
+              <span className="min-w-0">
+                <span className="font-medium">{ph.label}</span>
+                <span className="block text-ink-3">You finish it in {ph.finish!.app}: a ready link, nothing paid here</span>
+              </span>
+            </li>
+          ))}
+          {!paid.length && !exchange.length && !yours.length && <li className="text-ink-2">Free lookups only.</li>}
         </ol>
       ),
     },
