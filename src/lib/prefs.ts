@@ -10,8 +10,26 @@ export interface Prefs {
   /** Failures to inject, for testing how the agent handles them. */
   faults: FailureCode[];
   accessCode?: string;
-  /** Which Arc network the Add money page works on (default testnet). */
+  /** Which Arc network jobs pay on, chosen in Settings (default testnet). */
   network?: "testnet" | "mainnet";
+  /** Which Arc network the Add money page shows. Separate, so looking at mainnet there never moves jobs onto real money. */
+  walletNetwork?: "testnet" | "mainnet";
+}
+
+/** What /api/config says about each network, as far as choosing one goes. */
+export type NetConfig = { networks?: Partial<Record<"testnet" | "mainnet", { live: boolean; setup?: string[] }>> } | null;
+
+/**
+ * The network a job actually pays on: mainnet only when it was chosen and this server can pay there.
+ * Otherwise testnet, which never costs real money, and the page says why.
+ */
+export function jobNetwork(prefs: Prefs, cfg: NetConfig): "testnet" | "mainnet" {
+  return prefs.network === "mainnet" && cfg?.networks?.mainnet?.live ? "mainnet" : "testnet";
+}
+
+/** Mainnet was chosen but this server can't pay there: the reason, to show before anyone presses Ask. */
+export function mainnetHeldBack(prefs: Prefs, cfg: NetConfig): boolean {
+  return prefs.network === "mainnet" && Boolean(cfg?.networks?.mainnet) && !cfg?.networks?.mainnet?.live;
 }
 
 const KEY = "agento:prefs";

@@ -8,7 +8,7 @@ import { NotifyToggle } from "@/components/AppShell";
 import { ExchangePanel } from "@/components/ExchangePanel";
 import { WalletPanel } from "@/components/passkey/WalletPanel";
 import { usePasskeyWallet } from "@/components/passkey/usePasskey";
-import { usePrefs } from "@/lib/prefs";
+import { jobNetwork, usePrefs } from "@/lib/prefs";
 import type { FailureCode } from "@/lib/types";
 
 const FAULTS: { code: FailureCode; label: string }[] = [
@@ -154,7 +154,7 @@ export default function Settings() {
           {RAILS.map((r) => {
             const net = r.network ? cfg?.networks?.[r.network] : undefined;
             const off = r.mode === "live" && !(r.network === "mainnet" ? net?.live : cfg?.live);
-            const on = ready && mode === r.mode && (r.mode === "demo" || (prefs.network ?? "testnet") === r.network);
+            const on = ready && mode === r.mode && (r.mode === "demo" || jobNetwork(prefs, cfg ?? null) === r.network);
             return (
               <button
                 key={r.label}

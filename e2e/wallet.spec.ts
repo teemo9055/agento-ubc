@@ -53,8 +53,10 @@ test("add money: network switch, address check, balance", async ({ page }) => {
   await expect(page.getByTestId("onramp-start")).toHaveText(/Buy USDC/);
   await expect(page.getByTestId("explorer-link")).toHaveAttribute("href", `https://explorer.arc.io/address/${ADDR}`);
 
-  // The choice is kept in prefs (prefs() rewrites them on each load, so read the stored value).
-  expect(await page.evaluate(() => JSON.parse(localStorage.getItem("agento:prefs") ?? "{}").network)).toBe("mainnet");
+  // The choice is kept for this page only: looking at mainnet here never moves jobs onto real money.
+  const stored = await page.evaluate(() => JSON.parse(localStorage.getItem("agento:prefs") ?? "{}"));
+  expect(stored.walletNetwork).toBe("mainnet");
+  expect(stored.network).toBeUndefined();
   await net.getByRole("radio", { name: /Testnet/ }).click();
   await expect(page.getByTestId("faucet-card")).toBeVisible();
 });

@@ -2,7 +2,7 @@
 import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
 import { post } from "./useRun";
-import { usePrefs } from "@/lib/prefs";
+import { jobNetwork, usePrefs, type NetConfig } from "@/lib/prefs";
 import { usePasskeyWallet } from "./passkey/usePasskey";
 import type { AgentId, Run } from "@/lib/types";
 
@@ -11,7 +11,7 @@ export function useStartJob() {
   const router = useRouter();
   const [prefs] = usePrefs();
   const pk = usePasskeyWallet();
-  const [cfg, setCfg] = useState<{ live: boolean; liveNeedsCode?: boolean } | null>(null);
+  const [cfg, setCfg] = useState<({ live: boolean; liveNeedsCode?: boolean } & NonNullable<NetConfig>) | null>(null);
   const [busy, setBusy] = useState("");
   const [err, setErr] = useState("");
   useEffect(() => {
@@ -33,7 +33,7 @@ export function useStartJob() {
         agent,
         task,
         mode,
-        network: mode === "live" ? (prefs.network ?? "testnet") : undefined,
+        network: mode === "live" ? jobNetwork(prefs, cfg) : undefined,
         faults: prefs.faults,
         accessCode: mode === "live" && !usePasskey ? prefs.accessCode : undefined,
         payerAddress: usePasskey ? pk.wallet?.address : undefined,

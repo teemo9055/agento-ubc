@@ -27,7 +27,7 @@ const fmtUsdc = (v: bigint) => {
  */
 export default function AddMoney() {
   const [prefs, setPrefs, ready] = usePrefs();
-  const net: Net = prefs.network === "mainnet" ? "mainnet" : "testnet";
+  const net: Net = (prefs.walletNetwork ?? "testnet") === "mainnet" ? "mainnet" : "testnet";
   const n = NETWORKS[net];
   const pk = usePasskeyWallet();
   const [typed, setTyped] = useState("");
@@ -85,7 +85,7 @@ export default function AddMoney() {
               type="button"
               role="radio"
               aria-checked={on}
-              onClick={() => setPrefs({ network: x })}
+              onClick={() => setPrefs({ walletNetwork: x })}
               className={`pressable tap rounded-xl border-[1.5px] px-3 py-2.5 text-left transition-colors ${on ? (real ? "border-bad bg-bad text-white shadow-[3px_3px_0_0_var(--color-ink)]" : "border-ink bg-ink text-white shadow-[3px_3px_0_0_var(--agent)]") : "border-line bg-panel text-ink-2 hover:border-ink/40"}`}
             >
               <span className="block text-[15px] font-semibold">{real ? "Mainnet" : "Testnet"}</span>

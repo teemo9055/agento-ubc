@@ -11,13 +11,13 @@ import type { AgentId, Run, Venue } from "@/lib/types";
 import { Icon } from "@/components/Icon";
 import { CAPABILITIES, WHERE_LABEL } from "@/lib/capabilities";
 import { usePasskeyWallet } from "@/components/passkey/usePasskey";
-import { usePrefs } from "@/lib/prefs";
+import { jobNetwork, mainnetHeldBack, usePrefs, type NetConfig } from "@/lib/prefs";
 
-interface Config {
+type Config = {
   live: boolean;
   liveNeedsCode?: boolean;
   setup?: string[];
-}
+} & NonNullable<NetConfig>;
 
 type Who = "auto" | AgentId;
 
@@ -71,6 +71,8 @@ export default function NewJob() {
   const mode = (prefs.mode ?? (cfg?.live && !cfg.liveNeedsCode ? "live" : "demo")) === "live" && cfg?.live ? "live" : "demo";
   const usePasskey = mode === "live" && pk.supported && prefs.payFrom === "passkey";
   const needsWallet = usePasskey && !pk.wallet;
+  const network = jobNetwork(prefs, cfg);
+  const heldBack = mode === "live" && mainnetHeldBack(prefs, cfg);
 
   async function start(text: string, agent: Who, key: string, template?: "showcase") {
     if (text.trim().length < 3 || (needsWallet && !template) || busy) return;
@@ -81,7 +83,7 @@ export default function NewJob() {
         agent: template ? "inso" : agent,
         task: text,
         mode,
-        network: mode === "live" ? (prefs.network ?? "testnet") : undefined,
+        network: mode === "live" ? jobNetwork(prefs, cfg) : undefined,
         template,
         faults: template ? [] : prefs.faults,
         // A plan is paid from the app's wallet, whichever wallet single jobs use.
@@ -156,6 +158,14 @@ export default function NewJob() {
               Set it up in Settings
             </Link>
             .
+          </p>
+        )}
+        {heldBack && (
+          <p className="mt-3 text-[13px] text-ink-2" data-testid="mainnet-held-back">
+            You picked Arc mainnet, but this server can&apos;t pay there yet, so jobs run on Arc testnet with test USDC.{" "}
+            <Link href="/settings#s-pay" className="underline underline-offset-2">
+              Settings
+            </Link>
           </p>
         )}
         {err && <p className="mt-3 text-sm text-bad">{err}</p>}
@@ -272,7 +282,8 @@ export default function NewJob() {
       <p className="text-center text-[12.5px] text-ink-3" data-testid="ask-status">
         {ready && cfg ? (
           <>
-            {mode === "live" ? (prefs.network === "mainnet" ? "Pays in real USDC on Arc mainnet" : "Pays in test USDC on Arc testnet") : "Practice: nothing real is paid or sent"}
+            {mode === "live" ? (network === "mainnet" ? "Pays in real USDC on Arc mainnet" : "Pays in test USDC on Arc testnet") : "Practice: nothing real is paid or sent"}
+            {heldBack ? " (Arc mainnet isn't set up on this server yet)" : ""}
             {venue ? ` · ${VENUE_LINE[venue]}` : ""}
             {prefs.faults.length > 0 ? ` · test mode (${prefs.faults.length})` : ""}
             {cfg.setup && cfg.setup.length > 0 ? ` · setup incomplete (${cfg.setup.length})` : ""} ·{" "}
