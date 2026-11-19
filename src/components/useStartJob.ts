@@ -33,6 +33,7 @@ export function useStartJob() {
         agent,
         task,
         mode,
+        network: mode === "live" ? (prefs.network ?? "testnet") : undefined,
         faults: prefs.faults,
         accessCode: mode === "live" && !usePasskey ? prefs.accessCode : undefined,
         payerAddress: usePasskey ? pk.wallet?.address : undefined,

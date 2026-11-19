@@ -35,6 +35,8 @@ interface Config {
   liveNeedsCode?: boolean;
   setup?: string[];
   gateway?: { balance: number; depositedToday: number; dailyCap: number } | null;
+  /** Both Arc networks: whether live jobs can run on each, and what's missing if not. */
+  networks?: Record<"testnet" | "mainnet", { name: string; live: boolean; setup: string[]; maxJobUsd: number | null }>;
 }
 
 function Block({ title, sub, children, id }: { title: string; sub: string; children: React.ReactNode; id: string }) {
@@ -56,6 +58,13 @@ const LIMIT_FIELDS: { key: keyof Limits; label: string; help: string; unit: stri
   { key: "maxJobUsdc", label: "Most a job can spend on data", help: "The vault for one job never holds more than this.", unit: "USDC", step: 0.5 },
   { key: "maxPlanUsd", label: "Most a plan can cost in total", help: "Starting a plan approves its steps one by one; together they never go past this.", unit: "USD", step: 5 },
   { key: "bigSpendUsdc", label: "Flag purchases above", help: "Bigger purchases are pointed out before you approve.", unit: "USDC", step: 0.05 },
+];
+
+/** Where jobs pay: practice (nothing settles), Arc testnet (test USDC) or Arc mainnet (real USDC). */
+const RAILS: { label: string; sub: string; mode: "demo" | "live"; network?: "testnet" | "mainnet" }[] = [
+  { label: "Practice", sub: "Real data; vault and orders simulated", mode: "demo" },
+  { label: "Arc testnet", sub: "Test USDC, onchain", mode: "live", network: "testnet" },
+  { label: "Arc mainnet", sub: "Real USDC, onchain", mode: "live", network: "mainnet" },
 ];
 
 export default function Settings() {
@@ -142,22 +151,35 @@ export default function Settings() {
 
       <Block id="s-pay" title="Paying" sub="Where the USDC for data and services comes from.">
         <div className="flex flex-wrap gap-2" role="radiogroup" aria-label="Network">
-          {(["live", "demo"] as const).map((m) => (
-            <button
-              key={m}
-              type="button"
-              role="radio"
-              aria-checked={ready && mode === m}
-              disabled={m === "live" && !cfg?.live}
-              onClick={() => setPrefs({ mode: m })}
-              title={m === "live" && !cfg?.live ? (cfg?.setup?.join(" · ") ?? "Arc testnet isn't set up on this machine") : undefined}
-              className={`pressable tap rounded-lg border px-3 py-2 text-left text-[13px] disabled:opacity-50 ${ready && mode === m ? "border-ink bg-ink text-white" : "border-line bg-panel text-ink-2"}`}
-            >
-              <span className="block font-semibold">{m === "live" ? "Arc testnet" : "Practice"}</span>
-              <span className={`block text-[12px] ${ready && mode === m ? "text-white/70" : "text-ink-3"}`}>{m === "live" ? "Real testnet USDC, onchain" : "Real data; vault and orders simulated"}</span>
-            </button>
-          ))}
+          {RAILS.map((r) => {
+            const net = r.network ? cfg?.networks?.[r.network] : undefined;
+            const off = r.mode === "live" && !(r.network === "mainnet" ? net?.live : cfg?.live);
+            const on = ready && mode === r.mode && (r.mode === "demo" || (prefs.network ?? "testnet") === r.network);
+            return (
+              <button
+                key={r.label}
+                type="button"
+                role="radio"
+                aria-checked={on}
+                disabled={off}
+                onClick={() => setPrefs(r.network ? { mode: r.mode, network: r.network } : { mode: r.mode })}
+                title={off ? (r.network === "mainnet" ? (net?.setup?.join(" · ") ?? "Arc mainnet isn't set up on this server") : (cfg?.setup?.join(" · ") ?? "Arc testnet isn't set up on this machine")) : undefined}
+                className={`pressable tap rounded-lg border px-3 py-2 text-left text-[13px] disabled:opacity-50 ${on ? (r.network === "mainnet" ? "border-ink bg-warn text-ink shadow-[2px_2px_0_0_var(--color-ink)]" : "border-ink bg-ink text-white") : "border-line bg-panel text-ink-2"}`}
+                data-testid={`rail-${r.network ?? "practice"}`}
+              >
+                <span className="block font-semibold">{r.label}</span>
+                <span className={`block text-[12px] ${on ? (r.network === "mainnet" ? "text-ink-2" : "text-white/70") : "text-ink-3"}`}>
+                  {r.network === "mainnet" && net?.maxJobUsd ? `${r.sub}, up to $${net.maxJobUsd} a job` : r.sub}
+                </span>
+              </button>
+            );
+          })}
         </div>
+        {cfg?.networks?.mainnet && !cfg.networks.mainnet.live && (
+          <p className="mt-2 text-[12.5px] text-ink-3" data-testid="mainnet-setup">
+            Arc mainnet is ready in the app but not switched on here yet: {cfg.networks.mainnet.setup[0]}.
+          </p>
+        )}
         {mode === "live" && pk.supported && (
           <div className="mt-3 space-y-3">
             <div className="flex gap-1 text-[12.5px]" role="radiogroup" aria-label="Pay from">

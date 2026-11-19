@@ -28,6 +28,7 @@ import {
 } from "@/components/JobBrief";
 import { ReceiptView } from "@/components/ReceiptView";
 import { NetProvider } from "@/components/NetContext";
+import { NETWORKS } from "@/lib/networks";
 import { NextSteps } from "@/components/NextSteps";
 import { LiveMarket } from "@/components/Live";
 import { PlanBoard, planOf } from "@/components/PlanBoard";
@@ -121,7 +122,7 @@ function VaultNote({ run }: { run: Run }) {
     <p className="text-[12px] text-ink-3">
       {run.vault ? (
         <>
-          Money held on Arc in this job&apos;s own account{" "}
+          Money held on {NETWORKS[run.network ?? "testnet"].name} in this job&apos;s own account{" "}
           {run.fundingTx && (
             <a
               className="ml-1 inline-flex items-center gap-0.5 underline decoration-line underline-offset-2 hover:text-ink"
@@ -786,6 +787,11 @@ export default function RunPage({
       <div
         className={`pb-24 sm:pb-0 ${beside ? "lg:mx-[calc(50%-min(50vw-24px,720px))]" : ""}`}
       >
+        {run.network === "mainnet" && (
+          <p className="mx-auto mb-4 flex max-w-3xl items-center gap-2 rounded-xl border-[1.5px] border-ink bg-warn/20 px-4 py-2 text-[13px] font-medium text-ink" data-testid="mainnet-banner">
+            <span aria-hidden className="h-2 w-2 rounded-full bg-warn" /> Arc mainnet: this job pays in real USDC.
+          </p>
+        )}
         <AnimatePresence>
           {run.faults.length > 0 && !finished && (
             <motion.div

@@ -78,6 +78,7 @@ export default function NewJob() {
         agent: template ? "inso" : agent,
         task: text,
         mode,
+        network: mode === "live" ? (prefs.network ?? "testnet") : undefined,
         template,
         faults: template ? [] : prefs.faults,
         // A plan is paid from the app's wallet, whichever wallet single jobs use.
@@ -251,7 +252,7 @@ export default function NewJob() {
       <p className="text-center text-[12.5px] text-ink-3" data-testid="ask-status">
         {ready && cfg ? (
           <>
-            {mode === "live" ? "Pays in USDC on Arc testnet" : "Practice: nothing real is paid or sent"}
+            {mode === "live" ? (prefs.network === "mainnet" ? "Pays in real USDC on Arc mainnet" : "Pays in test USDC on Arc testnet") : "Practice: nothing real is paid or sent"}
             {venue ? ` · ${VENUE_LINE[venue]}` : ""}
             {prefs.faults.length > 0 ? ` · test mode (${prefs.faults.length})` : ""}
             {cfg.setup && cfg.setup.length > 0 ? ` · setup incomplete (${cfg.setup.length})` : ""} ·{" "}
