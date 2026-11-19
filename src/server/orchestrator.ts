@@ -540,9 +540,11 @@ export async function approve(runId: string, signed?: { txHash?: Hex }) {
   }
   const noVault = BigInt(ctl.run.cap) === 0n;
   const jobMax = BigInt(Math.round(limits().maxJobUsdc * 1e6));
-  if (ctl.run.network === "mainnet" && Number(ctl.run.cap) / 1e6 > MAINNET_MAX_JOB_USD + 1e-9)
-    throw new Error(`This job would hold ${fmt(ctl.run.cap)} USDC of real money, over the $${MAINNET_MAX_JOB_USD} limit for a mainnet job on this server. Make it smaller.`);
-  if (BigInt(ctl.run.cap) > jobMax) throw new Error(`This job would hold ${fmt(ctl.run.cap)} USDC, over your ${limits().maxJobUsdc} USDC per-job limit. Trim the paid lookups or raise the limit in Settings.`);
+  // Limits count everything the job may spend: its vault, plus marketplace lookups paid through Gateway.
+  const spendAll = (BigInt(ctl.run.cap) + sum(ctl.run.lines.filter((l) => l.rail === "gateway").map((l) => l.approved))).toString();
+  if (ctl.run.network === "mainnet" && Number(spendAll) / 1e6 > MAINNET_MAX_JOB_USD + 1e-9)
+    throw new Error(`This job could spend ${fmt(spendAll)} USDC of real money, over the $${MAINNET_MAX_JOB_USD} limit for a mainnet job on this server. Make it smaller.`);
+  if (BigInt(spendAll) > jobMax) throw new Error(`This job could spend ${fmt(spendAll)} USDC, over your ${limits().maxJobUsdc} USDC per-job limit. Trim the paid lookups or raise the limit in Settings.`);
   // Limits can change after a move was checked: the order is held to today's limit, not the one it was built under.
   const order = ctl.run.proposal?.action ? maxCost(ctl.run.proposal.action) : 0;
   if (order > limits().maxOrderUsd + 1e-9) throw new Error(`This order could cost $${order.toFixed(2)}, over your $${limits().maxOrderUsd} per-order limit. Make it smaller or raise the limit in Settings.`);

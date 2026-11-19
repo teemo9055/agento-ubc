@@ -401,7 +401,7 @@ export function toolboxAgent(id: AgentId): AgentDef {
         // Tie-breaker: compare the sources first; buy a third only if they disagree.
         if (step.onConflict) {
           const cmp = markGroup(step.onConflict, p.research, known, ctx);
-          if (cmp.agree) ctx.skip!(`Sources agreed, tie-breaker not needed · ${usdOf(v.price(step.args))} stays in your vault`);
+          if (cmp.agree) ctx.skip!(`Sources agreed, tie-breaker not needed · ${usdOf(v.price(step.args))} not spent`);
           ctx.decide?.("Sources disagreed, bought a third", cmp.note);
         }
         let args = step.args;

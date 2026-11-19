@@ -343,6 +343,16 @@ body {
 .node-in {
   animation: node-in 360ms cubic-bezier(0.2, 0.8, 0.2, 1) both;
 }
+/* A step's finding arrives with a small pop. */
+@keyframes finding-in {
+  from {
+    opacity: 0;
+    transform: scale(0.9);
+  }
+}
+.finding-in {
+  animation: finding-in 180ms cubic-bezier(0.2, 0.8, 0.2, 1) both;
+}
 /* The connector into a running step marches toward it. */
 @keyframes edge-march {
   to {
@@ -422,6 +432,7 @@ body {
 
 @media (prefers-reduced-motion: reduce) {
   .node-in,
+  .finding-in,
   .edge-march,
   .nudge,
   .scene-bar,

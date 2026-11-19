@@ -132,6 +132,11 @@ export function ReviewCards({ run, onEdit, focused }: { run: Run; onEdit?: (k: "
   const risks = risksOf(run);
   const specific = risks.filter((r) => !GENERIC.test(r.if));
   const yours = run.phases.filter((ph) => ph.finish);
+  // Steps that only run if an earlier answer calls for it, or if two sources disagree: listed apart, with their most.
+  const maybeOf = (l: (typeof paid)[number]) => run.phases.find((ph) => ph.lineId === l.id && (ph.conditional || ph.tieBreaker));
+  const always = paid.filter((l) => !maybeOf(l));
+  const maybe = paid.filter((l) => maybeOf(l));
+  const gaps = run.phases.filter((ph) => ph.gap);
   const cards: { kind: "deliverable" | "method" | "risk"; title: string; sub: string; body: React.ReactNode }[] = [
     {
       kind: "deliverable",
@@ -146,6 +151,18 @@ export function ReviewCards({ run, onEdit, focused }: { run: Run; onEdit?: (k: "
               Insurance for {p.hedge.protects}. If it doesn&apos;t happen, the ${p.hedge.cost.toFixed(2)} is what the cover cost you.
             </p>
           )}
+          {gaps.length > 0 && (
+            <div className="mt-2 border-t border-[#f1f0ec] pt-2" data-testid="review-gaps">
+              <p className="text-[12px] font-semibold uppercase tracking-wide text-ink-3">What it can&apos;t answer</p>
+              <ul className="mt-1 space-y-1 text-[13px] leading-snug">
+                {gaps.map((g) => (
+                  <li key={g.id}>
+                    <span className="font-medium">{g.gap!.fact}</span> <span className="text-ink-3">· {g.gap!.why}</span>
+                  </li>
+                ))}
+              </ul>
+            </div>
+          )}
         </>
       ),
     },
@@ -155,7 +172,7 @@ export function ReviewCards({ run, onEdit, focused }: { run: Run; onEdit?: (k: "
       sub: "Paid per request",
       body: (
         <ol className="space-y-1.5 text-[13px] leading-snug">
-          {paid.map((l, i) => (
+          {always.map((l, i) => (
             <li key={l.id} className="flex gap-2">
               <span className="num shrink-0 text-ink-3">{i + 1}.</span>
               <span className="min-w-0">
@@ -164,9 +181,25 @@ export function ReviewCards({ run, onEdit, focused }: { run: Run; onEdit?: (k: "
               </span>
             </li>
           ))}
+          {maybe.length > 0 && (
+            <li className="rounded-lg border border-dashed border-line px-2 py-1.5" data-testid="review-maybe">
+              <span className="text-[12px] font-semibold uppercase tracking-wide text-ink-3">Only if needed · at most {money(Number(sum(maybe.map((l) => l.approved))) / 1e6)}</span>
+              <ul className="mt-1 space-y-1">
+                {maybe.map((l) => {
+                  const ph = maybeOf(l)!;
+                  return (
+                    <li key={l.id}>
+                      <span className="font-medium">{ph.label}</span> <span className="num text-ink-3">· {money(Number(l.approved) / 1e6)}</span>
+                      <span className="block text-ink-3">{ph.tieBreaker ? "Only if the sources disagree" : `Only if ${ph.conditional}`} · from {l.payeeName}</span>
+                    </li>
+                  );
+                })}
+              </ul>
+            </li>
+          )}
           {exchange.map((l) => (
             <li key={l.id} className="flex gap-2">
-              <span className="num shrink-0 text-ink-3">{paid.length + 1}.</span>
+              <span className="num shrink-0 text-ink-3">{always.length + 1}.</span>
               <span className="min-w-0">
                 <span className="font-medium">Order at your price</span>
                 <span className="block text-ink-3">{p?.venue === "paper" ? "Practice: priced live, never sent" : `On ${l.payeeName}`}</span>
@@ -175,7 +208,7 @@ export function ReviewCards({ run, onEdit, focused }: { run: Run; onEdit?: (k: "
           ))}
           {yours.map((ph, i) => (
             <li key={ph.id} className="flex gap-2" data-testid="review-yours">
-              <span className="num shrink-0 text-ink-3">{paid.length + exchange.length + i + 1}.</span>
+              <span className="num shrink-0 text-ink-3">{always.length + exchange.length + i + 1}.</span>
               <span className="min-w-0">
                 <span className="font-medium">{ph.label}</span>
                 <span className="block text-ink-3">You finish it in {ph.finish!.app}: a ready link, nothing paid here</span>

@@ -247,7 +247,7 @@ export function checkWhen(when: StepWhen, results: Results, givens: Givens = {})
     case "<=":
       return Number.isFinite(num(v)) && num(v) <= num(when.value);
     case "contains":
-      return (Array.isArray(v) ? v.map(String) : [String(typeof v === "object" ? JSON.stringify(v) : v)]).some((x) => x.toLowerCase().includes(String(when.value ?? "").toLowerCase()));
+      return (Array.isArray(v) ? v : [v]).map((x) => (typeof x === "object" ? JSON.stringify(x) : String(x))).some((x) => x.toLowerCase().includes(String(when.value ?? "").toLowerCase()));
   }
 }
 

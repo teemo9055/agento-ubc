@@ -1,4 +1,5 @@
 import { answerOf, getPath } from "../dataflow";
+import { isPersonal, maskPreview } from "@/lib/mask";
 import type { Capability } from "./types";
 
 /**
@@ -20,7 +21,8 @@ export function noteFor(cap: Pick<Capability, "outputs"> | undefined, data: unkn
   for (const o of cap?.outputs ?? []) {
     if (!o.path) continue;
     const v = getPath(a, o.path);
-    const s = show(v);
+    // A phone, email or wallet found by a step is shown masked, like everywhere on the graph.
+    const s = isPersonal(o.type) && v != null && typeof v !== "object" ? maskPreview(o.type, v) : show(v);
     if (!s) continue;
     parts.push(`${o.label.charAt(0).toUpperCase()}${o.label.slice(1)}: ${s}`);
     if (parts.length === 2) break;
