@@ -9,6 +9,8 @@ export interface X402Request {
   params: Record<string, string>;
   seller: "primary";
   fault?: string;
+  /** The network the job's money is on; the seller's quote for that network is used. */
+  net?: import("@/lib/networks").Net;
 }
 
 export interface PayResult {

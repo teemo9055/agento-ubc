@@ -1,4 +1,5 @@
 import { z } from "zod";
+import { onMainnet } from "./netContext";
 import type { AgentId, MoveAction, MoveCondition, Plan, PlanStep, Proposal, ResearchStep, ToolCall } from "@/lib/types";
 import * as gemini from "./gemini";
 import * as geo from "./geo";
@@ -764,7 +765,7 @@ export async function validatePlan(input: unknown, id: string, build: BuildStep)
     if (handled && (d.step == null || d.step > p.steps.length)) return { error: `"${d.what}" is marked ${d.help}, so it needs \`step\`: the number of the step that handles it. If no step does, mark it mainnet or no.` };
     if (!handled && d.step != null) return { error: `"${d.what}" is marked ${d.help} but points at a step. Either a step handles it (now/partly) or none does.` };
     // With mainnet on, "needs mainnet" is no longer a reason: the service can be bought, so it becomes a step.
-    if (d.help === "mainnet" && mainnetOn()) return { error: `Mainnet is on, so "${d.what}" can be done now: find the service with search_services and make it a step, or mark it no with the real reason.` };
+    if (d.help === "mainnet" && onMainnet()) return { error: `Mainnet is on, so "${d.what}" can be done now: find the service with search_services and make it a step, or mark it no with the real reason.` };
   }
   const brief: Brief | undefined = p.understood
     ? { understood: p.understood, drivers: drivers.map((d) => ({ what: d.what, help: d.help, how: d.how, step: d.step != null ? `s${d.step}` : undefined })), leftOpen: p.leftOpen ?? undefined }

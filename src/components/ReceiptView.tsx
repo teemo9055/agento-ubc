@@ -1,4 +1,5 @@
 "use client";
+import { useNet } from "./NetContext";
 import { fmt, fmtFee } from "@/lib/money";
 import { addrUrl, dateTime, time, txUrl } from "@/lib/format";
 import { buildReceipt, receiptCsv } from "@/lib/receipt";
@@ -19,11 +20,12 @@ function download(name: string, body: string, type: string) {
 }
 
 function Hash({ h }: { h?: string }) {
+  const net = useNet();
   const [copied, setCopied] = useState(false);
   if (!h) return null;
   return (
     <span className="group flex items-start gap-1">
-      <a href={txUrl(h)} target="_blank" rel="noreferrer" className="break-all font-mono text-[10.5px] leading-snug text-ink-3 hover:text-ink">
+      <a href={txUrl(h, net)} target="_blank" rel="noreferrer" className="break-all font-mono text-[10.5px] leading-snug text-ink-3 hover:text-ink">
         {h}
       </a>
       <button
@@ -58,6 +60,7 @@ export function Check() {
 }
 
 export function ReceiptView({ run }: { run: Run }) {
+  const net = useNet();
   const r = buildReceipt(run);
   const cancelled = r.status === "cancelled";
   // Outside vendors can't be simulated: even in practice mode they are paid from the agent's testnet balance.
@@ -175,7 +178,7 @@ export function ReceiptView({ run }: { run: Run }) {
               </td>
               <td className="py-2 pr-2">
                 {l.payeeName}
-                <a href={addrUrl(l.payee)} className="block break-all font-mono text-[10.5px] text-ink-3">
+                <a href={addrUrl(l.payee, net)} className="block break-all font-mono text-[10.5px] text-ink-3">
                   {l.payee}
                 </a>
               </td>

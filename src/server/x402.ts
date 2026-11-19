@@ -1,12 +1,19 @@
 import type { Hex } from "viem";
-import { addresses, publicClient, send, USDC, usdcAbi } from "./chain";
+import { chainOf, send, usdcAbi } from "./chain";
+import { NETWORKS, type Net } from "@/lib/networks";
 import * as gemini from "./gemini";
 import * as geo from "./geo";
 import { TEST_LABEL, type DeliveryPromise } from "./delivery";
 import type { Sale } from "./sales";
 import { createItem, depositPaid, HALL_DEPOSIT, HallInput, KINDS } from "./town/hall";
 
-export const NETWORK = "eip155:5042002";
+/** The network the catalog leads with. Each 402 lists every network this seller can settle on. */
+export const NETWORK = NETWORKS.testnet.caip;
+export const netOfCaip = (caip: string): Net | undefined => (Object.values(NETWORKS).find((n) => n.caip === caip)?.net);
+/** Our own seller settles on a network once it has a wallet there (and, on mainnet, a little USDC for gas). */
+export const sellsOn = (net: Net) => Boolean(chainOf(net).addresses.seller) && (net === "testnet" || process.env.MAINNET_SELLING !== "false");
+/** Who is paid on each network: the testnet seller may be a Circle wallet; mainnet uses its own key. */
+export const payToOn = (net: Net, fallback: Hex) => (net === "testnet" ? fallback : (chainOf("mainnet").addresses.seller ?? fallback));
 
 /** Thrown by a product when the buyer's own request is wrong: answered 400, and nothing is charged. */
 export class BadInput extends Error {}
@@ -197,17 +204,17 @@ export interface PaymentPayload {
 export const encodeHeader = (v: unknown) => Buffer.from(JSON.stringify(v)).toString("base64");
 export const decodeHeader = <T>(v: string): T => JSON.parse(Buffer.from(v, "base64").toString("utf8")) as T;
 
-export function requirements(p: Product, resource: string, payTo: Hex, price = p.price): PaymentRequirements {
+export function requirements(p: Product, resource: string, payTo: Hex, price = p.price, net: Net = "testnet"): PaymentRequirements {
   return {
     scheme: "exact",
-    network: NETWORK,
+    network: NETWORKS[net].caip,
     maxAmountRequired: price.toString(),
     resource,
     description: p.description,
     mimeType: "application/json",
     payTo,
     maxTimeoutSeconds: 60,
-    asset: USDC,
+    asset: chainOf(net).usdc,
     extra: { name: "USDC", version: "2" },
   };
 }
@@ -220,6 +227,9 @@ export function requirements(p: Product, resource: string, payTo: Hex, price = p
 export async function verifyAndSettle(pay: PaymentPayload, req: PaymentRequirements) {
   const a = pay.payload.authorization;
   if (pay.network !== req.network || pay.scheme !== "exact") throw new Error("wrong network or scheme");
+  const net = netOfCaip(req.network);
+  if (!net) throw new Error("wrong network or scheme");
+  const { publicClient, usdc: USDC, addresses } = chainOf(net);
   if (a.to.toLowerCase() !== req.payTo.toLowerCase()) throw new Error("wrong payee");
   if (BigInt(a.value) < BigInt(req.maxAmountRequired)) throw new Error("underpaid");
   const now = BigInt(Math.floor(Date.now() / 1000));
@@ -227,10 +237,14 @@ export async function verifyAndSettle(pay: PaymentPayload, req: PaymentRequireme
   const used = await publicClient.readContract({ address: USDC, abi: usdcAbi, functionName: "authorizationState", args: [a.from, a.nonce] });
   if (used) throw new Error("authorization already used");
   if (!addresses.seller) throw new Error("settler wallet missing");
-  return send("seller", {
-    address: USDC,
-    abi: usdcAbi,
-    functionName: "transferWithAuthorization",
-    args: [a.from, a.to, BigInt(a.value), BigInt(a.validAfter), BigInt(a.validBefore), a.nonce, pay.payload.signature],
-  });
+  return send(
+    "seller",
+    {
+      address: USDC,
+      abi: usdcAbi,
+      functionName: "transferWithAuthorization",
+      args: [a.from, a.to, BigInt(a.value), BigInt(a.validAfter), BigInt(a.validBefore), a.nonce, pay.payload.signature],
+    },
+    net,
+  );
 }

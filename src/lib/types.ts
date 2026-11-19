@@ -308,6 +308,8 @@ export interface Run {
   agent: AgentId;
   task: string;
   mode: "demo" | "live";
+  /** Live jobs only: which Arc network the money moves on. Missing on older jobs, which ran on testnet. */
+  network?: import("./networks").Net;
   faults: FailureCode[];
   status: RunStatus;
   cards: Card[];

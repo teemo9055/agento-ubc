@@ -21,6 +21,8 @@ const Body = z.object({
   /** Start from a ready-made plan (built from live data, no model needed) and skip the first chat turn. */
   template: z.enum(["showcase"]).optional(),
   payerAddress: z.string().regex(/^0x[0-9a-fA-F]{40}$/).optional(),
+  /** Which Arc network a live job's money moves on. */
+  network: z.enum(["testnet", "mainnet"]).default("testnet"),
 });
 
 export async function GET(req: NextRequest) {
@@ -35,7 +37,7 @@ export async function POST(req: NextRequest) {
   if (process.env.ALLOW_FAULTS === "false") body.faults = [];
   // Jobs paid by the user's own passkey wallet spend their money, not the app's, so they need no code.
   // A plan (the showcase included) is always paid from the app's wallet, so it always needs the code.
-  if (body.mode === "live" && (!body.payerAddress || body.template) && !liveAllowed(body.accessCode)) return NextResponse.json({ error: "Arc testnet jobs need the access code. Use the demo rail, or ask the owner for the code." }, { status: 403 });
+  if (body.mode === "live" && (!body.payerAddress || body.template) && !liveAllowed(body.accessCode)) return NextResponse.json({ error: `${body.network === "mainnet" ? "Arc mainnet jobs paid from the app's wallet" : "Arc testnet jobs"} need the access code. Use practice, pay from your own passkey wallet, or ask the owner for the code.` }, { status: 403 });
   try {
     if (body.template === "showcase") {
       const built = await buildShowcase(randomUUID().slice(0, 8));

@@ -1,4 +1,5 @@
 "use client";
+import { useNet } from "./NetContext";
 import { useEffect, useMemo, useRef, useState } from "react";
 import { fmt } from "@/lib/money";
 import type { CostLine, Phase } from "@/lib/types";
@@ -66,6 +67,7 @@ function Mark({ tone, step }: { tone: Tone; step: number }) {
 }
 
 function Node({ p, line, step, simulated, onEdit, focused, dim, x, y }: { p: Phase; line?: CostLine; step: number; simulated: boolean; onEdit?: () => void; focused?: boolean; dim?: boolean; x: number; y: number }) {
+  const net = useNet();
   const tone = toneOf(p);
   const last = p.payments[p.payments.length - 1];
   const sub = p.error && (tone === "needs" || tone === "failed") ? p.error.message : p.note && tone !== "waiting" ? p.note : p.sub;
@@ -113,7 +115,7 @@ function Node({ p, line, step, simulated, onEdit, focused, dim, x, y }: { p: Pha
             <Icon name={focused ? "chat" : "edit"} size={11} /> {focused ? "In chat" : "Edit"}
           </span>
         ) : last?.txHash ? (
-          <a href={txUrl(last.txHash)} target="_blank" rel="noreferrer" className="inline-flex shrink-0 items-center gap-0.5 text-ink-3 hover:text-ink" aria-label={`Payment record for ${p.label}`} title="Payment record on Arc">
+          <a href={txUrl(last.txHash, net)} target="_blank" rel="noreferrer" className="inline-flex shrink-0 items-center gap-0.5 text-ink-3 hover:text-ink" aria-label={`Payment record for ${p.label}`} title="Payment record on Arc">
             receipt <Icon name="external" size={11} />
           </a>
         ) : last?.txState === "settled" && simulated ? (

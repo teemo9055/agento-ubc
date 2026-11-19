@@ -2,45 +2,96 @@ import { createPublicClient, createWalletClient, encodeFunctionData, http, parse
 import { circleExecute, circleWallets } from "./circle";
 // setupProblems reads process.env directly so it works before any wallet call.
 import { privateKeyToAccount } from "viem/accounts";
-import { arcTestnet } from "viem/chains";
+import { arc, arcTestnet } from "viem/chains";
+import { NETWORKS, type Net } from "@/lib/networks";
 
-export const USDC: Hex = (process.env.USDC_ADDRESS as Hex) ?? "0x3600000000000000000000000000000000000000";
-export const FACTORY = process.env.FACTORY_ADDRESS as Hex | undefined;
-export const EXPLORER = process.env.NEXT_PUBLIC_EXPLORER_URL ?? "https://explorer.testnet.arc.io";
-
-const rpc = http(process.env.ARC_RPC_URL ?? "https://rpc.testnet.arc.network");
-export const publicClient = createPublicClient({ chain: arcTestnet, transport: rpc });
+/**
+ * Arc, on both networks. Each job runs on one: testnet (free test USDC) or mainnet (real money).
+ * `chainOf(net)` gives that network's client, contracts and signing roles; the bare exports below
+ * (publicClient, USDC, FACTORY, send, …) are the testnet ones, for code that only ever runs there.
+ *
+ * Roles on mainnet use their own keys when set (MAINNET_AGENT_PRIVATE_KEY, …), so real money never
+ * shares a key with test money by accident; without them the testnet keys are used (same address
+ * on every EVM chain). Circle developer-controlled wallets are testnet wallets here.
+ */
+type Role = "agent" | "client" | "seller";
 
 const key = (name: string) => {
   const v = process.env[name];
   return v ? privateKeyToAccount(v as Hex) : undefined;
 };
 
-export const accounts = {
-  agent: key("AGENT_PRIVATE_KEY"),
-  client: key("CLIENT_PRIVATE_KEY"),
-  seller: key("SELLER_PRIVATE_KEY"),
+const keysFor = (net: Net) =>
+  net === "mainnet"
+    ? { agent: key("MAINNET_AGENT_PRIVATE_KEY") ?? key("AGENT_PRIVATE_KEY"), client: key("MAINNET_CLIENT_PRIVATE_KEY") ?? key("CLIENT_PRIVATE_KEY"), seller: key("MAINNET_SELLER_PRIVATE_KEY") ?? key("SELLER_PRIVATE_KEY") }
+    : { agent: key("AGENT_PRIVATE_KEY"), client: key("CLIENT_PRIVATE_KEY"), seller: key("SELLER_PRIVATE_KEY") };
+
+function build(net: Net) {
+  const n = NETWORKS[net];
+  const chain = net === "mainnet" ? arc : arcTestnet;
+  const rpc = http(net === "mainnet" ? (process.env.ARC_MAINNET_RPC_URL ?? n.rpc) : (process.env.ARC_RPC_URL ?? n.rpc));
+  const keys = keysFor(net);
+  const circle = net === "testnet" ? circleWallets : { agent: undefined, seller: undefined };
+  return {
+    net,
+    chain,
+    publicClient: createPublicClient({ chain, transport: rpc }),
+    rpc,
+    usdc: (net === "testnet" ? (process.env.USDC_ADDRESS as Hex | undefined) : undefined) ?? (n.usdc as Hex),
+    factory: (net === "mainnet" ? process.env.MAINNET_FACTORY_ADDRESS : process.env.FACTORY_ADDRESS) as Hex | undefined,
+    explorer: net === "testnet" ? (process.env.NEXT_PUBLIC_EXPLORER_URL ?? n.explorer) : n.explorer,
+    accounts: keys,
+    circle,
+    addresses: {
+      agent: circle.agent?.address ?? keys.agent?.address,
+      client: keys.client?.address,
+      seller: circle.seller?.address ?? keys.seller?.address,
+    } as Record<Role, Hex | undefined>,
+  };
+}
+
+const built = new Map<Net, ReturnType<typeof build>>();
+export const chainOf = (net: Net = "testnet") => {
+  if (!built.has(net)) built.set(net, build(net));
+  return built.get(net)!;
 };
 
-export const wallet = (who: keyof typeof accounts) => {
-  const account = accounts[who];
+const test = chainOf("testnet");
+export const USDC: Hex = test.usdc;
+export const FACTORY = test.factory;
+export const EXPLORER = test.explorer;
+export const publicClient = test.publicClient;
+export const accounts = test.accounts;
+export const addresses = test.addresses;
+
+export const wallet = (who: Role, net: Net = "testnet") => {
+  const c = chainOf(net);
+  const account = c.accounts[who];
   if (!account) throw new Error(`${who} key missing`);
-  return createWalletClient({ account, chain: arcTestnet, transport: rpc });
+  return createWalletClient({ account, chain: c.chain, transport: c.rpc });
 };
 
-/** Addresses of the app's roles: a Circle wallet when configured, else the local key. */
-export const addresses = {
-  agent: circleWallets.agent?.address ?? accounts.agent?.address,
-  client: accounts.client?.address,
-  seller: circleWallets.seller?.address ?? accounts.seller?.address,
+export const signerKind = (who: Role, net: Net = "testnet") => (who !== "client" && chainOf(net).circle[who] ? "circle" : chainOf(net).accounts[who] ? "key" : "none");
+
+/** Most a mainnet job may hold in its vault, in USD: real money starts small. */
+export const MAINNET_MAX_JOB_USD = Number(process.env.MAINNET_MAX_JOB_USD ?? 5);
+
+export const liveReady = (net: Net = "testnet") => {
+  const c = chainOf(net);
+  return Boolean(c.factory && c.addresses.agent && c.addresses.client && c.addresses.seller) && setupProblems(net).length === 0;
 };
 
-export const signerKind = (who: keyof typeof accounts) => (who !== "client" && circleWallets[who] ? "circle" : accounts[who] ? "key" : "none");
-
-export const liveReady = () => Boolean(FACTORY && addresses.agent && addresses.client && addresses.seller) && setupProblems().length === 0;
-
-/** Plain-language list of what stops Arc testnet mode or the AI from working on this machine. */
-export function setupProblems(): string[] {
+/** Plain-language list of what stops live payments on a network (or the AI) from working on this machine. */
+export function setupProblems(net: Net = "testnet"): string[] {
+  if (net === "mainnet") {
+    const c = chainOf("mainnet");
+    const out: string[] = [];
+    if (!c.factory) out.push("MAINNET_FACTORY_ADDRESS is not set: deploy the vault factory to Arc mainnet (npm run deploy:mainnet)");
+    if (!c.addresses.client) out.push("No mainnet payer wallet: set MAINNET_CLIENT_PRIVATE_KEY (or pay from your passkey wallet)");
+    if (!c.addresses.agent) out.push("No mainnet agent wallet: set MAINNET_AGENT_PRIVATE_KEY");
+    if (!c.addresses.seller) out.push("No mainnet seller wallet: set MAINNET_SELLER_PRIVATE_KEY");
+    return out;
+  }
   const out: string[] = [];
   // Behind an injecting proxy (cloud sessions) a placeholder key is fine; on a laptop it isn't.
   const placeholder = (v?: string) => !process.env.HTTPS_PROXY && (!v || /proxy|injected/i.test(v));
@@ -116,17 +167,20 @@ function serialized<T>(who: string, job: () => Promise<T>): Promise<T> {
 
 /** Sends a tx and returns hash + fee (18-decimal native USDC) once mined. */
 export function send(
-  who: keyof typeof accounts,
+  who: Role,
   req: { address: Hex; abi: readonly unknown[]; functionName: string; args: readonly unknown[] },
+  net: Net = "testnet",
 ) {
-  return serialized(who, () => sendNow(who, req));
+  return serialized(`${net}:${who}`, () => sendNow(who, req, net));
 }
 
 async function sendNow(
-  who: keyof typeof accounts,
+  who: Role,
   req: { address: Hex; abi: readonly unknown[]; functionName: string; args: readonly unknown[] },
+  net: Net,
 ) {
-  const cw = who !== "client" ? circleWallets[who] : undefined;
+  const { publicClient, circle } = chainOf(net);
+  const cw = who !== "client" ? circle[who] : undefined;
   if (cw) {
     // Simulate first so reverts surface with decoded errors, then let Circle sign and send.
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -138,7 +192,7 @@ async function sendNow(
     if (receipt.status !== "success") throw new Error(`tx reverted ${hash}`);
     return { hash, fee: (receipt.gasUsed * receipt.effectiveGasPrice).toString(), receipt };
   }
-  const w = wallet(who);
+  const w = wallet(who, net);
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const { request } = await publicClient.simulateContract({ ...(req as any), account: w.account });
   const hash = await w.writeContract(request);

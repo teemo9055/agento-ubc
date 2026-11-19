@@ -84,7 +84,7 @@ describe("admin decisions", () => {
     const r = await sendFromApp(ask, { live: true, pay: async () => "0xdeposit" });
     if (!r.ok) throw new Error(r.reason);
     expect(await act({ action: "refund", itemId: r.item.id }, "Ana", { pay })).toMatchObject({ ok: true });
-    expect(pay).toHaveBeenCalledWith(expect.any(String), 1_000_000n);
+    expect(pay).toHaveBeenCalledWith(expect.any(String), 1_000_000n, "testnet"); // paid back on the network it came in on
     expect(findSale({ id: r.item.deposit.saleId! })?.refundTx).toBe("0xrefund");
     expect(getItem(r.item.id)).toMatchObject({ deposit: { state: "refunded", refundTx: "0xrefund" } });
     expect(statusOf(getItem(r.item.id)!)).toBe("refunded");

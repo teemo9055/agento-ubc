@@ -1,6 +1,7 @@
 import { decodeEventLog, toHex, type Hex } from "viem";
 import { randomBytes } from "node:crypto";
-import { FACTORY, USDC, accounts, addresses, factoryAbi, publicClient, send, usdcAbi, vaultAbi } from "../chain";
+import { chainOf, factoryAbi, send as sendOn, usdcAbi, vaultAbi } from "../chain";
+import { NETWORKS } from "@/lib/networks";
 import { lineProof, lineTuple, planTree } from "../merkle";
 import { decodeHeader, encodeHeader, type PaymentPayload, type PaymentRequirements } from "../x402";
 import type { PaymentAdapter, X402Request } from "./index";
@@ -28,10 +29,17 @@ const vaultOf = (run: { vault?: Hex }) => {
   return run.vault;
 };
 
+/** The chain a job's money is on, with its contracts and roles. Every call below goes through it. */
+const on = (run: { network?: import("@/lib/networks").Net }) => {
+  const c = chainOf(run.network);
+  return { ...c, USDC: c.usdc, FACTORY: c.factory, send: (who: "agent" | "client" | "seller", req: Parameters<typeof sendOn>[1]) => sendOn(who, req, c.net) };
+};
+
 export const arcAdapter: PaymentAdapter = {
   live: true,
 
   async open(run, planHash) {
+    const { FACTORY, USDC, accounts, addresses, publicClient, send } = on(run);
     if (!FACTORY || !accounts.client || !addresses.agent) throw new Error("live mode is not configured");
     const cap = BigInt(run.cap);
     const root = planTree(run.lines).root as Hex;
@@ -58,6 +66,7 @@ export const arcAdapter: PaymentAdapter = {
   },
 
   async setLine(run, line, planHash) {
+    const { send } = on(run);
     const tx = await send("client", {
       address: vaultOf(run),
       abi: vaultAbi,
@@ -68,6 +77,7 @@ export const arcAdapter: PaymentAdapter = {
   },
 
   async topUp(run, amount) {
+    const { USDC, send } = on(run);
     const vault = vaultOf(run);
     await send("client", { address: USDC, abi: usdcAbi, functionName: "approve", args: [vault, amount] });
     return (await send("client", { address: vault, abi: vaultAbi, functionName: "topUp", args: [amount] })).hash;
@@ -82,10 +92,15 @@ export const arcAdapter: PaymentAdapter = {
     }
     if (res.status !== 402) throw new PaymentError("seller_402_timeout", `Seller answered ${res.status} instead of a price`);
     const body = (await res.json()) as { accepts: PaymentRequirements[] };
-    return body.accepts[0];
+    // The seller lists every network it settles on; take the one this job's money is on.
+    const want = NETWORKS[req.net ?? "testnet"].caip;
+    const match = body.accepts.find((a) => a.network === want);
+    if (!match) throw new PaymentError("payment_rejected", `Seller doesn't take payment on ${NETWORKS[req.net ?? "testnet"].name}`);
+    return match;
   },
 
   async payX402(run, line, req, quote, onState) {
+    const { USDC, publicClient, send } = on(run);
     const vault = vaultOf(run);
     const value = BigInt(quote.maxAmountRequired);
     const bal = await publicClient.readContract({ address: USDC, abi: usdcAbi, functionName: "balanceOf", args: [vault] });
@@ -150,6 +165,7 @@ export const arcAdapter: PaymentAdapter = {
   },
 
   async payDirect(run, line, amount, ref, onState) {
+    const { send } = on(run);
     onState("signing");
     const tx = await send("agent", { address: vaultOf(run), abi: vaultAbi, functionName: "pay", args: [lineTuple(line), lineProof(run.lines, line).proof, amount, ref] });
     onState("pending");
@@ -170,6 +186,7 @@ export const arcAdapter: PaymentAdapter = {
   },
 
   async close(run) {
+    const { send } = on(run);
     const tx = await send("agent", { address: vaultOf(run), abi: vaultAbi, functionName: "close", args: [] });
     let refunded = 0n;
     for (const log of tx.receipt.logs) {

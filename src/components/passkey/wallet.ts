@@ -2,7 +2,8 @@
 import { toCircleSmartAccount, toModularTransport, toPasskeyTransport, toWebAuthnCredential, WebAuthnMode } from "@circle-fin/modular-wallets-core";
 import { createPublicClient, encodeFunctionData, parseAbi, type Hex, type Transport } from "viem";
 import { createBundlerClient, toWebAuthnAccount } from "viem/account-abstraction";
-import { arcTestnet } from "viem/chains";
+import { arc, arcTestnet } from "viem/chains";
+import type { Net } from "@/lib/networks";
 
 /**
  * The user's own wallet: a Circle modular smart account owned by a passkey
@@ -36,15 +37,17 @@ function emitChange() {
 }
 
 // Circle pins its own viem version; the transport is shared across both at runtime.
-const modular = () => toModularTransport(`${CLIENT_URL}/arcTestnet`, CLIENT_KEY) as unknown as Transport;
+// The same passkey owns a smart account on each Arc network; which one signs follows the job.
+const chainFor = (net: Net) => (net === "mainnet" ? arc : arcTestnet);
+const modular = (net: Net = "testnet") => toModularTransport(`${CLIENT_URL}/${net === "mainnet" ? "arc" : "arcTestnet"}`, CLIENT_KEY) as unknown as Transport;
 
-async function smartAccount(credential: { id: string; publicKey: Hex }) {
-  const transport = modular();
-  const client = createPublicClient({ chain: arcTestnet, transport });
+async function smartAccount(credential: { id: string; publicKey: Hex }, net: Net = "testnet") {
+  const transport = modular(net);
+  const client = createPublicClient({ chain: chainFor(net), transport });
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const account = await toCircleSmartAccount({ client: client as any, owner: toWebAuthnAccount({ credential: credential as any }) as any });
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  const bundler = createBundlerClient({ account: account as any, chain: arcTestnet, transport });
+  const bundler = createBundlerClient({ account: account as any, chain: chainFor(net), transport });
   return { account, bundler };
 }
 
@@ -86,10 +89,12 @@ export interface Call {
 }
 
 /** Sends one batched user operation; the passkey prompt appears here. Returns the onchain tx hash. */
-export async function sendCalls(calls: Call[]): Promise<Hex> {
+export async function sendCalls(calls: Call[], net: Net = "testnet"): Promise<Hex> {
   const saved = savedWallet();
   if (!saved) throw new Error("Create or sign in to your passkey wallet first");
-  const { bundler } = await smartAccount(saved);
+  const { bundler, account } = await smartAccount(saved, net);
+  // The vault was opened for the address the job was created with; never sign from a different one.
+  if (account.address.toLowerCase() !== saved.address.toLowerCase()) throw new Error(`Your passkey wallet has a different address on ${net === "mainnet" ? "Arc mainnet" : "Arc testnet"}; this job can't be funded from it`);
   const hash = await bundler.sendUserOperation({ calls, paymaster: true });
   const { receipt } = await bundler.waitForUserOperationReceipt({ hash });
   return receipt.transactionHash;
@@ -120,7 +125,7 @@ export function changePlanCalls(p: { usdc: Hex; vault: Hex; planRoot: Hex; topUp
   return [...(top > 0n ? topUpCalls(p.usdc, p.vault, top) : []), { to: p.vault, data: encodeFunctionData({ abi: vaultAbi, functionName: "setPlan", args: [p.planRoot] }) }];
 }
 
-export async function usdcBalance(address: Hex, usdc: Hex = "0x3600000000000000000000000000000000000000") {
-  const client = createPublicClient({ chain: arcTestnet, transport: modular() });
+export async function usdcBalance(address: Hex, usdc: Hex = "0x3600000000000000000000000000000000000000", net: Net = "testnet") {
+  const client = createPublicClient({ chain: chainFor(net), transport: modular(net) });
   return client.readContract({ address: usdc, abi: usdcAbi, functionName: "balanceOf", args: [address] });
 }

@@ -7,6 +7,8 @@
     "start": "next start",
     "test": "vitest run",
     "test:contracts": "cd contracts && forge test",
+    "deploy:testnet": "scripts/deploy.sh testnet",
+    "deploy:mainnet": "scripts/deploy.sh mainnet",
     "typecheck": "tsc --noEmit",
     "test:e2e": "playwright test --trace off",
     "test:e2e:live": "MARKET_DATA=live playwright test --trace off",

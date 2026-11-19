@@ -1,4 +1,5 @@
 import { fmt, fmtFee, sum } from "./money";
+import { NETWORKS } from "./networks";
 import { THEMES } from "./themes";
 import { paidInUsdc, type Decision, type Hex, type Run } from "./types";
 import { orderDigest, orderRecord } from "./order-record";
@@ -26,7 +27,7 @@ export interface Receipt {
   task: string;
   client: { wallet: Hex };
   agent: { name: string; wallet: Hex };
-  chain: { name: "Arc Testnet"; chainId: 5042002; asset: "USDC" };
+  chain: { name: string; chainId: number; asset: "USDC" };
   deliverable: { summary: string; method: string };
   planHash?: Hex;
   vault?: Hex;
@@ -78,7 +79,7 @@ export function buildReceipt(run: Run): Receipt {
     task: run.task,
     client: { wallet: run.client },
     agent: { name: THEMES[run.agent].name, wallet: run.agentWallet },
-    chain: { name: "Arc Testnet", chainId: 5042002, asset: "USDC" },
+    chain: { name: NETWORKS[run.network ?? "testnet"].name, chainId: NETWORKS[run.network ?? "testnet"].chainId, asset: "USDC" },
     deliverable: { summary: run.deliverable?.summary ?? "Not delivered", method: run.deliverable?.method ?? "" },
     planHash: run.planHash,
     vault: run.vault,

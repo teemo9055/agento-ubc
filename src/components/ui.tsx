@@ -1,4 +1,5 @@
 "use client";
+import { useNet } from "./NetContext";
 import { useEffect, useRef, useState } from "react";
 import { motion, AnimatePresence, useReducedMotion } from "framer-motion";
 import { fmt } from "@/lib/money";
@@ -84,6 +85,7 @@ export function StatusTag({ status }: { status: PhaseStatus }) {
 const txLabel: Record<TxState, string> = { planned: "Planned", signing: "Signing", pending: "Pending", settled: "Settled", failed: "Failed" };
 
 export function TxChip({ state, hash, simulated }: { state: TxState; hash?: string; simulated?: boolean }) {
+  const net = useNet();
   const cls =
     state === "settled" ? "text-good border-good/40" : state === "failed" ? "text-bad border-bad/40" : state === "planned" ? "text-ink-3 border-line" : "text-accent border-accent/40";
   const body = (
@@ -93,7 +95,7 @@ export function TxChip({ state, hash, simulated }: { state: TxState; hash?: stri
     </span>
   );
   return hash ? (
-    <a href={txUrl(hash)} target="_blank" rel="noreferrer" className="hover:opacity-80">
+    <a href={txUrl(hash, net)} target="_blank" rel="noreferrer" className="hover:opacity-80">
       {body}
     </a>
   ) : (

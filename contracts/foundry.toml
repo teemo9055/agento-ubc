@@ -11,3 +11,4 @@ optimizer_runs = 500
 
 [rpc_endpoints]
 arc_testnet = "${ARC_RPC_URL}"
+arc_mainnet = "${ARC_MAINNET_RPC_URL}"

@@ -29,13 +29,15 @@ import * as gemini from "./gemini";
 import { settle } from "@/lib/settle";
 import { stillTradable, toProposalInput, validateProposal } from "./tools";
 import { ensureGatewayFunds, GatewayFundsError } from "./nanopay";
+import { withNet } from "./netContext";
 import { anchorOrder, canAnchor } from "./anchor";
 import { suggestionsFor } from "./suggest";
 import { recordOrder, recordSettlement } from "./knowledge";
 import { aiEditMove } from "./edit-move";
 import { offVault, paidInUsdc, type ChatMsg, type Plan, type PlanStep, type Proposal } from "@/lib/types";
 import { PhaseFailure, type AgentCtx, type PlanDraft } from "./agents/types";
-import { FACTORY, USDC, addresses, factoryAbi, liveReady, publicClient, vaultAbi } from "./chain";
+import { MAINNET_MAX_JOB_USD, chainOf, factoryAbi, liveReady, setupProblems, vaultAbi } from "./chain";
+import type { Net } from "@/lib/networks";
 import { planTree } from "./merkle";
 import { adapterFor, PaymentError } from "./payments";
 import { SELLERS } from "./sellers";
@@ -217,6 +219,8 @@ type CreateInput = {
   proposal?: Proposal;
   plannedBy?: string;
   payerAddress?: Hex;
+  /** Arc testnet (test USDC) or Arc mainnet (real money). Practice jobs never touch either. */
+  network?: Net;
 };
 
 /**
@@ -226,7 +230,11 @@ type CreateInput = {
 export async function createRun(input: CreateInput, opts: { wait?: boolean; quiet?: boolean } = {}) {
   const agent = AGENTS[input.agent];
   if (!agent) throw new Error("unknown agent");
-  const mode = input.mode === "live" && liveReady() ? "live" : "demo";
+  const network: Net = input.network === "mainnet" ? "mainnet" : "testnet";
+  // Real money is never a silent fallback: a mainnet job that can't pay for real says so instead of turning into practice.
+  if (network === "mainnet" && input.mode === "live" && !liveReady("mainnet")) throw new Error(`Arc mainnet isn't set up on this server yet: ${setupProblems("mainnet")[0] ?? "missing configuration"}`);
+  const mode = input.mode === "live" && liveReady(network) ? "live" : "demo";
+  const net = chainOf(network);
   const run: Run = {
     id: id(),
     agent: input.agent,
@@ -240,8 +248,9 @@ export async function createRun(input: CreateInput, opts: { wait?: boolean; quie
     decisions: [],
     threshold: BigInt(Math.round(limits().bigSpendUsdc * 1e6)).toString(),
     cap: "0",
-    client: (input.payerAddress && mode === "live" ? input.payerAddress : addresses.client) ?? "0x0000000000000000000000000000000000000000",
-    agentWallet: addresses.agent ?? "0x0000000000000000000000000000000000000000",
+    network: mode === "live" ? network : undefined,
+    client: (input.payerAddress && mode === "live" ? input.payerAddress : net.addresses.client) ?? "0x0000000000000000000000000000000000000000",
+    agentWallet: net.addresses.agent ?? "0x0000000000000000000000000000000000000000",
     pendingReapprovals: [],
     pendingFailures: [],
     createdAt: now(),
@@ -308,7 +317,12 @@ export function sendChat(runId: string, text: string): Promise<Run> {
 
 const YES = /^(yes|yep|yeah|yup|ok|okay|sure|do it|set it up|go|go ahead|sounds good|let'?s do it)\b[\s.!]*$/i;
 
-async function agentReply(ctl: Ctl) {
+/** Runs inside the job's network, so lookups and purchases deep below follow it. */
+function agentReply(ctl: Ctl) {
+  return withNet(ctl.run.network, () => agentReplyInNet(ctl));
+}
+
+async function agentReplyInNet(ctl: Ctl) {
   const runId = ctl.run.id;
   const chat = ctl.run.chat ?? [];
   const said = chat[chat.length - 1]?.text ?? "";
@@ -445,7 +459,12 @@ function trackAi(ctl: Ctl, purpose: string, usage: AiUsage) {
 }
 
 /** AI edit first (keeps the model's card copy in sync), rule-based edit as fallback. */
-async function editOptions(ctl: Ctl, card: Card["kind"], prompt: string, step?: string) {
+/** Runs inside the job's network, so lookups and purchases deep below follow it. */
+function editOptions(ctl: Ctl, card: Card["kind"], prompt: string, step?: string) {
+  return withNet(ctl.run.network, () => editOptionsInNet(ctl, card, prompt, step));
+}
+
+async function editOptionsInNet(ctl: Ctl, card: Card["kind"], prompt: string, step?: string) {
   const current = ctl.options.proposal as Proposal | undefined;
   if (current && aiEnabled()) {
     const ai = await aiEditMove(ctl.run.agent, current, prompt, step).catch((e) => (console.warn("ai edit", (e as Error).message), null));
@@ -471,10 +490,12 @@ function compact(v: unknown, depth = 0): unknown {
 export function fundingInfo(runId: string) {
   const ctl = ctlOf(runId);
   if (ctl.run.payer !== "passkey") throw new Error("this job is funded by the server wallet");
+  const net = chainOf(ctl.run.network);
   return {
-    factory: FACTORY,
-    usdc: USDC,
-    agent: addresses.agent,
+    network: ctl.run.network ?? "testnet",
+    factory: net.factory,
+    usdc: net.usdc,
+    agent: net.addresses.agent,
     planRoot: planTree(ctl.run.lines).root as Hex,
     orderId: planHash(ctl.run),
     cap: ctl.run.cap,
@@ -484,6 +505,7 @@ export function fundingInfo(runId: string) {
 
 /** Confirms onchain that the user's wallet opened the right vault for this plan. */
 async function verifyUserFunding(run: Run, orderId: Hex) {
+  const { factory: FACTORY, publicClient, addresses } = chainOf(run.network);
   if (!FACTORY) throw new Error("live mode is not configured");
   const vault = await publicClient.readContract({ address: FACTORY, abi: factoryAbi, functionName: "vaultFor", args: [run.client, orderId] });
   const read = (functionName: "payer" | "agent" | "planRoot" | "funded" | "closed") =>
@@ -516,6 +538,8 @@ export async function approve(runId: string, signed?: { txHash?: Hex }) {
   }
   const noVault = BigInt(ctl.run.cap) === 0n;
   const jobMax = BigInt(Math.round(limits().maxJobUsdc * 1e6));
+  if (ctl.run.network === "mainnet" && Number(ctl.run.cap) / 1e6 > MAINNET_MAX_JOB_USD + 1e-9)
+    throw new Error(`This job would hold ${fmt(ctl.run.cap)} USDC of real money, over the $${MAINNET_MAX_JOB_USD} limit for a mainnet job on this server. Make it smaller.`);
   if (BigInt(ctl.run.cap) > jobMax) throw new Error(`This job would hold ${fmt(ctl.run.cap)} USDC, over your ${limits().maxJobUsdc} USDC per-job limit. Trim the paid lookups or raise the limit in Settings.`);
   // Limits can change after a move was checked: the order is held to today's limit, not the one it was built under.
   const order = ctl.run.proposal?.action ? maxCost(ctl.run.proposal.action) : 0;
@@ -577,7 +601,12 @@ async function execute(ctl: Ctl) {
   }
 }
 
-async function executeNow(ctl: Ctl) {
+/** Runs inside the job's network, so lookups and purchases deep below follow it. */
+function executeNow(ctl: Ctl) {
+  return withNet(ctl.run.network, () => executeNowInNet(ctl));
+}
+
+async function executeNowInNet(ctl: Ctl) {
   const running = new Map<string, Promise<void>>();
   const terminal = (p: Phase) => p.status === "done" || p.status === "skipped";
   try {
@@ -675,7 +704,7 @@ async function runPhase(ctl: Ctl, phaseId: string): Promise<void> {
       if (action === "topup") {
         if (ctl.run.payer === "passkey" && ctl.run.mode === "live") {
           // The user's wallet signed the top-up; read the new balance from the vault.
-          ctl.funded = BigInt(await publicClient.readContract({ address: ctl.run.vault!, abi: vaultAbi, functionName: "funded" }));
+          ctl.funded = BigInt(await chainOf(ctl.run.network).publicClient.readContract({ address: ctl.run.vault!, abi: vaultAbi, functionName: "funded" }));
         } else {
           const amount = BigInt(ctl.run.cap) / 2n || 1_000_000n;
           await adapterFor(ctl.run).topUp(ctl.run, amount);
@@ -726,7 +755,7 @@ async function buy<T>(ctl: Ctl, phaseId: string, lineId: string, product: string
   const adapter = adapterFor(ctl.run);
   const sellerId = "primary" as const;
   const fault = takeFault(ctl, phaseId);
-  const req = { product, params, seller: sellerId, fault: fault === "approval_timeout" ? "price_increase" : fault };
+  const req = { product, params, seller: sellerId, fault: fault === "approval_timeout" ? "price_increase" : fault, net: ctl.run.network };
 
   const quote = await adapter.quote(req);
   const amount = BigInt(quote.maxAmountRequired);
@@ -938,6 +967,7 @@ async function requestReapproval(
     // The user's wallet already signed setPlan (and any top-up); confirm it onchain.
     tx = ctl.signedTx.get(request.id);
     ctl.signedTx.delete(request.id);
+    const { publicClient } = chainOf(ctl.run.network);
     const onchain = await publicClient.readContract({ address: ctl.run.vault!, abi: vaultAbi, functionName: "planRoot" });
     if (onchain !== change.root) throw new PhaseFailure("policy_block", "The plan change wasn't found onchain, so nothing extra was spent");
     ctl.funded = BigInt(await publicClient.readContract({ address: ctl.run.vault!, abi: vaultAbi, functionName: "funded" }));
@@ -1013,7 +1043,7 @@ function planChange(ctl: Ctl, requestId: string, override?: bigint) {
 export function reapprovalPlan(runId: string, requestId: string, amount?: string) {
   const ctl = ctlOf(runId);
   const c = planChange(ctl, requestId, amount ? BigInt(amount) : undefined);
-  return { vault: ctl.run.vault, usdc: USDC, planRoot: c.root, topUp: c.shortfall.toString(), approvedAmount: c.approvedAmount.toString() };
+  return { network: ctl.run.network ?? "testnet", vault: ctl.run.vault, usdc: chainOf(ctl.run.network).usdc, planRoot: c.root, topUp: c.shortfall.toString(), approvedAmount: c.approvedAmount.toString() };
 }
 
 function waitFor(ctl: Ctl, key: string): Promise<string> {
@@ -1138,6 +1168,7 @@ async function resume(ctl: Ctl) {
 /** A job cut off while its vault was being funded: carry on if the vault exists onchain, otherwise back to draft. */
 async function resumeFunding(ctl: Ctl) {
   const hash = planHash(ctl.run);
+  const { factory: FACTORY, publicClient } = chainOf(ctl.run.network);
   if (ctl.run.mode === "live" && FACTORY) {
     const vault = await publicClient.readContract({ address: FACTORY, abi: factoryAbi, functionName: "vaultFor", args: [ctl.run.client, hash] });
     const funded = vault && vault !== "0x0000000000000000000000000000000000000000" ? BigInt(await publicClient.readContract({ address: vault, abi: vaultAbi, functionName: "funded" }).catch(() => 0n)) : 0n;
@@ -1476,7 +1507,7 @@ async function advanceNow(parentId: string) {
           rebuilt = "Built from what the earlier steps found";
         } else rebuilt = built && "proposal" in built ? "Kept as first planned: the version built from the findings would cost more than you approved" : "Kept as first planned";
       }
-      const child = await createRun({ agent: s.agent, task: proposal.title, mode: ctl.run.mode, proposal, plannedBy: `plan in job ${parentId}` } as CreateInput);
+      const child = await createRun({ agent: s.agent, task: proposal.title, mode: ctl.run.mode, network: ctl.run.network, proposal, plannedBy: `plan in job ${parentId}` } as CreateInput);
       const cc = ctlOf(child.id);
       // The agents before this one pass along what they did, so this step starts with the full picture.
       const handoff = [rebuilt, ...deps.map((d) => `${AGENTS[d.agent].name}: ${d.proposal.title} → ${d.note ?? "done"}`), budget != null ? `Budget for this step: $${budget.toFixed(2)}, what that brought in` : ""].filter(Boolean).join(" · ");

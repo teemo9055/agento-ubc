@@ -1,5 +1,6 @@
 import type { Hex } from "viem";
-import { addresses, send, USDC, usdcAbi } from "./chain";
+import { chainOf, send, usdcAbi } from "./chain";
+import type { Net } from "@/lib/networks";
 import { answerHash, checkDelivery, type DeliveryVerdict } from "./delivery";
 import { finishRefund, findSale, isPractice, lockRefund, type Sale } from "./sales";
 import { PRODUCTS, REFUND_WINDOW_MIN } from "./x402";
@@ -13,7 +14,7 @@ export type ClaimResult =
  * by opinion: the answer must be the one it sent (same fingerprint) and must fail one of the
  * published checks. Then the full price goes back to the address that paid, once.
  */
-export async function claimRefund(c: { tx: string; payer: string; answer: unknown }, opts: { now?: number; pay?: (to: Hex, amount: bigint) => Promise<string | undefined> } = {}): Promise<ClaimResult> {
+export async function claimRefund(c: { tx: string; payer: string; answer: unknown }, opts: { now?: number; pay?: (to: Hex, amount: bigint, net: Net) => Promise<string | undefined> } = {}): Promise<ClaimResult> {
   const sale = findSale({ tx: c.tx });
   if (!sale) return { ok: false, status: 404, reason: "No sale with that transaction" };
   if (sale.payer.toLowerCase() !== c.payer.toLowerCase()) return { ok: false, status: 403, reason: "Only the address that paid can claim" };
@@ -26,7 +27,7 @@ export async function claimRefund(c: { tx: string; payer: string; answer: unknow
   if (verdict.ok) return { ok: false, status: 422, reason: "The answer passes every published check, so it stays paid" };
   if (!lockRefund(sale.id)) return { ok: false, status: 409, reason: "This sale was already refunded" };
   try {
-    const refundTx = await (opts.pay ?? payBack)(sale.payer as Hex, BigInt(sale.amount));
+    const refundTx = await (opts.pay ?? payBack)(sale.payer as Hex, BigInt(sale.amount), sale.network ?? "testnet");
     finishRefund(sale.id, { tx: refundTx });
     return { ok: true, amount: sale.amount, refundTx, verdict };
   } catch (e) {
@@ -42,7 +43,7 @@ export type AdminRefund = { ok: true; amount: string; refundTx?: string; practic
  * evidence: no delivery check, but the same once-only lock and the same transfer from the seller's
  * wallet back to the payer. A practice sale is marked refunded with no transfer.
  */
-export async function refundSale(saleId: string, reason: string, opts: { pay?: (to: Hex, amount: bigint) => Promise<string | undefined> } = {}): Promise<AdminRefund> {
+export async function refundSale(saleId: string, reason: string, opts: { pay?: (to: Hex, amount: bigint, net: Net) => Promise<string | undefined> } = {}): Promise<AdminRefund> {
   const sale = findSale({ id: saleId });
   if (!sale) return { ok: false, status: 404, reason: "No sale with that id" };
   if (sale.refunded || !lockRefund(sale.id)) return { ok: false, status: 409, reason: "This sale was already refunded" };
@@ -51,7 +52,7 @@ export async function refundSale(saleId: string, reason: string, opts: { pay?: (
     return { ok: true, amount: sale.amount, practice: true, reason };
   }
   try {
-    const refundTx = await (opts.pay ?? payBack)(sale.payer as Hex, BigInt(sale.amount));
+    const refundTx = await (opts.pay ?? payBack)(sale.payer as Hex, BigInt(sale.amount), sale.network ?? "testnet");
     finishRefund(sale.id, { tx: refundTx });
     return { ok: true, amount: sale.amount, refundTx, practice: false, reason };
   } catch (e) {
@@ -61,9 +62,11 @@ export async function refundSale(saleId: string, reason: string, opts: { pay?: (
 }
 
 /** Sends USDC from the seller's wallet back to the payer on Arc. */
-async function payBack(to: Hex, amount: bigint): Promise<string | undefined> {
+async function payBack(to: Hex, amount: bigint, net: Net): Promise<string | undefined> {
+  const { addresses, usdc } = chainOf(net);
   if (!addresses.seller) throw new Error("seller wallet missing");
-  return (await send("seller", { address: USDC, abi: usdcAbi, functionName: "transfer", args: [to, amount] })).hash;
+  // Back on the same network it was paid on.
+  return (await send("seller", { address: usdc, abi: usdcAbi, functionName: "transfer", args: [to, amount] }, net)).hash;
 }
 
 /** The answer a payer already paid for, sent again for free (for when it was lost on the way). */

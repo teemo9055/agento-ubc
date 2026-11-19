@@ -2,7 +2,9 @@ import { BatchEvmScheme, CHAIN_CONFIGS } from "@circle-fin/x402-batching/client"
 import { MaybeChargedError } from "./delivery";
 import { encodeFunctionData, parseAbi, type Hex } from "viem";
 import { circleExecute, circleSignTypedData, circleWallets } from "./circle";
-import { USDC, publicClient, usdcAbi } from "./chain";
+import { chainOf, send, usdcAbi } from "./chain";
+import { currentNet } from "./netContext";
+import { NETWORKS, type Net } from "@/lib/networks";
 import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import path from "node:path";
 
@@ -12,10 +14,12 @@ import path from "node:path";
  * EIP-3009 authorization per request; Gateway batches them into a single onchain settlement.
  * Follows developers.circle.com/gateway-nanopayments/quickstarts/buyer.
  */
-const chain = CHAIN_CONFIGS.arcTestnet;
-const GATEWAY_API = process.env.GATEWAY_API_URL ?? "https://gateway-api-testnet.circle.com";
+// Per network: Gateway's chain config, its API, and the network id sellers quote. Testnet signs with
+// the Circle agent wallet; mainnet signs with the mainnet agent key (Circle wallets here are testnet ones).
+const CONF = { testnet: CHAIN_CONFIGS.arcTestnet, mainnet: CHAIN_CONFIGS.arc };
+const gatewayApi = (net: Net) => (net === "testnet" ? (process.env.GATEWAY_API_URL ?? NETWORKS.testnet.gateway.api) : NETWORKS.mainnet.gateway.api);
 const ARC_DOMAIN = 26;
-const ARC_NETWORK = `eip155:${chain.chain.id}`;
+const arcNetwork = (net: Net) => NETWORKS[net].caip;
 /** Most the agent will pay for one marketplace request, in USDC base units. */
 const MAX_PER_REQUEST = BigInt(process.env.MARKETPLACE_MAX_PER_REQUEST ?? 10_000); // 0.01 USDC
 
@@ -29,14 +33,21 @@ export interface PaidResponse<T> {
   at: string;
 }
 
-function agentWallet() {
-  const w = circleWallets.agent;
-  if (!w) throw new Error("Marketplace purchases need the Circle agent wallet");
-  return w;
+/** The agent that pays marketplace sellers on a network: a Circle wallet on testnet, the mainnet key on mainnet. */
+function agentWallet(net: Net = currentNet()): { address: Hex; id?: string } {
+  if (net === "testnet") {
+    const w = circleWallets.agent;
+    if (!w) throw new Error("Marketplace purchases need the Circle agent wallet");
+    return w;
+  }
+  const a = chainOf("mainnet").accounts.agent;
+  if (!a) throw new Error("Marketplace purchases on Arc mainnet need MAINNET_AGENT_PRIVATE_KEY");
+  return { address: a.address };
 }
 
-export async function gatewayBalance(depositor: Hex = agentWallet().address): Promise<number> {
-  const r = await fetch(`${GATEWAY_API}/v1/balances`, {
+export async function gatewayBalance(depositor?: Hex, net: Net = currentNet()): Promise<number> {
+  depositor ??= agentWallet(net).address;
+  const r = await fetch(`${gatewayApi(net)}/v1/balances`, {
     method: "POST",
     headers: { "content-type": "application/json" },
     body: JSON.stringify({ token: "USDC", sources: [{ domain: ARC_DOMAIN, depositor }] }),
@@ -51,25 +62,35 @@ const erc20 = parseAbi(["function approve(address,uint256) returns (bool)"]);
 const gatewayAbi = parseAbi(["function deposit(address token, uint256 value)"]);
 
 /** Tops up the agent's Gateway balance from its Arc wallet: approve + deposit, two onchain transactions. */
-export async function depositToGateway(usdc: number): Promise<{ approveTx: Hex; depositTx: Hex }> {
-  const w = agentWallet();
+export async function depositToGateway(usdc: number, net: Net = currentNet()): Promise<{ approveTx: Hex; depositTx: Hex }> {
+  const w = agentWallet(net);
   const value = BigInt(Math.round(usdc * 1e6));
-  const approveTx = await circleExecute(w.id, USDC, encodeFunctionData({ abi: erc20, functionName: "approve", args: [chain.gatewayWallet as Hex, value] }));
-  const depositTx = await circleExecute(w.id, chain.gatewayWallet as Hex, encodeFunctionData({ abi: gatewayAbi, functionName: "deposit", args: [USDC, value] }));
+  const USDC = chainOf(net).usdc;
+  const gw = CONF[net].gatewayWallet as Hex;
+  if (w.id) {
+    const approveTx = await circleExecute(w.id, USDC, encodeFunctionData({ abi: erc20, functionName: "approve", args: [gw, value] }));
+    const depositTx = await circleExecute(w.id, gw, encodeFunctionData({ abi: gatewayAbi, functionName: "deposit", args: [USDC, value] }));
+    return { approveTx, depositTx };
+  }
+  const approveTx = (await send("agent", { address: USDC, abi: erc20, functionName: "approve", args: [gw, value] }, net)).hash;
+  const depositTx = (await send("agent", { address: gw, abi: gatewayAbi, functionName: "deposit", args: [USDC, value] }, net)).hash;
   return { approveTx, depositTx };
 }
 
 // ---------- automatic top-ups, with a daily cap ----------
 
 const MIN_BALANCE = () => Number(process.env.GATEWAY_MIN_BALANCE ?? 0.05);
-const TOP_UP = () => Number(process.env.GATEWAY_TOPUP ?? 1);
+// Real money moves in smaller steps: a mainnet top-up and daily cap default lower.
+const TOP_UP = (net: Net = currentNet()) => Number(net === "mainnet" ? (process.env.GATEWAY_TOPUP_MAINNET ?? 0.5) : (process.env.GATEWAY_TOPUP ?? 1));
 /** Most the agent may move into Gateway on its own in 24 hours. */
-const DAILY_CAP = () => Number(process.env.GATEWAY_DAILY_CAP ?? 3);
+const DAILY_CAP = (net: Net = currentNet()) => Number(net === "mainnet" ? (process.env.GATEWAY_DAILY_CAP_MAINNET ?? 2) : (process.env.GATEWAY_DAILY_CAP ?? 3));
 
 interface Deposit {
   at: number;
   usdc: number;
   tx: string;
+  /** Missing on older entries, which were all testnet. */
+  net?: Net;
 }
 const ledgerFile = () => path.join(process.env.DATA_DIR ?? path.join(process.cwd(), ".data"), "gateway-deposits.json");
 let ledger: Deposit[] | undefined;
@@ -86,7 +107,7 @@ function logDeposit(d: Deposit) {
   mkdirSync(path.dirname(ledgerFile()), { recursive: true });
   writeFileSync(ledgerFile(), JSON.stringify(ledger));
 }
-export const depositedToday = () => deposits().filter((d) => d.at > Date.now() - 86_400_000).reduce((s, d) => s + d.usdc, 0);
+export const depositedToday = (net: Net = currentNet()) => deposits().filter((d) => (d.net ?? "testnet") === net && d.at > Date.now() - 86_400_000).reduce((s, d) => s + d.usdc, 0);
 
 export class GatewayFundsError extends Error {}
 
@@ -99,55 +120,69 @@ export interface GatewayStatus {
   warning?: string;
 }
 
-async function walletUsdc(address: Hex) {
-  const raw = (await publicClient.readContract({ address: USDC, abi: usdcAbi, functionName: "balanceOf", args: [address] })) as bigint;
+async function walletUsdc(address: Hex, net: Net = currentNet()) {
+  const { publicClient, usdc } = chainOf(net);
+  const raw = (await publicClient.readContract({ address: usdc, abi: usdcAbi, functionName: "balanceOf", args: [address] })) as bigint;
   return Number(raw) / 1e6;
 }
 
-export async function gatewayStatus(): Promise<GatewayStatus> {
-  const w = agentWallet();
-  const [balance, wallet] = await Promise.all([gatewayBalance(w.address).catch(() => 0), walletUsdc(w.address).catch(() => 0)]);
-  const today = depositedToday();
-  const s: GatewayStatus = { balance, wallet, depositedToday: today, dailyCap: DAILY_CAP() };
+export async function gatewayStatus(net: Net = currentNet()): Promise<GatewayStatus> {
+  const w = agentWallet(net);
+  const [balance, wallet] = await Promise.all([gatewayBalance(w.address, net).catch(() => 0), walletUsdc(w.address, net).catch(() => 0)]);
+  const today = depositedToday(net);
+  const s: GatewayStatus = { balance, wallet, depositedToday: today, dailyCap: DAILY_CAP(net) };
   if (balance < MIN_BALANCE()) {
-    if (wallet < TOP_UP()) s.warning = `Marketplace purchases are low on funds: Gateway holds ${balance.toFixed(4)} USDC and the agent wallet ${wallet.toFixed(2)}. Send USDC on Arc testnet to ${w.address}.`;
-    else if (today + TOP_UP() > DAILY_CAP()) s.warning = `The agent hit its ${DAILY_CAP()} USDC daily top-up limit; marketplace purchases resume tomorrow or when GATEWAY_DAILY_CAP is raised.`;
+    if (wallet < TOP_UP(net)) s.warning = `Marketplace purchases are low on funds: Gateway holds ${balance.toFixed(4)} USDC and the agent wallet ${wallet.toFixed(2)}. Send USDC on ${NETWORKS[net].name} to ${w.address}.`;
+    else if (today + TOP_UP(net) > DAILY_CAP(net)) s.warning = `The agent hit its ${DAILY_CAP(net)} USDC daily top-up limit on ${NETWORKS[net].name}; marketplace purchases resume tomorrow or when the cap is raised.`;
   }
   return s;
 }
 
-let topping: Promise<void> | undefined;
+const topping = new Map<Net, Promise<void>>();
 /**
  * Keeps a little USDC in Gateway for nanopayments. One top-up at a time, never past the daily cap,
  * and a clear error instead of a silent stall when the wallet is empty or the deposit isn't credited.
  */
-export function ensureGatewayFunds(): Promise<void> {
-  topping ??= (async () => {
-    const w = agentWallet();
+export function ensureGatewayFunds(net: Net = currentNet()): Promise<void> {
+  const running = topping.get(net);
+  if (running) return running;
+  const job = (async () => {
+    const w = agentWallet(net);
     const min = MIN_BALANCE();
-    if ((await gatewayBalance(w.address).catch(() => 0)) >= min) return;
-    const amount = TOP_UP();
-    if (depositedToday() + amount > DAILY_CAP()) throw new GatewayFundsError(`Daily top-up limit reached (${DAILY_CAP()} USDC). Raise GATEWAY_DAILY_CAP or try tomorrow.`);
-    const have = await walletUsdc(w.address).catch(() => Infinity);
-    if (have < amount) throw new GatewayFundsError(`The agent wallet has ${have.toFixed(2)} USDC, not enough to top up Gateway by ${amount}. Send USDC on Arc testnet to ${w.address}.`);
-    const { depositTx } = await depositToGateway(amount);
-    logDeposit({ at: Date.now(), usdc: amount, tx: depositTx });
+    if ((await gatewayBalance(w.address, net).catch(() => 0)) >= min) return;
+    const amount = TOP_UP(net);
+    if (depositedToday(net) + amount > DAILY_CAP(net)) throw new GatewayFundsError(`Daily top-up limit reached on ${NETWORKS[net].name} (${DAILY_CAP(net)} USDC). Raise the cap or try tomorrow.`);
+    const have = await walletUsdc(w.address, net).catch(() => Infinity);
+    if (have < amount) throw new GatewayFundsError(`The agent wallet has ${have.toFixed(2)} USDC, not enough to top up Gateway by ${amount}. Send USDC on ${NETWORKS[net].name} to ${w.address}.`);
+    const { depositTx } = await depositToGateway(amount, net);
+    logDeposit({ at: Date.now(), usdc: amount, tx: depositTx, net });
     for (let i = 0; i < 40; i++) {
-      if ((await gatewayBalance(w.address).catch(() => 0)) >= min) return;
+      if ((await gatewayBalance(w.address, net).catch(() => 0)) >= min) return;
       await new Promise((r) => setTimeout(r, 3000));
     }
     throw new GatewayFundsError(`Deposited ${amount} USDC (tx ${depositTx.slice(0, 10)}…) but Gateway hasn't credited it yet. Retry in a minute; it won't deposit again.`);
-  })().finally(() => (topping = undefined));
-  return topping;
+  })().finally(() => topping.delete(net));
+  topping.set(net, job);
+  return job;
 }
 
-let scheme: BatchEvmScheme | null = null;
-function batchScheme() {
-  const w = agentWallet();
-  scheme ??= new BatchEvmScheme({
+const schemes = new Map<Net, BatchEvmScheme>();
+function batchScheme(net: Net = currentNet()) {
+  const have = schemes.get(net);
+  if (have) return have;
+  const w = agentWallet(net);
+  if (!w.id) {
+    // Mainnet: the agent's own key signs the authorization locally.
+    const account = chainOf("mainnet").accounts.agent!;
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const s = new BatchEvmScheme({ address: account.address, signTypedData: (params) => account.signTypedData(params as any) });
+    schemes.set(net, s);
+    return s;
+  }
+  const scheme = new BatchEvmScheme({
     address: w.address,
     signTypedData: async (params) =>
-      circleSignTypedData(w.id, {
+      circleSignTypedData(w.id!, {
         domain: { ...params.domain, chainId: params.domain.chainId.toString() },
         primaryType: params.primaryType,
         types: {
@@ -162,6 +197,7 @@ function batchScheme() {
         message: params.message,
       }),
   });
+  schemes.set(net, scheme);
   return scheme;
 }
 
@@ -174,8 +210,9 @@ export async function quote(url: string, init: RequestInit = {}) {
   const header = res.headers.get("payment-required");
   if (!header) throw new Error("Seller sent no PAYMENT-REQUIRED header");
   const req = JSON.parse(Buffer.from(header, "base64").toString("utf8")) as { x402Version: number; accepts: Accept[]; resource?: unknown };
-  const option = req.accepts.find((a) => a.extra?.name === "GatewayWalletBatched" && a.network === ARC_NETWORK);
-  if (!option) throw new Error(`${new URL(url).host} doesn't accept Gateway nanopayments on Arc testnet`);
+  const net = currentNet();
+  const option = req.accepts.find((a) => a.extra?.name === "GatewayWalletBatched" && a.network === arcNetwork(net));
+  if (!option) throw new Error(`${new URL(url).host} doesn't accept Gateway nanopayments on ${NETWORKS[net].name}`);
   return { req, option, amount: BigInt(option.amount) };
 }
 

@@ -1,6 +1,7 @@
 import { mkdirSync } from "node:fs";
 import path from "node:path";
 import { randomUUID } from "node:crypto";
+import type { Net } from "@/lib/networks";
 
 /**
  * What this app earned by selling its own answers over x402, kept beside the jobs.
@@ -13,6 +14,8 @@ export interface Sale {
   /** USDC base units. */
   amount: string;
   tx: string;
+  /** The Arc network it was paid on; missing on older sales, which were all on testnet. */
+  network?: Net;
   own: boolean;
   at: string;
   /** The x402 authorization nonce, so the payer can ask for the answer again if it was lost. */
@@ -42,7 +45,7 @@ function open(): Db | null {
     mkdirSync(dir, { recursive: true });
     db = new DatabaseSync(path.join(dir, "agento.db"));
     db.exec("CREATE TABLE IF NOT EXISTS sales (id TEXT PRIMARY KEY, product TEXT NOT NULL, payer TEXT NOT NULL, amount TEXT NOT NULL, tx TEXT NOT NULL, own INTEGER NOT NULL, at TEXT NOT NULL)");
-    for (const col of ["nonce", "params", "answerHash", "answer", "refunded", "refundTx"]) {
+    for (const col of ["nonce", "params", "answerHash", "answer", "refunded", "refundTx", "network"]) {
       try {
         db.exec(`ALTER TABLE sales ADD COLUMN ${col} TEXT`);
       } catch {
@@ -56,7 +59,7 @@ function open(): Db | null {
   return db;
 }
 
-const COLS = "id, product, payer, amount, tx, own, at, nonce, params, answerHash, answer, refunded, refundTx";
+const COLS = "id, product, payer, amount, tx, own, at, nonce, params, answerHash, answer, refunded, refundTx, network";
 type Row = Omit<Sale, "own" | "params"> & { own: number; params?: string | null };
 const fromRow = (r: Row): Sale => {
   const out = { ...r, own: Boolean(r.own), params: r.params ? (JSON.parse(r.params) as Record<string, string>) : undefined } as Sale;
@@ -69,9 +72,9 @@ export function recordSale(s: Omit<Sale, "id" | "at">) {
   const d = open();
   try {
     if (d)
-      d.prepare(`INSERT INTO sales (${COLS}) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`).run(
+      d.prepare(`INSERT INTO sales (${COLS}) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`).run(
         sale.id, sale.product, sale.payer, sale.amount, sale.tx, sale.own ? 1 : 0, sale.at,
-        sale.nonce ?? null, sale.params ? JSON.stringify(sale.params) : null, sale.answerHash ?? null, sale.answer ?? null, null, null,
+        sale.nonce ?? null, sale.params ? JSON.stringify(sale.params) : null, sale.answerHash ?? null, sale.answer ?? null, null, null, sale.network ?? null,
       );
     else memory.push(sale);
   } catch (e) {

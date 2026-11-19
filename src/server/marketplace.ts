@@ -1,5 +1,6 @@
 import type { Hex } from "viem";
 import { payRequest, quote } from "./nanopay";
+import { currentNet } from "./netContext";
 
 /**
  * Circle Agent Marketplace: x402 services other agents sell. Browsing is free; each listing says
@@ -11,8 +12,9 @@ import { mainnetOn } from "@/lib/network";
 
 export const ARC_TESTNET = "eip155:5042002";
 export const ARC_MAINNET = "eip155:5042";
-/** The network this app pays on. */
-/** The network purchases settle on: Arc mainnet once the app is switched to mainnet, the testnet until then. */
+/** The network purchases settle on: the job's own (testnet or mainnet); testnet outside a job. */
+export const payNetwork = () => process.env.MARKETPLACE_NETWORK ?? (currentNet() === "mainnet" ? ARC_MAINNET : ARC_TESTNET);
+/** For text that names "our" network outside any job. */
 export const PAY_NETWORK = process.env.MARKETPLACE_NETWORK ?? (mainnetOn() ? ARC_MAINNET : ARC_TESTNET);
 
 export interface Service {
@@ -51,7 +53,7 @@ function inputHint(input: unknown): string | undefined {
 }
 
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
-const toService = (i: any): Service => {
+const toService = (i: any, PAY_NETWORK = payNetwork()): Service => {
   const accepts = (i.accepts ?? []) as { network: string; amount?: string; maxAmountRequired?: string; payTo?: string; extra?: { name?: string } }[];
   const prices = accepts.map((a) => Number(a.amount ?? a.maxAmountRequired ?? NaN) / 1e6).filter((x) => Number.isFinite(x));
   const networks = [...new Set(accepts.map((a) => a.network))];
@@ -84,7 +86,8 @@ async function page(params: Record<string, string>): Promise<{ items: Service[];
   const r = await fetch(`${DISCOVERY}?${new URLSearchParams(params)}`, { headers: { accept: "application/json" }, cache: "no-store", signal: AbortSignal.timeout(12_000) });
   if (!r.ok) throw new Error(`marketplace ${r.status}`);
   const body = (await r.json()) as { items?: unknown[]; pagination?: { total?: number } };
-  return { items: (body.items ?? []).map(toService), total: body.pagination?.total ?? 0 };
+  const net = payNetwork();
+  return { items: (body.items ?? []).map((i) => toService(i, net)), total: body.pagination?.total ?? 0 };
 }
 
 /** Search the catalog. With `payableOnly`, only services this app can pay right now. */
@@ -92,20 +95,22 @@ export async function searchServices(query: string, category?: string, limit = 6
   const params: Record<string, string> = { limit: String(Math.min(50, limit * 2)) };
   if (query) params.query = query;
   if (category) params.category = category;
-  if (payableOnly) params.network = PAY_NETWORK;
+  if (payableOnly) params.network = payNetwork();
   const found = (await page(params)).items;
   // Payable ones first: they are what the user can act on today.
   return found.sort((a, b) => Number(b.payableHere) - Number(a.payableHere)).slice(0, limit);
 }
 
-let payableCache: { at: number; list: Service[] } | undefined;
-/** Every listing payable on our network (a couple of hundred at most), cached for ten minutes. */
+const payableCache = new Map<string, { at: number; list: Service[] }>();
+/** Every listing payable on the current network (a few hundred at most), cached for ten minutes. */
 export async function payableServices(): Promise<Service[]> {
-  if (payableCache && Date.now() - payableCache.at < 600_000) return payableCache.list;
+  const PAY_NETWORK = payNetwork();
+  const hit = payableCache.get(PAY_NETWORK);
+  if (hit && Date.now() - hit.at < 600_000) return hit.list;
   const first = await page({ limit: "100", network: PAY_NETWORK });
   const rest = first.total > 100 ? await Promise.all(Array.from({ length: Math.min(4, Math.ceil(first.total / 100) - 1) }, (_, i) => page({ limit: "100", offset: String((i + 1) * 100), network: PAY_NETWORK }))) : [];
   const list = [...first.items, ...rest.flatMap((p) => p.items)].filter((s) => s.payableHere);
-  payableCache = { at: Date.now(), list };
+  payableCache.set(PAY_NETWORK, { at: Date.now(), list });
   return list;
 }
 
@@ -131,7 +136,7 @@ export async function catalogStats(): Promise<CatalogStats> {
     total: all.total,
     payableNow: payable.length,
     onArcMainnet: mainnet.total,
-    network: networkName(PAY_NETWORK),
+    network: networkName(payNetwork()),
     vendors: [...by.entries()].map(([provider, list]) => ({ provider, endpoints: list.length, from: Math.min(...list.map((s) => s.priceUsd ?? Infinity)), example: list[0].description })).sort((a, b) => b.endpoints - a.endpoints),
   };
   statsCache = { at: Date.now(), value };

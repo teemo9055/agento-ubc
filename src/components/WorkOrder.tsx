@@ -202,7 +202,7 @@ export function CostTable({ run, compact = false }: { run: Run; compact?: boolea
                   <td className="px-2 py-2.5 text-ink-2">
                     {l.payeeName}
                     {!sub && (
-                      <a href={addrUrl(l.payee)} target="_blank" rel="noreferrer" className="hidden font-mono text-[10.5px] text-ink-3 hover:text-ink sm:block">
+                      <a href={addrUrl(l.payee, run.network)} target="_blank" rel="noreferrer" className="hidden font-mono text-[10.5px] text-ink-3 hover:text-ink sm:block">
                         {short(l.payee)}
                       </a>
                     )}
@@ -287,7 +287,7 @@ export function ApproveModal({ run, open, onClose }: { run: Run; open: boolean; 
       setBusy("sign");
       const info = await fetch(`/api/runs/${run.id}/funding`).then((r) => r.json());
       if (info.error) throw new Error(info.error);
-      const txHash: Hex = await sendCalls(fundCalls(info));
+      const txHash: Hex = await sendCalls(fundCalls(info), info.network);
       setBusy("fund");
       onClose();
       toast(`Signed with your passkey · vault funded with ${fmt(run.cap)} USDC`, "good");

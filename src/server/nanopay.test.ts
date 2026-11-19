@@ -10,10 +10,11 @@ vi.mock("@/server/circle", () => ({
   },
   circleSignTypedData: async () => "0x",
 }));
-vi.mock("@/server/chain", async (orig) => ({
-  ...(await orig<typeof import("@/server/chain")>()),
-  publicClient: { readContract: async () => BigInt(Math.round(state.wallet * 1e6)) },
-}));
+vi.mock("@/server/chain", async (orig) => {
+  const real = await orig<typeof import("@/server/chain")>();
+  const publicClient = { readContract: async () => BigInt(Math.round(state.wallet * 1e6)) };
+  return { ...real, publicClient, chainOf: (net?: "testnet" | "mainnet") => ({ ...real.chainOf(net), publicClient }) };
+});
 vi.stubGlobal("fetch", async () => new Response(JSON.stringify({ balances: [{ domain: 26, balance: String(state.gateway) }] })));
 
 process.env.GATEWAY_TOPUP = "1";
@@ -35,7 +36,7 @@ describe("Gateway top-ups", () => {
   it("stops at the daily cap with a plain reason", async () => {
     await ensureGatewayFunds(); // second top-up today (1 + 1 = cap of 2)
     state.gateway = 0;
-    await expect(ensureGatewayFunds()).rejects.toThrow(/Daily top-up limit reached \(2 USDC\)/);
+    await expect(ensureGatewayFunds()).rejects.toThrow(/Daily top-up limit reached on Arc testnet \(2 USDC\)/);
   });
 
   it("says the wallet is empty instead of stalling, and warns ahead of time", async () => {

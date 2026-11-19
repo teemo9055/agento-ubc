@@ -2,6 +2,7 @@
 import { use } from "react";
 import Link from "next/link";
 import { ReceiptView } from "@/components/ReceiptView";
+import { NetProvider } from "@/components/NetContext";
 import { Icon } from "@/components/Icon";
 import { useAgentTheme, useRun } from "@/components/useRun";
 
@@ -18,7 +19,11 @@ export default function ReceiptPage({ params }: { params: Promise<{ id: string }
       <Link href={`/runs/${id}`} className="no-print mb-3 inline-flex min-h-8 items-center gap-1.5 text-[13px] text-ink-2 hover:text-ink" data-testid="back-to-job">
         <Icon name="back" size={15} /> Back to the job
       </Link>
-      {finished ? <ReceiptView run={run} /> : <p className="rounded-2xl border border-line bg-panel p-6 text-sm text-ink-2">The receipt is ready once the job finishes.</p>}
+      {finished ? (
+        <NetProvider net={run.network}>
+          <ReceiptView run={run} />
+        </NetProvider>
+      ) : <p className="rounded-2xl border border-line bg-panel p-6 text-sm text-ink-2">The receipt is ready once the job finishes.</p>}
     </div>
   );
 }

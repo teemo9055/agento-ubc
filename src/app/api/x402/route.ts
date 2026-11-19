@@ -1,8 +1,9 @@
 import { NextRequest, NextResponse } from "next/server";
 import { SELLERS } from "@/server/sellers";
 import { salesSummary } from "@/server/sales";
-import { NETWORK, PRODUCTS, refundPolicy } from "@/server/x402";
-import { USDC } from "@/server/chain";
+import { NETWORK, PRODUCTS, payToOn, refundPolicy, sellsOn } from "@/server/x402";
+import { chainOf } from "@/server/chain";
+import { NETS, NETWORKS, type Net } from "@/lib/networks";
 
 export const dynamic = "force-dynamic";
 
@@ -18,10 +19,10 @@ export async function GET(req: NextRequest) {
     params: p.params,
     example: `${origin}/api/x402/${p.id}?${p.example}`,
     refund: refundPolicy(origin, p),
-    accepts: [{ scheme: "exact", network: NETWORK, asset: USDC, payTo: SELLERS.primary.address, maxAmountRequired: p.price.toString() }],
+    accepts: (p.id === "hall.request" ? (["testnet"] as Net[]) : NETS.filter(sellsOn)).map((n) => ({ scheme: "exact", network: NETWORKS[n].caip, asset: chainOf(n).usdc, payTo: payToOn(n, SELLERS.primary.address), maxAmountRequired: p.price.toString() })),
   }));
   return NextResponse.json(
-    { x402Version: 1, name: "Agento", network: NETWORK, payTo: SELLERS.primary.address, openapi: `${origin}/api/x402/openapi.json`, resources, sales: salesSummary() },
+    { x402Version: 1, name: "Agento", network: NETWORK, networks: NETS.filter(sellsOn).map((n) => NETWORKS[n].caip), payTo: SELLERS.primary.address, openapi: `${origin}/api/x402/openapi.json`, resources, sales: salesSummary() },
     { headers: { "access-control-allow-origin": "*" } },
   );
 }
