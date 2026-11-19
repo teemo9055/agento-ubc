@@ -7,14 +7,33 @@ import * as gemini from "./gemini";
 import { describeAction, tradingVenue, VENUE_NAME, VENUE_NOTE } from "./exchange";
 import { mainnetOn } from "@/lib/network";
 import { plainWords } from "@/lib/plain";
-import type { Brief } from "@/lib/types";
+import type { Brief, ChatTiers } from "@/lib/types";
 import { ACTIONS, FREE_TOOLS, PlanInput, ProposalInput, researchMenu, runFreeTool, TOOLKIT, validatePlan, validateProposal } from "./tools";
 import { checksText, conditionText } from "./agents/toolbox";
 import { lessonLines, PLAYBOOKS, PRIMERS } from "./knowledge";
 import { providerDirectory } from "./providers";
 import { diffMoves } from "./move-diff";
 import { groundReply } from "./grounding";
-import { toProposalInput } from "./tools";
+import { rememberComposed, toProposalInput } from "./tools";
+import type { Composed } from "./composer";
+
+/** The composer's plans as the chat carries them. */
+export const chatTiers = (c: Composed): ChatTiers => ({
+  options: c.tiers.map((t) => ({ tier: t.tier, label: t.label, proposal: t.proposal, runnable: t.runnable, why: t.why, cost: t.cost, steps: t.steps, answers: t.answers })),
+  selected: c.selected,
+  trace: c.trace,
+  gaps: c.gaps,
+});
+
+/** Runs the composer for a problem, keeps its plans, and says what to show. */
+async function composeTurn(problem: string, chat: ChatMsg[], agent: AgentId, id: string, onTool: (note: string) => void) {
+  onTool("Searching the whole marketplace for a way to do this");
+  const { compose, tierSummary } = await import("./composer");
+  const c = await compose(problem, chat, { payable: "any", agent, id });
+  rememberComposed(c);
+  const sel = c.tiers.find((t) => t.tier === c.selected);
+  return { composed: c, tiers: c.tiers.length ? chatTiers(c) : undefined, proposal: sel?.runnable ? sel.proposal : undefined, summary: tierSummary(c) };
+}
 
 /**
  * Explore: the agent answers questions with free tools, then turns the
@@ -71,7 +90,7 @@ function system(agent: AgentId) {
       ? "CHAINLINK: you CAN check crypto prices against Chainlink's oracle (BTC, ETH, SOL, LINK). It isn't a free lookup: add a research step {tool: oracle_price, args: {symbol: 'btcusd'}} to the move, and to make the order depend on it add condition {metric: 'oracle_price', symbol: 'btcusd', op, value}. It's bought for 0.0001 USDC right before the check. Never tell the user you can't access Chainlink."
       : "",
     `PAID RESEARCH you can attach to a move (bought after approval; Gemini data from the user's vault over x402 on Arc, everything else from vendors on Circle's Agent Marketplace with Gateway nanopayments):\n${researchMenu(agent)}\nAttach 1-2 lookups only when they could change the decision and say why in each; skip research the free tools already answered. Research symbols must be live markets with data.`,
-    `PROBLEMS: when the user describes a worry or a situation and not what to do about it, don't pick one thing for them. Call find_recipe, then look around (markets, prices, services), then call propose_plan with \`understood\` (their problem in one sentence) and \`drivers\`: the 2-5 things behind it, each marked now or partly (a step handles it; give the step number), mainnet (a real service or market would, named in \`how\`, but it takes mainnet), or no (nothing here helps; say why). Write a step for every driver you can handle, for whichever agent owns it, sized small unless they gave an amount. Use \`leftOpen\` for what stays uncovered. Ask first (ask_user) only if you can't tell what the drivers are, and only offer answers you could act on. ${onMainnet() ? "Mainnet is ON: anything search_services lists as payable can be a step now, so don't mark things mainnet." : "This runs on testnet. Crypto and commodity markets (oil, gold) CAN be ordered here, so cover on those is now. Mark mainnet ONLY for weather, sports or rates markets, or a service you actually found with search_services (name its provider); anything else you can't do is no."}`,
+    `PROBLEMS: when the user describes a worry, not what to do: call find_recipe first. For checks and research (a seller, a business, a deal, a person), call compose_solution: it builds the plans from the whole catalog. For money risks, look around (markets, prices), then call propose_plan with \`understood\`, \`drivers\` (2-5; each now/partly with its step number, mainnet with the provider in \`how\`, or no with why) and \`leftOpen\`. Ask (ask_user) only if you can't tell the drivers. ${onMainnet() ? "Mainnet is ON: payable services can be steps now." : "Testnet: crypto and commodity markets can be ordered; mark mainnet only for weather, sports or rates markets, or a service you found (name its provider)."}`,
     `KNOW-HOW for problems:\n- ${PLAYBOOKS.join("\n- ")}`,
     "PLANS: when a request has several parts (more than one move, or work for more than one agent), call propose_plan instead of propose_move. Break it into the steps that really make it up, one per thing to get done (as many as the task needs, up to 12; long workflows are fine), and for each write a brief the owning agent can act on alone (inso: prediction orders, hedges, sells; trado: spot orders and onchain checks like gas, Bitcoin fees or a wallet balance; worko: errands, checks and drives). Put real names and numbers in the brief; look them up first. Say what each step waits for in `after`: leave it empty for steps that don't depend on anything, so they run at the same time; use gate 'filled' when a step should only start once the order it waits for has filled, useProceeds when it should spend what that sell brought in, and usesFindings when WHAT it does depends on what those steps find. Hotels, flights and rides go in a worko step's `finish` (the person books them). Put anything else no agent can do in `unavailable` with the honest reason. Never pretend a step books something.",
     `PROVIDERS YOU KNOW (say plainly what each sells and whether you can use it now):\n${providerDirectory()}`,
@@ -181,6 +200,8 @@ export interface TurnResult {
   proposal?: Proposal;
   plan?: Plan;
   brief?: Brief;
+  /** Plans the composer built: shown as tiers above the move. */
+  tiers?: ChatTiers;
   /** Tappable answers to the question in `text`. */
   options?: string[];
   suggestions: string[];
@@ -275,6 +296,7 @@ export async function exploreTurn(agent: AgentId, chat: ChatMsg[], onTool: (note
   let proposal: Proposal | undefined;
   let plan: Plan | undefined;
   let brief: Brief | undefined;
+  let tiers: ChatTiers | undefined;
   for (let round = 0; round < MAX_ROUNDS; round++) {
     const last = round === MAX_ROUNDS - 1;
     const r = await aiChat(messages, last ? [] : toolSpecs(agent, opts.solo));
@@ -288,7 +310,7 @@ export async function exploreTurn(agent: AgentId, chat: ChatMsg[], onTool: (note
       const text = tighten(g.text, Boolean(plan ?? proposal));
       // A plan replaces any single move drafted in the same turn: the card shown is the plan.
       if (plan) return { unverified: g.unverified.length ? g.unverified : undefined, facts: facts.filter(Boolean).join(" || ").slice(0, 1500) || undefined, text: text || plan.why, tools, plan, brief, suggestions: ["Yes, start the plan", ...suggestions.filter((x) => !/^yes/i.test(x))].slice(0, 3), usage };
-      return { unverified: g.unverified.length ? g.unverified : undefined, facts: facts.filter(Boolean).join(" || ").slice(0, 1500) || undefined, text: text || (proposal ? proposal.why : brief ? brief.understood : "Here's what I found."), tools, proposal, brief, suggestions: proposal ? withAccept(suggestions, proposal) : suggestions, usage };
+      return { unverified: g.unverified.length ? g.unverified : undefined, facts: facts.filter(Boolean).join(" || ").slice(0, 1500) || undefined, text: text || (proposal ? proposal.why : brief ? brief.understood : "Here's what I found."), tools, proposal, brief, tiers, suggestions: proposal ? withAccept(suggestions, proposal) : suggestions, usage };
     }
     for (const c of r.calls) {
       let content: unknown;
@@ -319,6 +341,17 @@ export async function exploreTurn(agent: AgentId, chat: ChatMsg[], onTool: (note
             ? { ok: true, shown: "The brief is on screen: what you understood, each driver with what can be done, and the steps. Reply with ONE short sentence: the single most useful thing this does for them. Don't repeat the list or numbers." }
             : { ok: true, shown: "The plan card is now on screen. Reply with ONE short sentence on how the steps fit together; add a second only to name what's in `unavailable`. Don't repeat numbers or mention the card." };
         }
+      } else if (c.name === "compose_solution") {
+        const problem = String((c.args as { problem?: string }).problem ?? "") || ([...chat].reverse().find((m) => m.role === "user")?.text ?? "");
+        const t = await composeTurn(problem, chat, agent, proposalId, onTool);
+        tools.push({ tool: "compose_solution", args: { problem: problem.slice(0, 120) }, summary: t.summary.funnel, ok: true });
+        if (t.tiers) {
+          tiers = t.tiers;
+          if (t.proposal) proposal = t.proposal;
+        }
+        content = t.tiers
+          ? { ok: true, ...t.summary, shown: "The plans are on screen as Quick / Thorough / Most certain, with what each answers and costs. Reply with ONE short sentence on what they check. Don't repeat numbers." }
+          : { ok: false, ...t.summary, hint: "No plan could be built from the catalog. Say in one line what's missing (the gaps), and what the user could give to make it possible." };
       } else if (c.name === "propose_move") {
         onTool("Drafting a move");
         const v = await validateProposal(agent, onlyStatedBudget(c.args, chat), proposalId);
@@ -502,6 +535,9 @@ export function guide(agent: AgentId, text: string): { question: string; options
 
 const failText = (v: { error: string } | { proposal: Proposal }) => ("error" in v ? ` I couldn't set up a move: ${v.error.split(". ")[0]}.` : "");
 
+/** Words and values that mean: check someone or something before paying. */
+const CHECKS = /\b(scam|legit|real\b|fake|trust|check (the|this|a) (seller|listing|business|company|number|website|wallet)|before i (pay|send|buy)|seller|listing)\b|https?:\/\/|\+?\(?\d{3}\)?[\s.-]?\d{3}[\s.-]?\d{4}|0x[0-9a-f]{40}/i;
+
 async function rulesTurn(agent: AgentId, chat: ChatMsg[], onTool: (note: string) => void, pid: string): Promise<TurnResult> {
   const userText = [...chat].reverse().find((m) => m.role === "user")?.text ?? "";
   const accept = /^(yes|yep|ok|sure|do it|set it up)/i.test(userText.trim());
@@ -542,6 +578,15 @@ async function rulesTurn(agent: AgentId, chat: ChatMsg[], onTool: (note: string)
 
   if (agent === "worko") {
     const stops = stopsIn(userText).length ? stopsIn(userText) : stopsIn(task);
+    // A check before paying someone: build it from the marketplace catalog.
+    if (stops.length < 2 && CHECKS.test(task)) {
+      const t = await composeTurn(task, chat, agent, pid, onTool);
+      if (t.tiers) {
+        const sel = t.tiers.options.find((o) => o.tier === t.tiers!.selected);
+        return { text: `${t.summary.funnel}. ${sel?.runnable ? `${sel.label} answers ${sel.answers.length} question${sel.answers.length === 1 ? "" : "s"}.` : `These run on Arc mainnet (${sel?.why ?? "not payable here"}).`}`, tools: [{ tool: "compose_solution", args: { problem: task.slice(0, 120) }, summary: t.summary.funnel, ok: true }], proposal: t.proposal, tiers: t.tiers, suggestions: t.proposal ? ["Yes, set it up", "Not now"] : [], usage: [] };
+      }
+      return { text: `I couldn't build a check for that from the marketplace: ${t.summary.gaps.map((g) => `${g.fact.replace(/\?$/, "")} (${g.why.toLowerCase()})`).join("; ") || "nothing fits"}.`, tools, suggestions: [], usage: [] };
+    }
     if (stops.length < 2)
       return {
         text: /\b(drive|driving|road ?trip|route)\b/i.test(task) ? "Where are you starting and where do you want to end up?" : "I can check a listing or seller before you pay, plan a drive, or get a ride, flight or hotel ready for you to book. Which one?",

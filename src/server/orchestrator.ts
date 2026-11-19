@@ -299,7 +299,40 @@ export async function createRun(input: CreateInput, opts: { wait?: boolean; quie
 async function adoptProposal(ctl: Ctl, proposal: Proposal) {
   ctl.options = { ...ctl.options, proposal };
   const plan = materialize(ctl, await AGENTS[ctl.run.agent].plan(ctl.run.task, ctl.options));
-  emit(ctl, { type: "workorder.updated", run: { ...ctl.run, ...plan, status: "draft", proposal, planning: false, editNote: undefined } });
+  // A composed job is drawn in lanes, one per question it answers.
+  const lanes = proposal.compose?.facts.map((f) => ({ id: f.id, question: f.question, importance: f.importance ?? "should" }));
+  emit(ctl, { type: "workorder.updated", run: { ...ctl.run, ...plan, status: "draft", proposal, planning: false, editNote: undefined, lanes, verdict: undefined } });
+}
+
+/** A proposal anywhere in the chat: the move a message shows, or one of the composer's other plans. */
+function proposalIn(chat: ChatMsg[], id: string): { proposal: Proposal; runnable: boolean; why?: string } | undefined {
+  for (const m of [...chat].reverse()) {
+    if (m.proposal?.id === id) {
+      const t = m.tiers?.options.find((o) => o.proposal.id === id);
+      return { proposal: m.proposal, runnable: t ? t.runnable : true, why: t?.why };
+    }
+    const t = m.tiers?.options.find((o) => o.proposal.id === id);
+    if (t) return { proposal: t.proposal, runnable: t.runnable, why: t.why };
+  }
+}
+
+/**
+ * Picks one of the composer's plans (Quick, Thorough, Most certain). Code only: the plan was
+ * already checked when it was built. The message shows it, and a draft is rebuilt from it.
+ */
+export async function chooseTier(runId: string, tier: "quick" | "thorough" | "certain") {
+  const ctl = ctlOf(runId);
+  if (!["exploring", "draft"].includes(ctl.run.status)) throw new Error("this job is already running");
+  const chat = ctl.run.chat ?? [];
+  const at = chat.findLastIndex((m) => m.tiers);
+  const t = chat[at]?.tiers?.options.find((o) => o.tier === tier);
+  if (!t) throw new Error("that plan isn't on offer here");
+  const updated = chat.map((m, i) => (i === at ? { ...m, proposal: t.runnable ? t.proposal : m.proposal, tiers: { ...m.tiers!, selected: tier } } : m));
+  ctl.run = { ...ctl.run, chat: updated };
+  if (t.runnable && ctl.run.status === "draft") await adoptProposal(ctl, t.proposal);
+  else emit(ctl, { type: "workorder.updated", run: { ...ctl.run } });
+  log(ctl, { kind: "card_edit", what: `Plan chosen: ${t.label}`, why: `${t.steps} steps, at most $${t.cost.toFixed(t.cost < 0.01 ? 4 : 2)}`, outcome: "edited", by: "user" });
+  return ctl.run;
 }
 
 const chatBusy = new Set<string>();
@@ -350,7 +383,7 @@ async function agentReplyInNet(ctl: Ctl) {
     const r = await exploreTurn(ctl.run.agent, ctl.run.chat ?? [], (note) => emit(ctl, { type: "chat.thinking", note }), id());
     for (const u of r.usage) trackAi(ctl, "chat", u);
     if (r.usage.length) ctl.run = { ...ctl.run, planner: "ai" };
-    emit(ctl, { type: "chat.message", message: { id: id(), role: "agent", text: r.text, at: now(), tools: r.tools, facts: r.facts, unverified: r.unverified, proposal: r.proposal, plan: r.plan, brief: r.brief, options: r.options, suggestions: r.options ? [] : suggestionsFor(ctl.run.agent, r.suggestions, { proposal: r.proposal, plan: Boolean(r.plan) }) } });
+    emit(ctl, { type: "chat.message", message: { id: id(), role: "agent", text: r.text, at: now(), tools: r.tools, facts: r.facts, unverified: r.unverified, proposal: r.proposal, plan: r.plan, brief: r.brief, tiers: r.tiers, options: r.options, suggestions: r.options ? [] : suggestionsFor(ctl.run.agent, r.suggestions, { proposal: r.proposal, plan: Boolean(r.plan) }) } });
   } catch (e) {
     console.warn("chat failed", e);
     emit(ctl, { type: "chat.message", message: { id: id(), role: "agent", text: "Something went wrong on my side before I could answer. Nothing was spent.", at: now(), suggestions: ["Try again"] } });
@@ -364,8 +397,10 @@ async function agentReplyInNet(ctl: Ctl) {
 export async function adopt(runId: string, proposalId: string) {
   const ctl = ctlOf(runId);
   if (!["exploring", "draft"].includes(ctl.run.status)) throw new Error("this job is already running");
-  const p = [...(ctl.run.chat ?? [])].reverse().find((m) => m.proposal?.id === proposalId)?.proposal;
-  if (!p) throw new Error("move not found");
+  const found = proposalIn(ctl.run.chat ?? [], proposalId);
+  if (!found) throw new Error("move not found");
+  if (!found.runnable) throw new Error(`This plan can't run here: ${found.why ?? "not payable on this network"}. Switch to Arc mainnet in Settings to run it.`);
+  const p = found.proposal;
   await adoptProposal(ctl, p);
   log(ctl, { kind: "card_edit", what: `Move chosen: ${p.title}`, why: p.ask, outcome: "approved", by: "user" });
   return ctl.run;

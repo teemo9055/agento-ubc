@@ -36,7 +36,7 @@ export const EXCHANGE_PAYEE = "0x0000000000000000000000000000000000000e0e" as co
 export { QUICKNODE_PAYEE } from "../vendor-tools";
 
 type Opts = { proposal?: Proposal };
-type Mem = { orderSince?: number; data: Record<string, unknown>; check?: CheckResult; order?: OrderResult; days?: Day[]; route?: geo.Route; places?: geo.Place[] };
+type Mem = { orderSince?: number; data: Record<string, unknown>; check?: CheckResult; order?: OrderResult; days?: Day[]; route?: geo.Route; places?: geo.Place[]; /** How each finished step reads, for cross-checks on "@tone". */ tones?: Record<string, string> };
 type Day = { day: number; from: string; to: string; hours: number; km: number; /** Places to sleep where the day ends: a shortlist from the map, not a booking. */ stay?: { name: string; where: string; website?: string }[] };
 interface CheckResult {
   met: boolean;
@@ -141,8 +141,8 @@ function flowOf(r: ResearchStep, all: ResearchStep[]): Pick<PhaseDraft, "depends
 }
 
 /** Compares a verify group and marks every step in it as agreeing or not, for the graph. */
-function markGroup(group: string, research: ResearchStep[], known: Results, ctx: AgentCtx) {
-  const cmp = compareGroup(group, research, known);
+function markGroup(group: string, research: ResearchStep[], known: Results, ctx: AgentCtx, tones: Record<string, string> = {}) {
+  const cmp = compareGroup(group, research, known, tones);
   for (const m of research.filter((r) => r.verify?.group === group)) ctx.update?.(m.id, { conflict: { group, agree: cmp.agree, note: cmp.note } });
   return cmp;
 }
@@ -400,7 +400,7 @@ export function toolboxAgent(id: AgentId): AgentDef {
         if (step.when && !checkWhen(step.when, known, givens)) ctx.skip!(`Not needed: ${whenText(step.when)}`);
         // Tie-breaker: compare the sources first; buy a third only if they disagree.
         if (step.onConflict) {
-          const cmp = markGroup(step.onConflict, p.research, known, ctx);
+          const cmp = markGroup(step.onConflict, p.research, known, ctx, mem.tones);
           if (cmp.agree) ctx.skip!(`Sources agreed, tie-breaker not needed · ${usdOf(v.price(step.args))} not spent`);
           ctx.decide?.("Sources disagreed, bought a third", cmp.note);
         }
@@ -432,10 +432,11 @@ export function toolboxAgent(id: AgentId): AgentDef {
         const text = step.tool === "service" ? noteFor(cap, got) : v.note(got).slice(0, 48);
         const tone = step.tool === "service" ? await toneFor(cap, got, p.compose?.facts.find((f) => f.id === step.lane)?.question) : "neutral";
         ctx.update?.(step.id, { finding: { text, tone } });
+        (mem.tones ??= {})[step.id] = tone;
         // When every source for a fact has answered, say whether they agree.
         if (step.verify) {
           const members = p.research.filter((r) => r.verify?.group === step.verify!.group);
-          if (members.every((m) => m.id in { ...known, ...mem.data })) markGroup(step.verify.group, p.research, { ...known, ...mem.data }, ctx);
+          if (members.every((m) => m.id in { ...known, ...mem.data })) markGroup(step.verify.group, p.research, { ...known, ...mem.data }, ctx, mem.tones);
         }
         ctx.progress(1, v.note(got));
         return;

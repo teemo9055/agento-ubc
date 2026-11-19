@@ -1,4 +1,5 @@
 "use client";
+import { ComposePanel, tiersOf } from "./TierPicker";
 import { Fragment, useState } from "react";
 import type { Plan, Proposal, Run } from "@/lib/types";
 import { KINDS, blueprintOf, kindOf, outline, type Block, type Blueprint, type LaneKey } from "@/lib/shape";
@@ -168,10 +169,12 @@ export function Workspace({ run, onExample, onAdjust }: { run: Run; onExample?: 
         </div>
 
         <div className="space-y-4 p-4">
+          {/* Plans the composer built from the marketplace: how they were found, and the three to pick from. */}
+          <ComposePanel run={run} />
           {/* Each agent's own view of the work: Inso the cover, Trado the trading board, Worko the trip. */}
-          {run.agent === "inso" && move && <CoverSheet p={move} />}
-          {run.agent === "trado" && <TradeBoard p={move} />}
-          {run.agent === "worko" && <TripSheet p={move} task={said} />}
+          {run.agent === "inso" && move && !move.compose && <CoverSheet p={move} />}
+          {run.agent === "trado" && !move?.compose && <TradeBoard p={move} />}
+          {run.agent === "worko" && !move?.compose && !tiersOf(run) && <TripSheet p={move} task={said} />}
           {sheet && stepper && (
             <div className="flex items-center justify-between gap-3 rounded-xl border border-line bg-panel px-4 py-2" data-testid="size-row">
               <span className="text-[13px] text-ink-2">{size?.unit === "hours" ? "Hours of driving a day" : size?.unit === "cover" ? "How much to cover" : "Size of the order"}</span>

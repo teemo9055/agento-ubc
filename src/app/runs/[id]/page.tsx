@@ -1,4 +1,5 @@
 "use client";
+import { ComposePanel } from "@/components/TierPicker";
 import { use, useEffect, useRef, useState } from "react";
 import Link from "next/link";
 import dynamic from "next/dynamic";
@@ -466,6 +467,7 @@ export default function RunPage({
 
       {draft && (
         <>
+          {run.proposal?.compose && <ComposePanel run={run} />}
           <Assemble play={run.proposal ? `review-${run.proposal.id}` : null}>
             <ReviewCard
               run={run}

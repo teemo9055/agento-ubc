@@ -117,7 +117,8 @@ export interface SearchOpts {
   outputs?: IoType[];
   /** What we already have; services needing something else rank a little lower. */
   inputsAvailable?: IoType[];
-  payable?: "now" | "mainnet" | "any";
+  /** now: this network today · mainnet: Arc mainnet · arc: either · any: everything listed. */
+  payable?: "now" | "mainnet" | "arc" | "any";
   /** Only services that read (default true): those that send, buy or change things are never planned. */
   readOnly?: boolean;
   limit?: number;
@@ -134,7 +135,7 @@ export interface Hit {
 /** Whether a seller is paused by strikes, by its payee address or its name. */
 const paused = (c: Capability) => (c.payTo && standing(c.payTo).skipped) || standing(c.provider).skipped;
 
-export const payableFor = (c: Capability, p: SearchOpts["payable"]) => (p === "now" ? c.payableNow : p === "mainnet" ? c.payableMainnet : true);
+export const payableFor = (c: Capability, p: SearchOpts["payable"]) => (p === "now" ? c.payableNow : p === "mainnet" ? c.payableMainnet : p === "arc" ? c.payableNow || c.payableMainnet : true);
 
 export async function searchCapabilities(q: string, opts: SearchOpts = {}): Promise<Hit[]> {
   const caps = opts.among ?? allCapabilities();

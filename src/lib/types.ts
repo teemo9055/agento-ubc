@@ -197,6 +197,28 @@ export interface ChatMsg {
   plan?: Plan;
   /** For an open-ended problem: what the agent understood, what drives it, and how much of each part it can take on. */
   brief?: Brief;
+  /** Plans the composer built from the marketplace catalog: Quick, Thorough, Most certain. `proposal` is the selected one. */
+  tiers?: ChatTiers;
+}
+
+export interface TierChoice {
+  tier: "quick" | "thorough" | "certain";
+  label: string;
+  proposal: Proposal;
+  /** Can run on this job's network now; otherwise why not. */
+  runnable: boolean;
+  why?: string;
+  /** At most, in USD, every step included. */
+  cost: number;
+  steps: number;
+  answers: { id: string; question: string; crossChecked: boolean }[];
+}
+
+export interface ChatTiers {
+  options: TierChoice[];
+  selected?: TierChoice["tier"];
+  trace: ComposeTrace;
+  gaps: { fact: string; why: string }[];
 }
 
 export interface Brief {

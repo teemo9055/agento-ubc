@@ -50,7 +50,9 @@ export function toRaw(i: any, net = payNetwork()): RawListing {
   };
 }
 
-export const schemaHash = (l: Pick<RawListing, "description" | "input" | "output">) => createHash("sha256").update(`${l.description}${JSON.stringify(l.input ?? null)}${JSON.stringify(l.output ?? null)}`).digest("hex");
+/** Bumped when tagging itself changes, so every listing is tagged again by the new rules. */
+const TAG_VERSION = 2;
+export const schemaHash = (l: Pick<RawListing, "description" | "input" | "output">) => createHash("sha256").update(`v${TAG_VERSION}${l.description}${JSON.stringify(l.input ?? null)}${JSON.stringify(l.output ?? null)}`).digest("hex");
 
 export interface CrawlResult {
   seen: number;

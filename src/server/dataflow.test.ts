@@ -128,6 +128,12 @@ describe("cross-checks", () => {
     expect(compareGroup("risk", steps, results).agree).toBe(true);
     expect(compareGroup("risk", steps, { ...results, r3: paid({ risk: "low" }) })).toMatchObject({ agree: false, note: expect.stringMatching(/disagree/) });
   });
+  it("@tone: how each answer reads, ignoring answers with no signal", () => {
+    const toned = steps.map((s) => ({ ...s, verify: { group: "risk", path: "@tone", kind: "same" as const } }));
+    expect(compareGroup("risk", toned, results, { r2: "bad", r3: "warn" }).agree).toBe(true);
+    expect(compareGroup("risk", toned, results, { r2: "bad", r3: "good" })).toMatchObject({ agree: false, note: expect.stringMatching(/a concern.*fine/) });
+    expect(compareGroup("risk", toned, results, { r2: "bad", r3: "neutral" })).toMatchObject({ agree: true, note: "Only one source answered" });
+  });
   it("close: within a tolerance", () => {
     const close = steps.map((s) => ({ ...s, verify: { group: "risk", path: "score", kind: "close" as const, tolerance: 0.05 } }));
     expect(compareGroup("risk", close, results).agree).toBe(true);

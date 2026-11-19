@@ -75,6 +75,7 @@ export const MCP_TOOLS = [
   "ask_agent",
   "propose_move",
   "propose_plan",
+  "compose",
   "edit_work_order",
   "get_job",
   "list_jobs",
@@ -264,6 +265,19 @@ const COMBOS: LibraryEntry[] = [
     steps: ["Write the order as usual.", "Add a condition, and up to two more in alsoRequire.", "Right before the order, every check is read fresh.", "All pass: the order goes in. One fails or can't be read: nothing is bought."],
     diagram: "check",
     seeAlso: ["place-an-order", "read-a-price", "tool-oracle_price"],
+  },
+  {
+    id: "compose-a-solution",
+    section: "combos",
+    title: "Build a check from the whole marketplace",
+    body: "Describe a problem with what you have (a listing link, a phone number, a website). Agento works out the questions that would settle it, finds services in Circle's whole Agent Marketplace catalog that answer each one, and chains them: one service's answer can be the next one's input. It offers three plans: Quick, Thorough, and Most certain, where a second source checks each key answer and a third is bought only if they disagree.",
+    tool: "compose { problem }",
+    price: "Each step's own price; the plan shows the most it can cost",
+    updated: "2026-11-19",
+    source: "src/server/composer, src/server/catalog, src/server/dataflow.ts",
+    agents: ["worko", "inso", "trado"],
+    steps: ["Say the problem, with the links or numbers you have.", "It searches the whole catalog for each question and links services together.", "Pick Quick, Thorough or Most certain.", "Approve; each step's answer is checked before the next one uses it."],
+    seeAlso: ["find-a-service", "refund-a-bad-answer", "pay-per-request"],
   },
   {
     id: "sell-then-use-proceeds",
@@ -507,6 +521,7 @@ function limitEntries(): LibraryEntry[] {
 
 /** Real changes, from this app's git history. */
 const UPDATES: [string, string, string][] = [
+  ["2026-11-19", "Plans built from the whole marketplace", "Agento maps every Agent Marketplace listing by what it takes and gives back, then builds Quick, Thorough and Most certain plans for a problem, chaining one service's answer into the next and cross-checking key answers."],
   ["2026-11-18", "The Town in two forms", "Every building has a page for people and the same facts for agents, in Markdown and JSON, from one source. The Library became a wiki with articles; the Store has product pages; the Lab is a board; the Forum has threads."],
   ["2026-11-18", "The Town opens", "A Library of what agents can do, a Store of services, a Town Hall for requests and feedback, a Lab and a Forum. All of it works from the app, the API and MCP."],
   ["2026-11-18", "Arc read tool for every agent", "read_arc answers balance, transaction, vault and payment questions on Arc for free; a plan has a total cap, and the order limit is checked again at approval."],

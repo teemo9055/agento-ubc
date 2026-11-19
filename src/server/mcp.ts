@@ -1,3 +1,4 @@
+import { rememberComposed } from "./tools";
 import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { z } from "zod";
 import { buildReceipt } from "@/lib/receipt";
@@ -147,6 +148,31 @@ export function buildMcpServer(base: string) {
       if ("error" in v) return fail(v.error);
       const run = await createRun({ agent: agent as AgentId, task, mode: live ? "live" : "demo", proposal: v.proposal, plannedBy: "your AI (MCP)" });
       return text(view(run, base));
+    },
+  );
+
+  server.registerTool(
+    "compose",
+    {
+      title: "Compose a solution from the marketplace",
+      description:
+        "Give a problem in plain words (with the links, numbers or names involved). Agento breaks it into the facts that would settle it, finds services in Circle's whole Agent Marketplace catalog that answer each one (chaining one service's answer into the next), and returns up to three plans: Quick, Thorough and Most certain (cross-checked, with a tie-breaker bought only if sources disagree). Each runnable plan comes back as a draft with a url; the user approves it in the app. You cannot approve it.",
+      inputSchema: { problem: z.string().min(8).max(1000), live: z.boolean().optional() },
+    },
+    async ({ problem, live }) => {
+      try {
+        const { compose, tierSummary } = await import("./composer");
+        const c = await compose(problem, [], { payable: "any", agent: "worko", id: randomUUID().slice(0, 8) });
+        rememberComposed(c);
+        const drafts = [];
+        for (const t of c.tiers.filter((x) => x.runnable)) {
+          const run = await createRun({ agent: "worko", task: problem, mode: live ? "live" : "demo", proposal: t.proposal, plannedBy: "Agento composer (MCP)" }, { quiet: true });
+          drafts.push({ tier: t.label, url: `${base}/runs/${run.id}`, id: run.id });
+        }
+        return text({ ...tierSummary(c), drafts });
+      } catch (e) {
+        return fail((e as Error).message);
+      }
     },
   );
 

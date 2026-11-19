@@ -51,6 +51,40 @@ const RULES: Partial<Record<IoType, (value: unknown, label: string, answer: unkn
   },
 };
 
+const RANK: Record<Tone, number> = { neutral: 0, good: 1, warn: 2, bad: 3 };
+const worse = (a: Tone | undefined, b: Tone | undefined) => (!a ? b : !b ? a : RANK[b] > RANK[a] ? b : a);
+
+/** Fields that mean "this is fine" when true. */
+const GOOD_KEYS = /^(is_?)?(valid|deliverable|verified|legit|legitimate|safe|active|reachable)$/i;
+/** Fields that warn when high or true. */
+const RISK_KEYS = /(risk|fraud|spam|scam|voip|disposable|blacklist|blocklist|malicious|sanction|honeypot|is_?virtual|is_?temporary|abuse|threat|suspicious)/i;
+const LINE_KEYS = /^(line_?type|number_?type|phone_?type|carrier_?type|type)$/i;
+const RATING_KEYS = /^(rating|stars|average_?rating|avg_?rating|score_?avg|review_?score)$/i;
+
+/**
+ * For answers with no published schema: look through the fields for the usual signals
+ * (risk or fraud scores, line type, valid/verified flags, star ratings). The worst one wins.
+ */
+export function scanTone(v: unknown, depth = 0): Tone | undefined {
+  if (depth > 4 || v == null || typeof v !== "object") return undefined;
+  let t: Tone | undefined;
+  const entries = Array.isArray(v) ? v.slice(0, 10).map((x, i) => [String(i), x] as const) : Object.entries(v as Record<string, unknown>).slice(0, 60);
+  for (const [k, x] of entries) {
+    if (x != null && typeof x === "object") {
+      t = worse(t, scanTone(x, depth + 1));
+      continue;
+    }
+    if (GOOD_KEYS.test(k) && typeof x === "boolean") t = worse(t, x ? "good" : "warn");
+    else if (RISK_KEYS.test(k)) t = worse(t, wordTone(x));
+    else if (LINE_KEYS.test(k) && typeof x === "string") t = worse(t, /voip|virtual|non-?fixed|toll/i.test(x) ? "bad" : /mobile|landline|fixed/i.test(x) ? "good" : undefined);
+    else if (RATING_KEYS.test(k)) {
+      const n = num(x);
+      if (Number.isFinite(n) && n <= 5) t = worse(t, n < 3 ? "warn" : n >= 4 ? "good" : "neutral");
+    }
+  }
+  return t;
+}
+
 /** Rules only. Undefined when no rule speaks. */
 export function toneByRules(cap: Pick<Capability, "outputs"> | undefined, data: unknown): Tone | undefined {
   const a = answerOf(data);
@@ -65,7 +99,8 @@ export function toneByRules(cap: Pick<Capability, "outputs"> | undefined, data: 
     const t = rule(v, o.label, a);
     if (t && (!worst || rank[t] > rank[worst])) worst = t;
   }
-  return worst;
+  // No precise field to read: look through the whole answer for the usual signals.
+  return worst ?? scanTone(a);
 }
 
 const ToneReply = z.object({ tone: z.enum(["good", "warn", "bad", "neutral"]) });

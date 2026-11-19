@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { toneByRules, toneFor, wordTone } from "./tone";
+import { scanTone, toneByRules, toneFor, wordTone } from "./tone";
 import { noteFor } from "./notes";
 import type { CapabilityOutput } from "./types";
 
@@ -46,6 +46,17 @@ describe("how a finding reads, by rule", () => {
     expect(toneByRules(cap([{ path: "x", type: "news", label: "news" }]), { x: "something" })).toBeUndefined();
     process.env.AI_DISABLED = "true";
     expect(await toneFor(cap([{ path: "x", type: "news", label: "news" }]), { x: "something" })).toBe("neutral");
+  });
+});
+
+describe("answers with no schema", () => {
+  it("read the usual signals from the fields themselves", () => {
+    expect(scanTone({ data: { line_type: "VoIP", carrier: "Twilio" } })).toBe("bad");
+    expect(scanTone({ valid: true, line_type: "mobile" })).toBe("good");
+    expect(scanTone({ result: { fraud_score: 55 } })).toBe("warn");
+    expect(scanTone({ business: { rating: 2.1 } })).toBe("warn");
+    expect(scanTone({ name: "Sam", city: "Vancouver" })).toBeUndefined();
+    expect(toneByRules({ outputs: [{ path: "", type: "risk_signal", label: "risk" }] }, { is_disposable: true })).toBe("bad");
   });
 });
 

@@ -268,10 +268,15 @@ export interface GroupComparison {
   note: string;
 }
 
-/** Whether the steps that answer one fact agree: the same value, or numbers within a tolerance. */
-export function compareGroup(group: string, steps: ResearchStep[], results: Results): GroupComparison {
+/**
+ * Whether the steps that answer one fact agree: the same value, or numbers within a tolerance.
+ * A group compared on "@tone" compares how each answer reads (fine, or a concern), for answers with
+ * no single field to compare; an answer with no signal either way doesn't count.
+ */
+export function compareGroup(group: string, steps: ResearchStep[], results: Results, tones: Record<string, string> = {}): GroupComparison {
   const members = steps.filter((s) => s.verify?.group === group && s.id in results);
-  const values = members.map((s) => ({ stepId: s.id, value: getPath(answerOf(results[s.id]), s.verify!.path) })).filter((x) => x.value !== undefined && x.value !== null);
+  const valueOf = (s: ResearchStep) => (s.verify!.path === "@tone" ? (tones[s.id] === "good" ? "fine" : tones[s.id] === "warn" || tones[s.id] === "bad" ? "a concern" : undefined) : getPath(answerOf(results[s.id]), s.verify!.path));
+  const values = members.map((s) => ({ stepId: s.id, value: valueOf(s) })).filter((x) => x.value !== undefined && x.value !== null);
   if (values.length < 2) return { agree: true, values, note: values.length ? "Only one source answered" : "No source answered" };
   const kind = members[0].verify!.kind;
   const tol = members[0].verify!.tolerance ?? 0.02;

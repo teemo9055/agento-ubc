@@ -202,6 +202,17 @@ export const FREE_TOOLS: Record<string, FreeTool> = {
       return { data, summary: `${list.length} marketplace services for “${q}” · ${here} payable now` };
     },
   },
+  compose_solution: {
+    description: "Open-ended problem, not a trade (check a seller, business, deal, person): builds up to 3 plans from the whole marketplace catalog, shown to the user. Then reply in one sentence.",
+    params: z.object({ problem: z.string().describe("In the user's words, with the links and numbers they gave") }),
+    async run(a) {
+      const { compose, tierSummary } = await import("./composer");
+      const c = await compose(String(a.problem ?? ""), [], { payable: "any", agent: "worko" });
+      rememberComposed(c);
+      const sum = tierSummary(c);
+      return { data: sum, summary: sum.funnel };
+    },
+  },
   find_recipe: {
     description: "Tested step combos for common problems. Start open-ended ones from the closest; tailor it.",
     params: z.object({ query: z.string() }),
@@ -221,6 +232,14 @@ export const FREE_TOOLS: Record<string, FreeTool> = {
     },
   },
 };
+
+/** Composed plans kept on the server by proposal id, so a client can pick one without sending it back. */
+const composedStore = new Map<string, import("./composer").Composed>();
+export function rememberComposed(c: import("./composer").Composed) {
+  for (const t of c.tiers) composedStore.set(t.proposal.id, c);
+  if (composedStore.size > 500) composedStore.delete(composedStore.keys().next().value!);
+}
+export const composedFor = (proposalId: string) => composedStore.get(proposalId);
 
 export async function runFreeTool(name: string, args: Record<string, unknown>): Promise<{ call: ToolCall; data: unknown }> {
   const tool = FREE_TOOLS[name];
@@ -319,14 +338,14 @@ export const RESEARCH: Record<string, ResearchTool> = {
 export const researchPrice = (tool: string, args: Record<string, string> = {}) => (isVendorTool(tool) ? VENDOR_TOOLS[tool].price(args) : PRODUCTS[RESEARCH[tool].product].price);
 export const isMarketplace = isVendorTool;
 /** Most one marketplace request may cost, in USDC base units. */
-const MAX_SERVICE = BigInt(process.env.MARKETPLACE_MAX_PER_REQUEST ?? 10_000);
+export const MAX_SERVICE = BigInt(process.env.MARKETPLACE_MAX_PER_REQUEST ?? 10_000);
 
 /** Each agent's own harness: what it can look up for free, what it can buy, and what it can do. */
 export const TOOLKIT: Record<AgentId, { free: string[]; research: string[] }> = {
-  inso: { free: ["search_markets", "get_market", "browse_markets", "combo_quote", "my_positions", "spot_price", "search_services", "find_recipe", "read_arc"], research: ["odds_history", "trade_tape", "oracle_price", "service"] },
-  trado: { free: ["spot_price", "search_markets", "get_market", "browse_markets", "my_positions", "search_services", "find_recipe", "read_arc"], research: ["spot_candles", "oracle_price", "odds_history", "gas_price", "btc_network", "wallet_balance", "service"] },
+  inso: { free: ["search_markets", "get_market", "browse_markets", "combo_quote", "my_positions", "spot_price", "search_services", "find_recipe", "compose_solution", "read_arc"], research: ["odds_history", "trade_tape", "oracle_price", "service"] },
+  trado: { free: ["spot_price", "search_markets", "get_market", "browse_markets", "my_positions", "search_services", "find_recipe", "compose_solution", "read_arc"], research: ["spot_candles", "oracle_price", "odds_history", "gas_price", "btc_network", "wallet_balance", "service"] },
   // The trip agent can look at markets too, so a brief about a trip can name the fuel cover Inso would build.
-  worko: { free: ["find_place", "find_nearby", "search_markets", "my_positions", "search_services", "find_recipe", "read_arc"], research: ["drive_route", "oracle_price", "service"] },
+  worko: { free: ["find_place", "find_nearby", "search_markets", "my_positions", "search_services", "find_recipe", "compose_solution", "read_arc"], research: ["drive_route", "oracle_price", "service"] },
 };
 
 export const researchMenu = (agent?: AgentId) =>
