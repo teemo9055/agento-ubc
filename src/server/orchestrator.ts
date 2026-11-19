@@ -40,8 +40,7 @@ import { MAINNET_MAX_JOB_USD, chainOf, factoryAbi, liveReady, setupProblems, vau
 import type { Net } from "@/lib/networks";
 import { planTree } from "./merkle";
 import { adapterFor, PaymentError } from "./payments";
-import { SELLERS } from "./sellers";
-import { PRODUCTS } from "./x402";
+import { PRODUCTS, ownSellerAt, payToOn } from "./x402";
 import { checkDelivery, DeliveryError, MaybeChargedError, type DeliveryPromise, type DeliveryVerdict } from "./delivery";
 import { recordDelivery, standing } from "./strikes";
 import { recordOutcome } from "./catalog/store";
@@ -208,6 +207,8 @@ function materialize(ctl: Ctl, raw: PlanDraft) {
   let idx = 0;
   const lines: CostLine[] = draft.lines.map((l) => ({
     ...l,
+    // Our own seller is paid at a different address on mainnet; the line must name the one it will quote.
+    payee: l.rail === "x402" && ownSellerAt(l.payee) ? payToOn(ctl.run.network ?? "testnet", ownSellerAt(l.payee)!.address) : l.payee,
     index: offVault(l.rail) ? -1 : idx++,
     actual: "0",
     bigSpend: BigInt(l.approved) >= threshold,
@@ -926,7 +927,7 @@ async function settleBadDelivery(
   verdict: Extract<DeliveryVerdict, { ok: false }>,
   update: (p: Partial<Payment>) => void,
 ): Promise<PhaseFailure> {
-  const seller = Object.values(SELLERS).find((s) => s.address.toLowerCase() === payee.toLowerCase())?.name ?? "The seller";
+  const seller = ownSellerAt(payee)?.name ?? "The seller";
   if (verdict.test === "answered") {
     update({ refund: { state: "unknown", amount: amount.toString(), note: "Paid, but the answer was lost and couldn't be sent again" } });
     log(ctl, { kind: "failure", what: `${PRODUCTS[product]?.description ?? product}: paid, answer lost`, why: verdict.reason, outcome: "rejected", by: "system", tx: txHash });
@@ -1025,7 +1026,7 @@ async function requestReapproval(
   forceTimeout: boolean,
 ) {
   const existing = ctl.run.lines.find((l) => l.id === lineId);
-  const seller = Object.values(SELLERS).find((s) => s.address.toLowerCase() === payee.toLowerCase());
+  const seller = ownSellerAt(payee);
   const callsLeft = existing?.calls ? Math.max(1, existing.calls.max - Math.round(Number(BigInt(existing.actual) / (BigInt(existing.calls.unitPrice) || 1n)))) : 1;
   const newApproved = BigInt(existing?.actual ?? 0) + unit * BigInt(callsLeft);
   const capsAfter = sum(ctl.run.lines.filter((l) => l.id !== lineId).map((l) => l.approved)) + newApproved;

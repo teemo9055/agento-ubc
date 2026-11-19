@@ -3,6 +3,7 @@ import { allLearned, learnedById, recipePrice } from "./learn";
 import { recipeInputs, runRecipe } from "./recipeRun";
 import { chainOf, send, usdcAbi } from "./chain";
 import { NETWORKS, type Net } from "@/lib/networks";
+import { SELLERS } from "./sellers";
 import * as gemini from "./gemini";
 import * as geo from "./geo";
 import { TEST_LABEL, type DeliveryPromise } from "./delivery";
@@ -16,6 +17,8 @@ export const netOfCaip = (caip: string): Net | undefined => (Object.values(NETWO
 export const sellsOn = (net: Net) => Boolean(chainOf(net).addresses.seller) && (net === "testnet" || process.env.MAINNET_SELLING !== "false");
 /** Who is paid on each network: the testnet seller may be a Circle wallet; mainnet uses its own key. */
 export const payToOn = (net: Net, fallback: Hex) => (net === "testnet" ? fallback : (chainOf("mainnet").addresses.seller ?? fallback));
+/** Our own seller, whichever network's address it is paid at; undefined for anyone else. */
+export const ownSellerAt = (payee: string) => Object.values(SELLERS).find((s) => [s.address, payToOn("mainnet", s.address)].some((a) => a.toLowerCase() === payee.toLowerCase()));
 
 /** Thrown by a product when the buyer's own request is wrong: answered 400, and nothing is charged. */
 export class BadInput extends Error {}
