@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
-import { NETWORK, PRODUCTS, refundPolicy } from "@/server/x402";
+import { NETWORK, forSale, refundPolicy } from "@/server/x402";
 
 export const dynamic = "force-dynamic";
 
@@ -10,7 +10,7 @@ export const dynamic = "force-dynamic";
 export async function GET(req: NextRequest) {
   const origin = process.env.APP_URL ?? req.nextUrl.origin;
   const paths = Object.fromEntries(
-    Object.values(PRODUCTS).map((p) => [
+    forSale().map((p) => [
       `/api/x402/${p.id}`,
       {
         get: {

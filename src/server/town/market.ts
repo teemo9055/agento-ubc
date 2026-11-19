@@ -1,6 +1,6 @@
 import { createHash } from "node:crypto";
 import { networkName, payableServices, searchServices, type Service } from "../marketplace";
-import { PRODUCTS, NETWORK } from "../x402";
+import { forSale, NETWORK } from "../x402";
 import { SELLERS } from "../sellers";
 import { RESEARCH, TOOLKIT } from "../tools";
 import { isVendorTool } from "../vendor-tools";
@@ -40,13 +40,13 @@ const matches = (q: string, ...fields: (string | undefined)[]) => {
 
 /** Agento's own products, by what they are about. */
 export const productCategory = (id: string) =>
-  id.startsWith("markets.") ? "Prediction markets" : id.startsWith("spot.") ? "Prices" : id.startsWith("places.") || id.startsWith("routes.") ? "Travel" : id.startsWith("cover.") ? "Cover" : id.startsWith("hall.") ? "Town Hall" : "Data";
+  id.startsWith("recipe.") ? "Learned recipes" : id.startsWith("markets.") ? "Prediction markets" : id.startsWith("spot.") ? "Prices" : id.startsWith("places.") || id.startsWith("routes.") ? "Travel" : id.startsWith("cover.") ? "Cover" : id.startsWith("hall.") ? "Town Hall" : "Data";
 
 /** FINANCIAL_ANALYSIS → Financial analysis. */
 const circleCategory = (c: string) => (c ? c[0] + c.slice(1).toLowerCase().replace(/_/g, " ") : "Other");
 
 export function agentoItems(origin = ""): StoreItem[] {
-  return Object.values(PRODUCTS).map((p) => ({
+  return forSale().map((p) => ({
     id: `agento-${p.id}`,
     name: p.id,
     sells: p.description,

@@ -47,6 +47,10 @@ import { recordDelivery, standing } from "./strikes";
 import { recordOutcome } from "./catalog/store";
 import { tally } from "./verdict";
 import { buildReport } from "./report";
+import { learnFromRun } from "./learn";
+
+/** Who planned a recipe sold to an outside agent: such runs don't teach the book again. */
+export const RECIPE_BUYER = "Agento recipe (sold over x402)";
 
 import { limits } from "./settings";
 import { partsProgress } from "@/lib/parts";
@@ -687,6 +691,15 @@ async function finish(ctl: Ctl) {
   const report = built?.report;
   if (report?.headline && report.by === "ai") deliverable.summary = report.headline;
   emit(ctl, { type: "run.done", deliverable, refunded: refunded.toString(), refundTx: txHash, at: now(), report });
+  // A composed job that worked teaches the recipe book; a sold recipe's own run doesn't count twice.
+  if (ctl.run.proposal?.compose && ctl.run.ai?.model !== RECIPE_BUYER) {
+    try {
+      const r = learnFromRun(ctl.run);
+      if (r) emit(ctl, { type: "run.learned", recipe: { id: r.id, title: r.title, status: r.status, runs: r.runs, successes: r.successes, network: r.network } });
+    } catch (e) {
+      console.warn("recipe not learned:", (e as Error).message);
+    }
+  }
 }
 
 /** Closes the vault and refunds what's left; nothing to do when no vault was opened. */

@@ -2,7 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { SELLERS, priceAt, type Seller } from "@/server/sellers";
 import { recordSale } from "@/server/sales";
 import { answerHash } from "@/server/delivery";
-import { BadInput, PRODUCTS, decodeHeader, encodeHeader, netOfCaip, payToOn, requirements, sellsOn, verifyAndSettle, type PaymentPayload } from "@/server/x402";
+import { BadInput, productFor, decodeHeader, encodeHeader, netOfCaip, payToOn, requirements, sellsOn, verifyAndSettle, type PaymentPayload } from "@/server/x402";
 import { NETS, type Net } from "@/lib/networks";
 
 export const dynamic = "force-dynamic";
@@ -10,7 +10,7 @@ export const dynamic = "force-dynamic";
 /** Pay-per-request market data (x402 `exact` on Arc). */
 export async function GET(req: NextRequest, ctx: { params: Promise<{ product: string }> }) {
   const { product: id } = await ctx.params;
-  const product = PRODUCTS[id];
+  const product = productFor(id);
   if (!product) return NextResponse.json({ error: "unknown product" }, { status: 404 });
 
   const q = req.nextUrl.searchParams;
@@ -20,7 +20,16 @@ export async function GET(req: NextRequest, ctx: { params: Promise<{ product: st
   const resource = req.nextUrl.pathname + req.nextUrl.search;
   // One price, on every network this seller can settle on; the buyer pays on the one its money is on.
   // Town Hall deposits stay on testnet: they follow the practice/testnet setting, never real money by default.
-  const nets: Net[] = id === "hall.request" ? ["testnet"] : NETS.filter(sellsOn);
+  const nets: Net[] = id === "hall.request" ? ["testnet"] : NETS.filter(sellsOn).filter((n) => !product.nets || product.nets.includes(n));
+  if (!nets.length && product.nets) return NextResponse.json({ error: "Not on sale on any network this server settles on yet" }, { status: 503 });
+  // A product that buys from other sellers checks the request before asking for money.
+  if (product.validate) {
+    try {
+      product.validate(q);
+    } catch (e) {
+      return NextResponse.json({ error: (e as Error).message }, { status: 400 });
+    }
+  }
   const accepts = nets.map((n) => requirements(product, resource, payToOn(n, seller.address), price, n));
   const reqs = accepts[0];
 
@@ -39,23 +48,41 @@ export async function GET(req: NextRequest, ctx: { params: Promise<{ product: st
   }
 
   let data: unknown;
-  try {
-    data = await product.run(q);
-  } catch (e) {
-    // Nothing has been charged yet: a bad request costs the buyer nothing.
-    const theirs = id === "cover.quote" || e instanceof BadInput;
-    return NextResponse.json({ error: theirs ? (e as Error).message : "upstream data unavailable" }, { status: theirs ? 400 : 502 });
-  }
-
-  let settled;
+  let settled: Awaited<ReturnType<typeof verifyAndSettle>> | undefined;
   let paid = reqs;
-  try {
+  const settle = async () => {
     const payload = decodeHeader<PaymentPayload>(header);
     paid = accepts.find((r) => r.network === payload.network) ?? reqs;
     settled = await verifyAndSettle(payload, paid);
-  } catch (e) {
-    return NextResponse.json({ x402Version: 1, error: (e as Error).message, accepts }, { status: 402 });
+  };
+  if (product.payFirst) {
+    // It costs us money to answer, so the buyer's payment settles first; a failed answer is refunded below.
+    try {
+      await settle();
+    } catch (e) {
+      return NextResponse.json({ x402Version: 1, error: (e as Error).message, accepts }, { status: 402 });
+    }
+    try {
+      data = await product.run(q);
+    } catch (e) {
+      data = { ok: false, error: (e as Error).message.slice(0, 200) };
+    }
+  } else {
+    try {
+      data = await product.run(q);
+    } catch (e) {
+      // Nothing has been charged yet: a bad request costs the buyer nothing.
+      const theirs = id === "cover.quote" || e instanceof BadInput;
+      return NextResponse.json({ error: theirs ? (e as Error).message : "upstream data unavailable" }, { status: theirs ? 400 : 502 });
+    }
+    try {
+      await settle();
+    } catch (e) {
+      return NextResponse.json({ x402Version: 1, error: (e as Error).message, accepts }, { status: 402 });
+    }
   }
+  const done = settled as Awaited<ReturnType<typeof verifyAndSettle>> | undefined;
+  if (!done) return NextResponse.json({ x402Version: 1, error: "payment not settled", accepts }, { status: 402 });
 
   // Test switch: the seller takes the money and sends an empty answer, so the delivery check and refund can be seen.
   if (fault === "bad_delivery") data = {};
@@ -67,7 +94,7 @@ export async function GET(req: NextRequest, ctx: { params: Promise<{ product: st
     product: id,
     payer,
     amount: price.toString(),
-    tx: settled.hash,
+    tx: done.hash,
     network: netOfCaip(paid.network),
     own: req.headers.get("x-agento-buyer") === "job",
     nonce: auth.nonce,
@@ -77,10 +104,17 @@ export async function GET(req: NextRequest, ctx: { params: Promise<{ product: st
     answer: kept.length <= 200_000 ? kept : undefined,
   });
   product.settled?.(sale, data);
+  // Paid, but the answer couldn't be delivered: the full price goes back to the payer.
+  const failure = product.failed?.(data);
+  if (failure) {
+    const { refundSale } = await import("@/server/refunds");
+    const refund = await refundSale(sale.id, failure);
+    return NextResponse.json({ error: failure, data, refund }, { status: 502 });
+  }
   const res = NextResponse.json({ data });
   res.headers.set(
     "x-payment-response",
-    encodeHeader({ success: true, transaction: settled.hash, network: paid.network, payer: decodeHeader<PaymentPayload>(header).payload.authorization.from, fee: settled.fee }),
+    encodeHeader({ success: true, transaction: done.hash, network: paid.network, payer: decodeHeader<PaymentPayload>(header).payload.authorization.from, fee: done.fee }),
   );
   return res;
 }

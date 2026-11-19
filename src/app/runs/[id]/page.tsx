@@ -1,6 +1,7 @@
 "use client";
 import { ComposePanel } from "@/components/TierPicker";
 import { Report } from "@/components/Report";
+import { LearnedBanner } from "@/components/LearnedBanner";
 import { use, useEffect, useRef, useState } from "react";
 import Link from "next/link";
 import dynamic from "next/dynamic";
@@ -618,6 +619,7 @@ export default function RunPage({
                 }
               />
             )}
+          <LearnedBanner run={run} />
           {run.report && (
             <div className="space-y-1.5">
               <Report run={run} />

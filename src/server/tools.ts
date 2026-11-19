@@ -16,6 +16,7 @@ import { FEEDS } from "./chainlink";
 import { checkQuestion, readArc } from "./chain-tools";
 import { buildHandoff, type Handoff, type HandoffAsk } from "@/lib/handoff";
 import { KIND_TEXT, matchRecipes, WHERE_TEXT } from "@/lib/recipes";
+import { matchLearned } from "./learn";
 
 /** The details a ready-made booking link was built from, read back out of its link. */
 function handoffAskOf(h: Handoff): HandoffAsk {
@@ -217,9 +218,13 @@ export const FREE_TOOLS: Record<string, FreeTool> = {
     description: "Tested step combos for common problems. Start open-ended ones from the closest; tailor it.",
     params: z.object({ query: z.string() }),
     async run(a) {
-      const found = matchRecipes(String(a.query ?? ""), { limit: 2 });
+      const q = String(a.query ?? "");
+      const found = matchRecipes(q, { limit: 2 });
+      // Recipes learned from jobs that worked, sold to other agents too: offered first when they fit.
+      const learned = matchLearned(q, 1).map(({ recipe: r }) => ({ id: r.id, learned: `worked ${r.successes} of ${r.runs} times`, worry: r.worry, gets: r.gets, needs: r.needs.map((n) => n.name), steps: r.steps.map((s) => s.label), hint: "Call compose_solution with the problem to build it fresh, or follow these steps." }));
       const data = found.map(({ recipe: r }) => ({ id: r.id, agent: r.agent, worry: r.worry, gets: r.gets, steps: r.steps.map((s) => `${s.label} · ${s.by}${s.cost ? ` · $${s.cost}` : ""} · ${KIND_TEXT[s.kind]} · ${WHERE_TEXT[s.where]}`) }));
-      return { data: data.length ? data : { none: "No recipe fits; build it from the tools." }, summary: found.length ? `Recipe: ${found[0].recipe.worry}` : "No recipe for that yet" };
+      const all = [...learned, ...data];
+      return { data: all.length ? all : { none: "No recipe fits; build it from the tools." }, summary: learned.length ? `Learned recipe: ${learned[0].worry}` : found.length ? `Recipe: ${found[0].recipe.worry}` : "No recipe for that yet" };
     },
   },
   read_arc: {

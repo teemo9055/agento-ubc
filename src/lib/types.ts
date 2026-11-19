@@ -411,6 +411,8 @@ export interface Run {
   lanes?: { id: string; question: string; importance: "must" | "should" | "nice" }[];
   /** The write-up once the job is done. */
   report?: Report;
+  /** The recipe this job taught the book, if it was composed and worked. */
+  learned?: { id: string; title: string; status: "draft" | "promoted" | "retired"; runs: number; successes: number; network: "testnet" | "mainnet" };
   /** Live tally of findings, recomputed by code after every finished step. */
   verdict?: { lean: "looks_fine" | "be_careful" | "do_not_proceed" | "unclear"; good: number; warn: number; bad: number; pending: number };
   faults: FailureCode[];

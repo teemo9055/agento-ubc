@@ -29,6 +29,7 @@ export type RunEvent =
   | { type: "failure.resolved"; failureId: string; action: FailureAction }
   | { type: "decision.logged"; decision: Decision }
   | { type: "run.done"; deliverable: Deliverable; refunded: string; refundTx?: Hex; at: string; report?: Report }
+  | { type: "run.learned"; recipe: NonNullable<Run["learned"]> }
   | { type: "run.cancelled"; refunded: string; refundTx?: Hex; at: string };
 
 export type SeqEvent = RunEvent & { seq: number };

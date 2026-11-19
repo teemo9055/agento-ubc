@@ -46,6 +46,8 @@ export function reduce(run: Run | null, e: SeqEvent): Run | null {
       return mapPhase(run, e.phaseId, (p) => ({ ...p, status: "skipped", note: e.note ?? p.note, endedAt: e.at ?? p.endedAt }));
     case "phase.updated":
       return mapPhase(run, e.phaseId, (p) => ({ ...p, ...e.patch }));
+    case "run.learned":
+      return { ...run, learned: e.recipe };
     case "run.tallied":
       return { ...run, verdict: e.verdict };
     case "payment.updated":

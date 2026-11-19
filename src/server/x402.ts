@@ -1,4 +1,6 @@
 import type { Hex } from "viem";
+import { allLearned, learnedById, recipePrice } from "./learn";
+import { recipeInputs, runRecipe } from "./recipeRun";
 import { chainOf, send, usdcAbi } from "./chain";
 import { NETWORKS, type Net } from "@/lib/networks";
 import * as gemini from "./gemini";
@@ -31,7 +33,64 @@ export interface Product {
   run: (q: URLSearchParams) => Promise<unknown>;
   /** Called once the payment settled and the sale was recorded. */
   settled?: (sale: Sale, data: unknown) => void;
+  /**
+   * Costs money to answer (it buys from other sellers): the buyer's payment is settled first, and
+   * refunded in full if the answer can't be delivered. Checked before anything is charged: `validate`.
+   */
+  payFirst?: boolean;
+  validate?: (q: URLSearchParams) => void;
+  /** Networks it is sold on, when not every one the seller settles on. */
+  nets?: Net[];
+  /** Answer that failed after payment: says so, so the route refunds. */
+  failed?: (data: unknown) => string | null;
 }
+
+// ---------- learned recipes for sale: recipe.<id> ----------
+
+const salesToday = new Map<string, number>();
+const today = () => new Date().toISOString().slice(0, 10);
+/** USDC spent today running recipes for buyers; the day's cap stops sales before more is spent. */
+export const recipeSpendToday = () => salesToday.get(today()) ?? 0;
+const DAILY_CAP = () => Number(process.env.RECIPE_SALES_DAILY_CAP_USD ?? 5);
+
+/** A promoted learned recipe as a product other agents can buy. */
+export function recipeProduct(id: string): Product | undefined {
+  const r = learnedById(id);
+  if (!r || r.status !== "promoted") return undefined;
+  const price = recipePrice(r);
+  return {
+    id: `recipe.${r.id}`,
+    description: `${r.title}: ${r.gets}. Worked ${r.successes} of ${r.runs} times; runs ${r.steps.length} paid checks from Circle's Agent Marketplace and returns a report with the evidence`.slice(0, 300),
+    price,
+    params: Object.fromEntries(r.needs.map((n) => [n.name, `${n.type.replace(/_/g, " ")} (required)`])),
+    example: r.needs.map((n) => `${n.name}=${encodeURIComponent(n.type === "phone" ? "+16045550199" : n.type.includes("url") ? "https://example.com/item/1" : n.type === "email" ? "someone@example.com" : n.type === "domain" ? "example.com" : "example")}`).join("&"),
+    promise: { fields: ["report", "receipt"] },
+    payFirst: true,
+    nets: [r.network],
+    validate: (q) => {
+      recipeInputs(r, (k) => q.get(k));
+      if (recipeSpendToday() + r.avgCostUsd > DAILY_CAP()) throw new BadInput(`Sold out for today: recipe runs are capped at $${DAILY_CAP()} a day`);
+    },
+    run: async (q) => {
+      const out = await runRecipe(r, recipeInputs(r, (k) => q.get(k)));
+      salesToday.set(today(), recipeSpendToday() + out.receipt.spentUsd);
+      return out;
+    },
+    failed: (d) => ((d as { ok?: boolean } | null)?.ok === false ? "A must-know check didn't deliver" : null),
+  };
+}
+
+/** Everything on sale: the fixed products and every promoted learned recipe. */
+export function forSale(): Product[] {
+  const recipes = allLearned()
+    .filter((r) => r.status === "promoted")
+    .map((r) => recipeProduct(r.id))
+    .filter((p): p is Product => Boolean(p));
+  return [...Object.values(PRODUCTS), ...recipes];
+}
+
+/** A fixed product, or a learned recipe for sale. */
+export const productFor = (id: string): Product | undefined => PRODUCTS[id] ?? (id.startsWith("recipe.") ? recipeProduct(id.slice(7)) : undefined);
 
 /** How long after a sale a refund can be claimed. */
 export const REFUND_WINDOW_MIN = 10;

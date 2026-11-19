@@ -1,5 +1,5 @@
 "use client";
-import { Suspense, useMemo, useState } from "react";
+import { Suspense, useEffect, useMemo, useState } from "react";
 import Link from "next/link";
 import { useRouter, useSearchParams } from "next/navigation";
 import { Icon } from "@/components/Icon";
@@ -10,6 +10,60 @@ import { useStartJob } from "@/components/useStartJob";
 import { matchRecipes, MOMENTS, RECIPES, type Moment } from "@/lib/recipes";
 import { THEMES } from "@/lib/themes";
 import type { AgentId } from "@/lib/types";
+
+type Learned = { id: string; title: string; worry: string; gets: string; status: "draft" | "promoted"; runs: number; successes: number; avgCostUsd: number; steps: string[]; priceUsd: number; buy: string | null; network: string };
+
+const usd = (x: number) => `$${x > 0 && x < 0.01 ? x.toFixed(4) : x.toFixed(2)}`;
+
+/** Recipes learned from jobs that worked: how often they worked, what they cost, and where other agents buy them. */
+function LearnedSection({ onStart, busy }: { onStart: (text: string, id: string) => void; busy: string }) {
+  const [list, setList] = useState<Learned[] | null>(null);
+  useEffect(() => {
+    fetch("/api/recipes/learned")
+      .then((r) => r.json())
+      .then((b: { recipes: Learned[] }) => setList(b.recipes))
+      .catch(() => setList([]));
+  }, []);
+  if (!list?.length) return null;
+  return (
+    <section aria-labelledby="learned" data-testid="learned-recipes">
+      <div className="mb-3">
+        <h2 id="learned" className="text-[18px] font-semibold">
+          Learned
+        </h2>
+        <p className="text-[13px] text-ink-3">Built by Agento from jobs that worked. Success rates come from real runs.</p>
+      </div>
+      <ul className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3">
+        {list.map((r) => (
+          <li key={r.id} className="flex flex-col rounded-2xl border border-line bg-panel p-4" data-testid={`learned-${r.id}`}>
+            <div className="flex items-center gap-2">
+              <span className="rounded-md bg-agent-soft px-1.5 py-0.5 text-[11px] font-semibold text-agent-ink">Learned</span>
+              {r.status === "promoted" ? <span className="text-[11.5px] font-medium text-good">On sale to agents</span> : <span className="text-[11.5px] text-ink-3">Draft</span>}
+            </div>
+            <h3 className="mt-2 text-[15px] font-semibold leading-snug">{r.worry}</h3>
+            <p className="mt-0.5 text-[13px] text-ink-2">{r.title}</p>
+            <p className="num mt-2 text-[12.5px] text-ink-2">
+              Worked {r.successes} of {r.runs} time{r.runs === 1 ? "" : "s"} · about {usd(r.avgCostUsd)} a run · built from {r.runs} run{r.runs === 1 ? "" : "s"}
+            </p>
+            <ol className="mt-2 space-y-0.5 text-[12.5px] text-ink-3">
+              {r.steps.slice(0, 4).map((s, i) => (
+                <li key={i} className="truncate">
+                  {i + 1}. {s}
+                </li>
+              ))}
+            </ol>
+            <div className="mt-auto flex items-center justify-between gap-2 pt-3">
+              {r.buy ? <code className="truncate rounded bg-surface px-1 text-[11.5px] text-ink-2">{r.buy}</code> : <span />}
+              <button type="button" disabled={Boolean(busy)} onClick={() => onStart(r.worry, r.id)} className="pressable inline-flex h-8 shrink-0 items-center rounded-lg border border-ink px-2.5 text-[12.5px] font-semibold hover:bg-ink hover:text-white">
+                {busy === r.id ? "Starting…" : "Use it"}
+              </button>
+            </div>
+          </li>
+        ))}
+      </ul>
+    </section>
+  );
+}
 
 /**
  * The recipe book: combinations that solve everyday problems, grouped by the moment in life they
@@ -102,6 +156,7 @@ function Book() {
         <RecipeKey />
       </div>
 
+      {!matched && <LearnedSection busy={busy} onStart={(text, id) => void start("worko", text, id)} />}
       {matched?.length ? (
         <section aria-labelledby="closest">
           <h2 id="closest" className="mb-3 text-[12px] font-semibold uppercase tracking-wide text-ink-3">

@@ -1,4 +1,4 @@
-import { PRODUCTS, REFUND_WINDOW_MIN, refundPolicy, NETWORK } from "../x402";
+import { productFor, REFUND_WINDOW_MIN, refundPolicy, NETWORK } from "../x402";
 import { HALL_DEPOSIT, KIND_LABEL, publicQueue, ROUTE_LABEL, type PublicItem } from "./hall";
 import { board, LAB_STAGES, labStage, lastActivity, type BoardRow, type Post } from "./boards";
 import { allEntries, FEATURED, mcpToolOf, type LibraryEntry } from "./library";
@@ -151,7 +151,7 @@ export function libraryDoc(base: string, entries: LibraryEntry[] = allEntries())
 /** How an agent buys it and how a person uses it: the same text on the product page and in its Markdown. */
 export function howToBuy(item: StoreItem, base: string) {
   const pid = item.id.startsWith("agento-") ? item.id.slice(7) : undefined;
-  const p = pid ? PRODUCTS[pid] : undefined;
+  const p = pid ? productFor(pid) : undefined;
   if (p) {
     const url = `${base}/api/x402/${p.id}?${p.example}`;
     const jobs = usedInJobs(p.id);
@@ -194,7 +194,7 @@ export function howToBuy(item: StoreItem, base: string) {
 
 export function storeItemJson(item: StoreItem, base: string) {
   const pid = item.id.startsWith("agento-") ? item.id.slice(7) : undefined;
-  const p = pid ? PRODUCTS[pid] : undefined;
+  const p = pid ? productFor(pid) : undefined;
   const buy = howToBuy(item, base);
   return {
     schemaVersion: SCHEMA_VERSION,
