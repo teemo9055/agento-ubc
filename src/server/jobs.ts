@@ -25,12 +25,10 @@ const closesIn = (e: MarketEvent) => (e.expiry ? Date.parse(e.expiry) - Date.now
 
 /** Open events whose ticker starts with `prefix`, soonest first, still open for at least `minHours`. */
 async function eventsOf(prefix: string, base: string, minHours = 1, search?: string): Promise<MarketEvent[]> {
-  let all = await gemini.activeEvents(base);
-  // The paged list can skip a market; a search by name finds it.
-  if (search) {
-    const have = new Set(all.map((e) => e.ticker));
-    all = [...all, ...(await gemini.namedEvents(search, base).catch(() => [])).filter((e) => !have.has(e.ticker))];
-  }
+  const fits = (e: MarketEvent) => e.ticker.startsWith(prefix) && closesIn(e) > minHours * HOUR;
+  // A market with a name is one small search away; the full list is ~1,000 markets in six big pages.
+  const named = search ? (await gemini.namedEvents(search, base).catch(() => [])).filter(fits) : [];
+  const all = named.length ? named : await gemini.activeEvents(base);
   return all.filter((e) => e.ticker.startsWith(prefix) && closesIn(e) > minHours * HOUR).sort((a, b) => closesIn(a) - closesIn(b));
 }
 
@@ -258,7 +256,7 @@ const CARDS: Record<string, CardDef> = {
         const skip = new Set<string>();
         let gas: Awaited<ReturnType<typeof validateProposal>> = { error: "No oil line is open right now" };
         for (let i = 0; i < 3 && "error" in gas; i++) {
-          const c = await choose(await lineOptions(["WTI", "BRENT"]), venue, skip);
+          const c = await choose(await lineOptions(["WTI", "BRENT"], "Oil"), venue, skip);
           if ("error" in c) return { error: c.error };
           gas = await validateProposal("inso", coverInput(c, { protects: "pricier gas on the trip", usd: 25 }, "Cover: gas price jump"), `${id}-s2`);
           skip.add(c.contract.symbol);
@@ -305,7 +303,7 @@ const CARDS: Record<string, CardDef> = {
   },
   // Inso: news + markets (headlines bought in real USDC on Arc mainnet, then the market)
   "news-crypto": coverCard("Bet: Bitcoin moves up", { protects: "missing a Bitcoin rally", usd: 15 }, () => lineOptions(["BTC2"], "BTC price"), (c) => `Bitcoin's in the news. Read the headlines, then bet on “${c.contract.label}” by ${day(c.event)}.`, "Bitcoin price"),
-  "news-oil": coverCard("Cover: oil jumps on the news", { protects: "a higher fuel bill", usd: 25 }, () => lineOptions(["WTI", "BRENT"]), (c) => `Oil supply is in the news. Read it, then cover me if oil reaches ${c.contract.label} by ${day(c.event)}.`, "OPEC oil supply"),
+  "news-oil": coverCard("Cover: oil jumps on the news", { protects: "a higher fuel bill", usd: 25 }, () => lineOptions(["WTI", "BRENT"], "Oil"), (c) => `Oil supply is in the news. Read it, then cover me if oil reaches ${c.contract.label} by ${day(c.event)}.`, "OPEC oil supply"),
   "news-fed": coverCard("Cover: a bigger rate hike", { protects: "a bigger mortgage payment", usd: 40 }, fedOptions, (c) => `Rate news could raise my mortgage. Read it, then cover me if the Fed says “${c.contract.label}”.`, "Federal Reserve rate decision"),
   // Inso: weather (the order goes to Gemini's real exchange; practice without it)
   "wedding-cold": coverCard("Cover: a cold wedding day", { protects: "a cold wedding day", usd: 40 }, () => weatherOptions(["CHI", "BOS", "DEN", "PHL"], "cold"), (c) => `My outdoor wedding in ${cityOf(c.event.title)} is ${day(c.event)}. Cover me if it's cold.`),
@@ -315,10 +313,10 @@ const CARDS: Record<string, CardDef> = {
   "tickets-loss": coverCard("Cover: my team loses", { protects: "your team losing", usd: 30 }, () => sportsOptions("NBA-"), (c) => `I have tickets for ${c.event.title}. Cover me if my team loses.`),
   "bar-night": coverCard("Cover: a slow night at the bar", { protects: "a slow night at the bar", usd: 30 }, () => sportsOptions("NFL-"), (c) => `My bar is slow when the home team loses. ${c.event.title}: cover me.`),
   // Inso: commodities (real orders on Gemini's test exchange)
-  "heating-gas": coverCard("Cover: a natural gas spike", { protects: "a higher heating bill", usd: 20 }, () => lineOptions(["NGAS"]), (c) => `My heating bill jumps if natural gas spikes. Cover me if it reaches ${c.contract.label}.`),
-  "ring-gold": coverCard("Cover: a gold price jump", { protects: "a pricier gold ring", usd: 25 }, () => lineOptions(["XAU"]), (c) => `I'm buying a gold ring soon. Cover me if gold reaches ${c.contract.label}.`),
-  "copper-quote": coverCard("Cover: a copper price jump", { protects: "a thinner margin on the job", usd: 25 }, () => lineOptions(["COPPER"]), (c) => `I quoted a wiring job at a fixed price. Cover me if copper reaches ${c.contract.label}.`),
-  "fuel-costs": coverCard("Cover: an oil price jump", { protects: "higher fuel costs", usd: 30 }, () => lineOptions(["WTI", "BRENT"]), (c) => `Fuel is my biggest cost. Cover me if oil reaches ${c.contract.label}.`),
+  "heating-gas": coverCard("Cover: a natural gas spike", { protects: "a higher heating bill", usd: 20 }, () => lineOptions(["NGAS"], "Natural Gas"), (c) => `My heating bill jumps if natural gas spikes. Cover me if it reaches ${c.contract.label}.`),
+  "ring-gold": coverCard("Cover: a gold price jump", { protects: "a pricier gold ring", usd: 25 }, () => lineOptions(["XAU"], "Gold"), (c) => `I'm buying a gold ring soon. Cover me if gold reaches ${c.contract.label}.`),
+  "copper-quote": coverCard("Cover: a copper price jump", { protects: "a thinner margin on the job", usd: 25 }, () => lineOptions(["COPPER"], "Copper"), (c) => `I quoted a wiring job at a fixed price. Cover me if copper reaches ${c.contract.label}.`),
+  "fuel-costs": coverCard("Cover: an oil price jump", { protects: "higher fuel costs", usd: 30 }, () => lineOptions(["WTI", "BRENT"], "Oil"), (c) => `Fuel is my biggest cost. Cover me if oil reaches ${c.contract.label}.`),
 };
 
 /** Where a card's order goes, given where the person wants orders to go and what the market allows. */
@@ -388,7 +386,7 @@ export async function previews(want: Venue): Promise<JobPreview[]> {
       if (venue === "paper" && !venueReady("paper")) return { id: card.id, venue: "gemini", needsVenue: true, unavailable: "This market is only on Gemini's real exchange. Add your Gemini API key in Settings → Exchange to trade it." };
       const cost = def.cost?.();
       if (!def.options) return { id: card.id, cost: cost?.usd, steps: cost?.steps, venue };
-      const o = await Promise.race([def.options(), new Promise<null>((r) => setTimeout(() => r(null), 6000))]).catch(() => null);
+      const o = await Promise.race([def.options(), new Promise<null>((r) => setTimeout(() => r(null), 15_000))]).catch(() => null);
       if (!o) return { id: card.id, unavailable: "Gemini didn't answer in time. Try again in a moment.", venue };
       if (!o.options.length) return { id: card.id, unavailable: "Nothing is open for this right now. Try again later.", venue };
       const choices = o.options.map((c) => ({ id: c.key, label: c.label, market: c.event.title.replace(/\?$/, ""), line: c.contract.label, chance: c.price, closes: c.event.expiry, ...sized(def.loss!.usd, c.price) }));
@@ -398,7 +396,9 @@ export async function previews(want: Venue): Promise<JobPreview[]> {
       return { ...nums, id: card.id, choices, choice, pick: o.pick, cost: cost?.usd, steps: cost?.steps, venue: shown };
     }),
   );
-  cache = { at: Date.now(), want, mainnet, list };
+  // A card Gemini was slow for is tried again on the next look, not kept for the whole 45 s.
+  const slow = list.some((p) => p.unavailable?.startsWith("Gemini didn't answer"));
+  cache = { at: slow ? Date.now() - 40_000 : Date.now(), want, mainnet, list };
   return list;
 }
 
