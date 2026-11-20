@@ -83,20 +83,39 @@ async function sportsOptions(prefix: string): Promise<Options> {
   return { pick: "Your team", options };
 }
 
-/** Commodities and coins: the month-end lines a jump would cross, read fresh; the default is a cheap one. */
-async function lineOptions(prefixes: string[], search?: string, minHours = 24, soonest = false): Promise<Options> {
+/** The card's check: the price must be at least this share of the line when the order goes in. */
+const GATE = 0.9;
+
+/**
+ * Commodities and coins: the month-end lines a jump would cross, read fresh. The default is one the
+ * card's own check can pass (the price within 10% of the line, read from Gemini's spot market when
+ * `spot` is given), so the job can actually end with an order; otherwise a cheap line.
+ */
+async function lineOptions(prefixes: string[], search?: string, minHours = 24, soonest = false, spot?: string): Promise<Options> {
+  const now = spot ? await gemini.spotTicker(spot).then((q) => q.last, () => undefined) : undefined;
+  // Orders go on the test exchange when it's connected: a default line must be listed there too.
+  const onTest = venueReady("gemini-sandbox");
+  let fallback: Options | undefined;
   for (const prefix of prefixes) {
     const found = await eventsOf(prefix, PROD_BASE, minHours, search);
-    for (const listed of soonest ? found : found.reverse()) {
+    for (const listed of soonest ? found : [...found].reverse()) {
       // Read fresh: lines open and close through the day, and the list above can be a minute old.
       const event = await gemini.getEvent(listed.ticker, PROD_BASE).catch(() => listed);
       const lines = event.contracts.filter((x) => /above/i.test(x.label) && x.open === true && (yesPrice(x) ?? 0) >= 0.03 && (yesPrice(x) ?? 1) <= 0.6).sort((a, b) => (a.strike ?? 0) - (b.strike ?? 0));
       if (!lines.length) continue;
-      const def = coverLine(lines, () => true) ?? coverLine(lines, () => true, 0.25, 0.03, 0.42) ?? lines[0];
-      return { pick: "Price line", def: def.symbol, options: lines.map((c) => ({ key: c.symbol, label: c.label, event, contract: c, price: yesPrice(c)!, venue: "paper" as Venue })) };
+      const options = lines.map((c) => ({ key: c.symbol, label: c.label, event, contract: c, price: yesPrice(c)!, venue: "paper" as Venue }));
+      fallback ??= { pick: "Price line", def: (coverLine(lines, () => true) ?? coverLine(lines, () => true, 0.25, 0.03, 0.42) ?? lines[0]).symbol, options };
+      if (!now) return fallback;
+      // Lines the check passes: the price is at least 90% of the line. Of those, the highest still worth buying.
+      let reachable = lines.filter((x) => x.strike != null && x.strike * GATE <= now && (yesPrice(x) ?? 0) >= 0.05);
+      if (onTest && reachable.length) {
+        const listedThere = new Set((await gemini.getEvent(listed.ticker, SANDBOX_BASE).catch(() => null))?.contracts.map((c) => c.symbol) ?? []);
+        reachable = reachable.filter((x) => listedThere.has(x.symbol));
+      }
+      if (reachable.length) return { pick: "Price line", def: reachable.at(-1)!.symbol, options };
     }
   }
-  return { pick: "Price line", options: [] };
+  return fallback ?? { pick: "Price line", options: [] };
 }
 
 /** Fed: each outcome of the next decision; the default is the costly surprise, a bigger hike. */
@@ -243,7 +262,7 @@ const coverCard = (title: string, loss: { protects: string; usd: number }, optio
       "Is this order worth placing at this price, or should it wait?",
     ].filter((q): q is string => Boolean(q));
     // Don't pay for a long shot: the price must be within 10% of the line when the order goes in.
-    const gate = before.oracle && c.contract.strike ? Math.round(c.contract.strike * 0.9) : undefined;
+    const gate = before.oracle && c.contract.strike ? Math.round(c.contract.strike * GATE) : undefined;
     if (gate) input.condition = { metric: "oracle_price", symbol: before.oracle!, op: ">=", value: gate };
     const checks = [before.oracle && "the price from Chainlink", before.news && "today's headlines", before.odds && "what Polymarket and Kalshi price"].filter(Boolean).join(", ");
     return {
@@ -439,10 +458,10 @@ const CARDS: Record<string, CardDef> = {
     questions: ["Do people rate {place} well lately, compared with its all-time rating?", "Has anything changed recently, like new owners or a closure?", "What does it offer, and when is it open?"],
   }),
   // Inso: news + markets (headlines bought in real USDC on Arc mainnet, then the market)
-  "news-crypto": coverCard("Bet: Bitcoin moves up", { protects: "missing a Bitcoin rally", usd: 15 }, () => lineOptions(["BTC2"], "BTC price"), (c) => `Bitcoin's in the news. Read the headlines, then bet on “${c.contract.label}” by ${day(c.event)}.`, { oracle: "btcusd", news: "Bitcoin price", odds: "bitcoin" }),
-  "news-eth": coverCard("Bet: Ether moves up", { protects: "missing an Ether rally", usd: 15 }, () => lineOptions(["ETH2"], "ETH price"), (c) => `Ether's in the news. Read the headlines and other markets, then bet on “${c.contract.label}” by ${day(c.event)}.`, { oracle: "ethusd", news: "Ethereum price", odds: "ethereum" }),
-  "news-sol": coverCard("Bet: Solana moves up", { protects: "missing a Solana rally", usd: 15 }, () => lineOptions(["SOL2"], "SOL price"), (c) => `Solana's in the news. Read the headlines and other markets, then bet on “${c.contract.label}” by ${day(c.event)}.`, { oracle: "solusd", news: "Solana price", odds: "solana" }),
-  "btc-today": coverCard("Bet: Bitcoin by this afternoon", { protects: "missing a Bitcoin move today", usd: 10 }, () => lineOptions(["BTC2"], "BTC price", 1, true), (c) => `Where does Bitcoin end today? Check the live price and the news first, then bet on “${c.contract.label}” by ${day(c.event)}.`, { oracle: "btcusd", news: "Bitcoin price today" }),
+  "news-crypto": coverCard("Bet: Bitcoin moves up", { protects: "missing a Bitcoin rally", usd: 15 }, () => lineOptions(["BTC2"], "BTC price", 24, false, "btcusd"), (c) => `Bitcoin's in the news. Read the headlines, then bet on “${c.contract.label}” by ${day(c.event)}.`, { oracle: "btcusd", news: "Bitcoin price", odds: "bitcoin" }),
+  "news-eth": coverCard("Bet: Ether moves up", { protects: "missing an Ether rally", usd: 15 }, () => lineOptions(["ETH2"], "ETH price", 24, false, "ethusd"), (c) => `Ether's in the news. Read the headlines and other markets, then bet on “${c.contract.label}” by ${day(c.event)}.`, { oracle: "ethusd", news: "Ethereum price", odds: "ethereum" }),
+  "news-sol": coverCard("Bet: Solana moves up", { protects: "missing a Solana rally", usd: 15 }, () => lineOptions(["SOL2"], "SOL price", 24, false, "solusd"), (c) => `Solana's in the news. Read the headlines and other markets, then bet on “${c.contract.label}” by ${day(c.event)}.`, { oracle: "solusd", news: "Solana price", odds: "solana" }),
+  "btc-today": coverCard("Bet: Bitcoin by this afternoon", { protects: "missing a Bitcoin move today", usd: 10 }, () => lineOptions(["BTC2"], "BTC price", 1, true, "btcusd"), (c) => `Where does Bitcoin end today? Check the live price and the news first, then bet on “${c.contract.label}” by ${day(c.event)}.`, { oracle: "btcusd", news: "Bitcoin price today" }),
   "news-oil": coverCard("Cover: oil jumps on the news", { protects: "a higher fuel bill", usd: 25 }, () => lineOptions(["WTI", "BRENT"], "Oil"), (c) => `Oil supply is in the news. Read it, then cover me if oil reaches ${c.contract.label} by ${day(c.event)}.`, { news: "OPEC oil supply", odds: "oil price" }),
   "news-fed": coverCard("Cover: a bigger rate hike", { protects: "a bigger mortgage payment", usd: 40 }, fedOptions, (c) => `Rate news could raise my mortgage. Read it, then cover me if the Fed says “${c.contract.label}”.`, { news: "Federal Reserve rate decision", odds: "fed decision" }),
   // Inso: weather (the order goes to Gemini's real exchange; practice without it)

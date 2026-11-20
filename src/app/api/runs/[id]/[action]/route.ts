@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { z } from "zod";
 import type { SeqEvent } from "@/lib/events";
-import { adjustMove, adopt, skipGap, approve, backToChat, cancel, startPlan, stopPlan, editPlanOf, retryPlanStep, rerun, saveRun, cancelRunOrder, refreshRunOrder, sendChat, decideReapproval, editCard, fundingInfo, previewEdit, reapprovalPlan, resolveFailure, subscribe } from "@/server/orchestrator";
+import { adjustMove, adopt, skipGap, approve, backToChat, cancel, startPlan, stopPlan, editPlanOf, retryPlanStep, rerun, placeAnyway, saveRun, cancelRunOrder, refreshRunOrder, sendChat, decideReapproval, editCard, fundingInfo, previewEdit, reapprovalPlan, resolveFailure, subscribe } from "@/server/orchestrator";
 
 export const dynamic = "force-dynamic";
 
@@ -53,6 +53,8 @@ export async function POST(req: NextRequest, ctx: Ctx) {
       }
       case "rerun":
         return NextResponse.json(await rerun(id));
+      case "place-anyway":
+        return NextResponse.json(await placeAnyway(id));
       case "save": {
         const b = (await req.json().catch(() => ({}))) as { saved?: boolean };
         return NextResponse.json(saveRun(id, b.saved !== false));

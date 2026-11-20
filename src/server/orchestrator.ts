@@ -26,7 +26,7 @@ import { aiEnabled, type AiUsage } from "./ai";
 import { buildPlanStep, exploreTurn } from "./explore";
 import { editPlan, type PlanOp } from "./plan-edit";
 import { routeAgent } from "./route";
-import { cancelOrder, marketBase, refreshOrder, tradingVenue, venueReady, withVenue } from "./exchange";
+import { cancelOrder, marketBase, placeOrder, refreshOrder, tradingVenue, venueReady, withVenue } from "./exchange";
 import * as gemini from "./gemini";
 import { settle } from "@/lib/settle";
 import { stillTradable, toProposalInput, validateProposal } from "./tools";
@@ -36,7 +36,7 @@ import { anchorOrder, canAnchor } from "./anchor";
 import { suggestionsFor } from "./suggest";
 import { recordOrder, recordSettlement } from "./knowledge";
 import { aiEditMove } from "./edit-move";
-import { offVault, paidInUsdc, type ChatMsg, type Plan, type PlanStep, type Proposal, type ResearchStep, type Venue } from "@/lib/types";
+import { offVault, paidInUsdc, type ChatMsg, type Plan, type PlanStep, type OrderResult, type Proposal, type ResearchStep, type Venue } from "@/lib/types";
 import { PhaseFailure, SkipPhase, type AgentCtx, type PlanDraft } from "./agents/types";
 import { MAINNET_MAX_JOB_USD, chainOf, factoryAbi, liveReady, setupProblems, vaultAbi } from "./chain";
 import type { Net } from "@/lib/networks";
@@ -1825,6 +1825,46 @@ export function saveRun(runId: string, saved: boolean) {
  * Runs a job again: the same move, checked against today's market and limits, as a fresh draft to approve.
  * If the move no longer works (the contract closed, the price moved past a limit), it starts a chat on the same request.
  */
+/** A finished job whose order didn't go in (the check failed or the agent held it): may it be placed now? */
+export function canPlaceAnyway(run: Run): boolean {
+  const a = run.proposal?.action;
+  if (run.status !== "done" || a?.kind !== "prediction_order" || a.trade === "sell") return false;
+  const act = run.phases.find((p) => p.id === "act");
+  return !run.order || run.order.status === "skipped" || act?.status === "skipped";
+}
+
+/**
+ * The person overrules the checks: the approved prediction order goes to Gemini after all, exactly
+ * as approved (same contract, price and size), through the prediction-market API. Logged as theirs.
+ */
+export async function placeAnyway(runId: string): Promise<Run> {
+  const ctl = ctlOf(runId);
+  if (!canPlaceAnyway(ctl.run)) throw new Error("There's no held order to place for this job");
+  const a = ctl.run.proposal!.action!;
+  if (a.kind !== "prediction_order") throw new Error("Only prediction orders can be placed");
+  const venue = ctl.run.proposal!.venue;
+  let order: OrderResult;
+  try {
+    order = await withNet(ctl.run.network, () => withVenue(venue, () => placeOrder(a, Date.now())));
+  } catch (e) {
+    const msg = (e as Error).message;
+    emit(ctl, { type: "order.updated", order: { venue, status: "rejected", detail: msg, notional: 0 } });
+    log(ctl, { kind: "failure", what: "Placed anyway: Gemini refused the order", why: msg, outcome: "rejected", by: "user" });
+    return ctl.run;
+  }
+  if (order.orderId && order.venue !== "paper") order = await refreshOrder(order, a.kind).catch(() => order);
+  order = await checkShadow(order, a).catch(() => order);
+  emit(ctl, { type: "order.updated", order });
+  log(ctl, {
+    kind: "card_edit",
+    what: `Placed anyway: prediction order${order.orderId ? ` #${order.orderId}` : ""} on ${a.symbol}`,
+    why: `You overruled the checks. ${order.status === "filled" ? "It filled" : order.status === "open" ? "It's open on Gemini until it fills" : `Gemini says ${order.status}`}.`,
+    outcome: "approved",
+    by: "user",
+  });
+  return ctl.run;
+}
+
 export async function rerun(runId: string) {
   const src = ctlOf(runId).run;
   const base = { agent: src.agent, task: src.task, mode: src.mode, network: src.network, venue: src.venue };

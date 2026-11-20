@@ -1,5 +1,9 @@
 "use client";
+import { useState } from "react";
 import type { Run } from "@/lib/types";
+import { post } from "./useRun";
+import { toast } from "./Toaster";
+import { Spinner } from "./ui";
 import { VERDICT } from "./Report";
 import { outcomeOf } from "@/lib/outcome";
 
@@ -70,6 +74,7 @@ export function DoneHero({ run }: { run: Run }) {
           ))}
         </div>
       )}
+      <PlaceAnyway run={run} />
       {steps.length > 0 && (
         <div className="mt-5 border-t border-dashed border-line pt-4">
           <div className="text-[12px] font-semibold tracking-wide text-ink-3">WHAT TO DO</div>
@@ -84,5 +89,44 @@ export function DoneHero({ run }: { run: Run }) {
         </div>
       )}
     </section>
+  );
+}
+
+/**
+ * The checks said wait, but it's the person's call: one button places the approved prediction order
+ * on Gemini anyway (same contract, price and size), through the prediction-market API.
+ */
+function PlaceAnyway({ run }: { run: Run }) {
+  const [busy, setBusy] = useState(false);
+  const a = run.proposal?.action;
+  const act = run.phases.find((p) => p.id === "act");
+  const held = run.status === "done" && a?.kind === "prediction_order" && a.trade !== "sell" && (!run.order || run.order.status === "skipped" || act?.status === "skipped");
+  if (!held || a?.kind !== "prediction_order") return null;
+  const where = run.proposal?.venue === "gemini" ? "Gemini (real money)" : run.proposal?.venue === "gemini-sandbox" ? "Gemini's test exchange" : "practice";
+  return (
+    <div className="mt-4 flex flex-wrap items-center justify-between gap-3 rounded-xl border-[1.5px] border-dashed border-ink/50 px-3.5 py-3" data-testid="place-anyway-box">
+      <div className="min-w-0 text-[13.5px] leading-snug text-ink-2">
+        <span className="font-semibold text-ink">No order went in.</span> The checks said wait. It&apos;s your call: place {a.quantity} × {a.side.toUpperCase()} at {Math.round(a.maxPrice * 100)}¢ or less on {where} anyway.
+      </div>
+      <button
+        type="button"
+        disabled={busy}
+        onClick={async () => {
+          setBusy(true);
+          try {
+            await post(`/api/runs/${run.id}/place-anyway`);
+            toast("Sent to Gemini's prediction market");
+          } catch (e) {
+            toast((e as Error).message, "bad");
+          } finally {
+            setBusy(false);
+          }
+        }}
+        className="pressable inline-flex h-10 shrink-0 items-center gap-2 rounded-full border-[1.5px] border-ink bg-ink px-4 text-[13.5px] font-semibold text-white hover:bg-agent hover:text-agent-on disabled:opacity-50"
+        data-testid="place-anyway"
+      >
+        {busy ? <Spinner /> : null} Place it anyway
+      </button>
+    </div>
   );
 }

@@ -24,3 +24,15 @@ describe("only prediction-market orders go to Gemini", () => {
     expect(describeAction({ kind: "prediction_order", eventTicker: "E", symbol: "GEMI-X", label: "$70,000 or above", side: "yes", orderType: "limit", maxPrice: 0.4, quantity: 5 })).toMatch(/^Prediction order: 5 × YES/);
   });
 });
+
+describe("placing a held order anyway", () => {
+  it("is offered only for a finished buy whose order didn't go in", async () => {
+    const { canPlaceAnyway } = await import("./orchestrator");
+    const action = { kind: "prediction_order", eventTicker: "E", symbol: "GEMI-X", label: "x", side: "yes", orderType: "limit", maxPrice: 0.2, quantity: 5 };
+    const base = { status: "done", proposal: { action }, phases: [{ id: "act", status: "skipped" }] } as never;
+    expect(canPlaceAnyway(base)).toBe(true);
+    expect(canPlaceAnyway({ ...(base as object), order: { status: "skipped" }, phases: [{ id: "act", status: "done" }] } as never)).toBe(true);
+    expect(canPlaceAnyway({ ...(base as object), order: { status: "open" }, phases: [{ id: "act", status: "done" }] } as never)).toBe(false);
+    expect(canPlaceAnyway({ ...(base as object), status: "running" } as never)).toBe(false);
+  });
+});
