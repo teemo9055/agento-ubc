@@ -60,6 +60,43 @@ export function Check() {
   );
 }
 
+/**
+ * Where each part of the job can be checked outside this app. Not everything is an Arc transaction:
+ * marketplace lookups are Gateway nanopayments Circle settles in batches, and orders live on Gemini.
+ */
+function CheckIt({ run, vendorsPaid }: { run: Run; vendorsPaid: boolean }) {
+  const net = run.network ?? "testnet";
+  const tiles: { key: string; label: string; title: string; body: string; href?: string; link?: string }[] = [];
+  if (run.mode === "demo") tiles.push({ key: "arc", label: "Arc", title: "Nothing on Arc", body: "This job ran in practice mode: its vault was simulated, so there's no Arc transaction to find." });
+  else if (run.vault) tiles.push({ key: "arc", label: `Arc ${net}`, title: "The job's vault", body: "Opening, each payment from it, and the refund when it closed are transactions on this address.", href: addrUrl(run.vault, net), link: "Open on the Arc explorer" });
+  if (vendorsPaid)
+    tiles.push({ key: "gw", label: "Circle Gateway", title: "Marketplace lookups", body: "Paid as signed nanopayments from the app's Gateway balance. Circle settles them on Arc in batches, so a single lookup has no transaction of its own." });
+  const o = run.order;
+  if (o && o.venue !== "paper")
+    tiles.push({ key: "gem", label: o.venue === "gemini" ? "Gemini" : "Gemini test exchange", title: "Your order", body: `${o.orderId ? `Order ${o.orderId}: ` : ""}it's in the Gemini account's orders, not on Arc.`, href: o.venue === "gemini" ? "https://exchange.gemini.com" : "https://exchange.sandbox.gemini.com", link: "Open Gemini" });
+  else if (o) tiles.push({ key: "gem", label: "Gemini", title: "Practice order", body: "Priced from Gemini's live market but never sent, so there's no order to find on Gemini." });
+  if (!tiles.length) return null;
+  return (
+    <div className="mt-5" data-testid="check-it">
+      <div className="text-[11.5px] font-semibold uppercase tracking-wide text-ink-3">Check it yourself</div>
+      <div className="mt-2 grid gap-2.5 sm:grid-cols-3">
+        {tiles.map((t) => (
+          <div key={t.key} className="rounded-xl border-[1.5px] border-ink bg-panel p-3 shadow-[2px_2px_0_0_var(--agent)]">
+            <span className="rounded-md bg-agent-soft px-1.5 py-0.5 text-[10.5px] font-semibold uppercase tracking-wide text-agent-ink">{t.label}</span>
+            <div className="mt-1.5 text-[13.5px] font-semibold">{t.title}</div>
+            <p className="mt-0.5 text-[12.5px] leading-snug text-ink-2">{t.body}</p>
+            {t.href && (
+              <a href={t.href} target="_blank" rel="noreferrer" className="mt-1.5 inline-flex items-center gap-1 text-[12.5px] font-medium underline decoration-line underline-offset-2 hover:text-ink">
+                {t.link} <Icon name="external" size={11} />
+              </a>
+            )}
+          </div>
+        ))}
+      </div>
+    </div>
+  );
+}
+
 export function ReceiptView({ run }: { run: Run }) {
   const net = useNet();
   const r = buildReceipt(run);
@@ -125,6 +162,8 @@ export function ReceiptView({ run }: { run: Run }) {
           <div className="text-ink-3">{r.mode === "demo" ? (samples ? "Practice mode with sample services: recorded answers, no money moved" : vendorsPaid ? "Practice mode: the vault is simulated; marketplace vendors were paid for real through Circle Gateway" : "Practice mode: nothing settled onchain") : "Pay-per-request (x402) from a spend-limited vault"}</div>
         </div>
       </div>
+
+      <CheckIt run={run} vendorsPaid={vendorsPaid} />
 
       <div className="mt-5 rounded-xl bg-agent-soft/70 p-3 text-[13px]">
         <div className="text-[12px] text-ink-3">For</div>
