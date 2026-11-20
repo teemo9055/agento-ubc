@@ -260,6 +260,10 @@ Most people bring a problem, not a plan, and don't know what a few small paid st
 
 Worko plans the drive, splits it into days that fit your hours on the road, and where each day ends lists a few places to sleep (name, street, website) from OpenStreetMap, closest first. It can also list hotels, EV chargers, fuel or food near any stop while you chat. When one stretch is longer than the hours you allow, it adds a night at a real town on the way and checks the route again, so no day runs over. These are options to choose from: it doesn't check prices or availability, and it never books anything (no flights, hotels, rides or tables).
 
+### Things it can't do never become jobs
+
+Some requests can never be carried out here: booking flights, hotels, tables, rides or tickets, searching the web, reading reviews, checking whether a website, seller or phone number is safe, weather forecasts, calls and messages. Code checks the request before a job is made (`src/lib/impossible.ts`): the ask screen says so in one plain sentence ("Agento can't search or book flights."), makes no job, spends nothing, and offers close things that do work. A request with several parts goes through when any part can be done; the plan names the parts it can't. Anything the rules miss, the agent flags with its `not_possible` tool on the first reply, and that job is taken off the Jobs list. Suggestion chips never offer an impossible request.
+
 ### What agents buy, and from whom
 
 Agents pay per request in USDC. Three kinds of seller, one approval and policy path:

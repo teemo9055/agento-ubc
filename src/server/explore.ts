@@ -1,3 +1,4 @@
+import { notPossible } from "@/lib/impossible";
 import { z } from "zod";
 import { onMainnet } from "./netContext";
 import type { Plan, AgentId, ChatMsg, Proposal, ToolCall } from "@/lib/types";
@@ -72,7 +73,7 @@ function system(agent: AgentId) {
     `KNOW-HOW for problems:\n- ${PLAYBOOKS.join("\n- ")}`,
     "PLANS: when a request has several parts (more than one move, or work for more than one agent), call propose_plan instead of propose_move. Break it into the steps that really make it up, one per thing to get done (as many as the task needs, up to 12; long workflows are fine), and for each write a brief the owning agent can act on alone (inso: prediction orders, hedges, sells; trado: spot orders and onchain checks like gas, Bitcoin fees or a wallet balance; worko: errands, checks and drives). Put real names and numbers in the brief; look them up first. Say what each step waits for in `after`: leave it empty for steps that don't depend on anything, so they run at the same time; use gate 'filled' when a step should only start once the order it waits for has filled, useProceeds when it should spend what that sell brought in, and usesFindings when WHAT it does depends on what those steps find. Put anything else no agent can do in `unavailable` with the honest reason. Never pretend a step books something.",
     "MARKETPLACE: prefer your typed lookups; use a `service` step only for a listing search_services marks payableHere.",
-    "CAN'T DO: when something isn't possible here, say so in one short plain sentence, then offer the closest thing you can do. Never name services, providers or networks (no 'testnet', 'mainnet', vendor or product names) when explaining what you can't do.",
+    "CAN'T DO: if nothing here can do the request at all, call not_possible. If only part can't be done, say so in one short plain sentence and do the rest. Never name services, providers or networks (no 'testnet', 'mainnet', vendor or product names) when explaining what you can't do.",
     `KNOWLEDGE (shared notes; use them, don't recite them):\n- ${[...PRIMERS[agent], ...lessonLines(agent).map((l) => `Learned from past jobs: ${l}`)].join("\n- ")}`,
     "TRUTH: never invent tickers, symbols, prices, odds or places; use what the tools returned in this conversation (see 'facts' in earlier turns) or look them up again. Prices of prediction contracts are 0-1; say them as cents or %. Don't promise fills or profits. This isn't financial advice; say so only if asked for advice.",
     [
@@ -117,13 +118,24 @@ const ASK: ToolSpec = {
   ),
 };
 
+const NOT_POSSIBLE: ToolSpec = {
+  name: "not_possible",
+  description: "The request is something nothing here can do at all (booking, buying from a shop, web search, reviews, forecasts, calls). Give the plain reason and 2-3 close things that do work here. Use it instead of a reply.",
+  parameters: z.toJSONSchema(
+    z.object({
+      reason: z.string().max(140).describe("One plain sentence: 'I can't book hotels.' No service, provider or network names"),
+      instead: z.array(z.string().min(3).max(60)).min(1).max(3).describe("Requests that do work here, written as the user would ask them"),
+    }),
+  ),
+};
+
 /** Each agent only sees its own tools. */
 const toolSpecs = (agent: AgentId, solo = false): ToolSpec[] => [
   ...Object.entries(FREE_TOOLS)
     .filter(([name]) => TOOLKIT[agent].free.includes(name))
     .map(([name, t]) => ({ name, description: t.description, parameters: z.toJSONSchema(t.params) })),
   // An agent working one step of someone else's plan just builds its move.
-  ...(solo ? [PROPOSE] : [ASK, PROPOSE, PROPOSE_PLAN]),
+  ...(solo ? [PROPOSE] : [ASK, PROPOSE, PROPOSE_PLAN, NOT_POSSIBLE]),
 ];
 
 function historyTurns(chat: ChatMsg[]): ChatTurn[] {
@@ -182,6 +194,8 @@ export interface TurnResult {
   options?: string[];
   suggestions: string[];
   usage: AiUsage[];
+  /** Nothing here can do what was asked. */
+  impossible?: boolean;
 }
 
 /** Two moves aim at the same thing: same contract or coin, or both are data-only. */
@@ -289,6 +303,11 @@ export async function exploreTurn(agent: AgentId, chat: ChatMsg[], onTool: (note
     }
     for (const c of r.calls) {
       let content: unknown;
+      if (c.name === "not_possible") {
+        const q = c.args as { reason?: string; instead?: unknown };
+        const instead = (Array.isArray(q.instead) ? q.instead : []).map((x) => String(x).trim()).filter((x) => x.length >= 3 && x.length <= 60 && !notPossible(x)).slice(0, 3);
+        return { text: String(q.reason ?? "I can't do that here.").trim().slice(0, 160), tools, suggestions: instead, impossible: true, usage };
+      }
       if (c.name === "ask_user") {
         const q = c.args as { question?: string; options?: unknown };
         const options = (Array.isArray(q.options) ? q.options : []).map((x) => String(x).trim()).filter((x) => x.length > 0 && x.length <= 60).slice(0, 4);

@@ -41,7 +41,7 @@ export function useRun(id: string) {
 export async function post<T = unknown>(url: string, body?: unknown): Promise<T> {
   const r = await fetch(url, { method: "POST", headers: { "content-type": "application/json" }, body: body ? JSON.stringify(body) : undefined });
   const j = await r.json();
-  if (!r.ok) throw new Error(j.error ?? "request failed");
+  if (!r.ok) throw Object.assign(new Error(j.error ?? "request failed"), { data: j });
   return j as T;
 }
 

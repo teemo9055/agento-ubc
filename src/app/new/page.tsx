@@ -1,5 +1,7 @@
 "use client";
 import { useEffect, useState } from "react";
+import { NotPossibleCard, notPossibleOf } from "@/components/NotPossible";
+import type { NotPossible as NotPossibleInfo } from "@/lib/impossible";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { motion } from "framer-motion";
@@ -58,6 +60,7 @@ export default function NewJob() {
   const [task, setTask] = useState("");
   const [busy, setBusy] = useState("");
   const [err, setErr] = useState("");
+  const [blocked, setBlocked] = useState<NotPossibleInfo | null>(null);
   const [prefs, , ready] = usePrefs();
   const pk = usePasskeyWallet();
   useAgentTheme(who === "auto" ? "inso" : who);
@@ -85,6 +88,7 @@ export default function NewJob() {
     if (text.trim().length < 3 || (needsWallet && !template) || busy) return;
     setBusy(key);
     setErr("");
+    setBlocked(null);
     try {
       const run = await post<Run>("/api/runs", {
         agent: template ? "inso" : agent,
@@ -99,7 +103,9 @@ export default function NewJob() {
       });
       router.push(`/runs/${run.id}`);
     } catch (x) {
-      setErr((x as Error).message);
+      const no = notPossibleOf(x);
+      if (no) setBlocked(no);
+      else setErr((x as Error).message);
       setBusy("");
     }
   }
@@ -176,6 +182,16 @@ export default function NewJob() {
           </p>
         )}
         {err && <p className="mt-3 text-sm text-bad">{err}</p>}
+        {blocked && (
+          <NotPossibleCard
+            info={blocked}
+            busy={Boolean(busy)}
+            onPick={(t) => {
+              setTask(t);
+              void start(t, "auto", t);
+            }}
+          />
+        )}
       </form>
 
       <button

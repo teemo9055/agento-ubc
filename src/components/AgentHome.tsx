@@ -1,5 +1,6 @@
 "use client";
 import { useState } from "react";
+import { NotPossibleCard } from "./NotPossible";
 import Link from "next/link";
 import { Mascot } from "./Mascot";
 import { Icon } from "./Icon";
@@ -30,7 +31,7 @@ export function AgentHome({ agent }: { agent: AgentId }) {
   const t = THEMES[agent];
   const s = ASK[agent];
   const recipes = RECIPES.filter((r) => r.agent === agent);
-  const { start, busy, err } = useStartJob();
+  const { start, busy, err, blocked } = useStartJob();
   const [text, setText] = useState("");
   const closest = text.trim().length >= 4 ? matchRecipes(text, { limit: 1 })[0]?.recipe : undefined;
   const { runs } = useRuns();
@@ -80,6 +81,16 @@ export function AgentHome({ agent }: { agent: AgentId }) {
           <p className="mt-2 text-[13px] text-bad" role="alert">
             {err}
           </p>
+        )}
+        {blocked && (
+          <NotPossibleCard
+            info={blocked}
+            busy={Boolean(busy)}
+            onPick={(t) => {
+              setText(t);
+              void start("auto", t, t);
+            }}
+          />
         )}
       </form>
 

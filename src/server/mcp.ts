@@ -1,3 +1,4 @@
+import { notPossible } from "@/lib/impossible";
 import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { z } from "zod";
 import { buildReceipt } from "@/lib/receipt";
@@ -127,6 +128,8 @@ export function buildMcpServer(base: string) {
           return text(view(getRun(id)!, base));
         }
         if (!agent) return fail("Pass agent to start a chat, or id to continue one.");
+        const no = notPossible(message);
+        if (no) return fail(`${no.what} Things that work here: ${no.instead.join("; ")}.`);
         return text(view(await createRun({ agent: agent as AgentId, task: message, mode: live ? "live" : "demo" }, { wait: false }), base));
       } catch (e) {
         return fail((e as Error).message);

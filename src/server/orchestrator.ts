@@ -154,7 +154,8 @@ export function subscribe(runId: string, fn: (e: SeqEvent) => void, from = 0) {
 }
 
 export const getRun = (runId: string) => runs.get(runId)?.run ?? null;
-export const listRuns = () => [...runs.values()].map((c) => c.run).sort((a, b) => b.createdAt.localeCompare(a.createdAt));
+/** Every job, newest first. A request that turned out impossible here isn't a job, so it isn't listed. */
+export const listRuns = () => [...runs.values()].map((c) => c.run).filter((r) => !r.impossible).sort((a, b) => b.createdAt.localeCompare(a.createdAt));
 
 // ---------- planning ----------
 
@@ -379,7 +380,9 @@ async function agentReplyInNet(ctl: Ctl) {
     const r = await exploreTurn(ctl.run.agent, ctl.run.chat ?? [], (note) => emit(ctl, { type: "chat.thinking", note }), id());
     for (const u of r.usage) trackAi(ctl, "chat", u);
     if (r.usage.length) ctl.run = { ...ctl.run, planner: "ai" };
-    emit(ctl, { type: "chat.message", message: { id: id(), role: "agent", text: r.text, at: now(), tools: r.tools, facts: r.facts, unverified: r.unverified, proposal: r.proposal, plan: r.plan, brief: r.brief, options: r.options, suggestions: r.options ? [] : suggestionsFor(ctl.run.agent, r.suggestions, { proposal: r.proposal, plan: Boolean(r.plan) }) } });
+    emit(ctl, { type: "chat.message", message: { id: id(), role: "agent", text: r.text, at: now(), tools: r.tools, facts: r.facts, unverified: r.unverified, proposal: r.proposal, plan: r.plan, brief: r.brief, options: r.options, suggestions: r.options ? [] : r.impossible ? r.suggestions : suggestionsFor(ctl.run.agent, r.suggestions, { proposal: r.proposal, plan: Boolean(r.plan) }) } });
+    // Nothing here can do what was asked, and nothing was set up yet: it isn't a job, so it leaves the list.
+    if (r.impossible && ctl.run.status === "exploring" && !ctl.run.proposal && !(ctl.run.chat ?? []).some((m) => m.proposal || m.plan)) emit(ctl, { type: "workorder.updated", run: { ...ctl.run, impossible: true } });
   } catch (e) {
     console.warn("chat failed", e);
     emit(ctl, { type: "chat.message", message: { id: id(), role: "agent", text: "Something went wrong on my side before I could answer. Nothing was spent.", at: now(), suggestions: ["Try again"] } });

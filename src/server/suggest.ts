@@ -1,4 +1,5 @@
 import type { AgentId, Proposal } from "@/lib/types";
+import { notPossible } from "@/lib/impossible";
 import { FEEDS } from "./chainlink";
 import { TOOLKIT, researchPrice } from "./tools";
 
@@ -10,7 +11,7 @@ import { TOOLKIT, researchPrice } from "./tools";
 const DEFAULTS: Record<AgentId, string[]> = {
   inso: ["What's trading on BTC?", "Hedge a cost I'm worried about", "Show my positions"],
   trado: ["How's BTC doing today?", "Buy $10 of ETH on a 2% dip", "Compare BTC and ETH"],
-  worko: ["Check a listing before I pay", "Plan a drive from Vancouver to Seattle", "A ride from the airport"],
+  worko: ["Plan a drive from Vancouver to Seattle", "Find hotels near my stop", "EV chargers along the way"],
 };
 
 const price = (tool: string) => {
@@ -49,6 +50,8 @@ export function tweaksFor(agent: AgentId, p: Proposal): string[] {
 const norm = (s: string) => s.toLowerCase().replace(/[^a-z0-9]+/g, " ").trim();
 
 export function suggestionsFor(agent: AgentId, fromModel: string[], opts: { proposal?: Proposal; plan?: boolean } = {}): string[] {
+  // A chip never offers something nothing here can do.
+  fromModel = fromModel.filter((s) => !notPossible(s));
   const seen = new Set<string>();
   // Two chips are the same idea if they share a topic word, however they're phrased.
   const TOPICS = ["chainlink", "history", "trend", "candles", "flow", "tape", "contracts", "hours", "stop", "drops", "cheaper", "smaller", "half"];

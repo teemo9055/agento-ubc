@@ -1,4 +1,5 @@
 import { expect, test, type Page } from "@playwright/test";
+import { prefs } from "./helpers";
 
 const HEADLINES = [/Say what you\s*want done/, /See the work\s*on a map/, /Approve\s*once/, /Watch it\s*happen/];
 
@@ -45,4 +46,18 @@ test.describe("landing", () => {
     await current(page).getByRole("link", { name: "Open Agento" }).click();
     await expect(page).toHaveURL(/\/home$/);
   });
+});
+
+test("asking for something nothing here can do makes no job, and offers what works", async ({ page }) => {
+  await prefs(page);
+  await page.goto("/new");
+  await page.fill("#task", "Find me a flight from San Francisco to New York next Friday");
+  await page.getByRole("button", { name: /Ask/ }).click();
+  const card = page.getByTestId("not-possible");
+  await expect(card).toContainText("Agento can't search or book flights.");
+  await expect(card).toContainText("No job was made");
+  await expect(page).toHaveURL(/\/new/);
+  // One tap on a suggestion starts a job that can be done.
+  await card.getByTestId("not-possible-try").first().click();
+  await expect(page).toHaveURL(/\/runs\//);
 });

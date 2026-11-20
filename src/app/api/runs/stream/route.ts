@@ -26,6 +26,7 @@ export async function GET(req: Request) {
             pending.delete(run.id);
             const latest = listRuns().find((r) => r.id === run.id);
             if (latest) send("upsert", summarize(latest));
+            else send("remove", { id: run.id });
           }, 150),
         );
       });

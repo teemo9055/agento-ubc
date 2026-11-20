@@ -1,3 +1,4 @@
+import { notPossible } from "@/lib/impossible";
 import { NextRequest, NextResponse } from "next/server";
 import { liveAllowed } from "@/server/access";
 import { z } from "zod";
@@ -38,6 +39,9 @@ export async function POST(req: NextRequest) {
   // Jobs paid by the user's own passkey wallet spend their money, not the app's, so they need no code.
   // A plan (the showcase included) is always paid from the app's wallet, so it always needs the code.
   if (body.mode === "live" && (!body.payerAddress || body.template) && !liveAllowed(body.accessCode)) return NextResponse.json({ error: `${body.network === "mainnet" ? "Arc mainnet jobs paid from the app's wallet" : "Arc testnet jobs"} need the access code. Use practice, pay from your own passkey wallet, or ask the owner for the code.` }, { status: 403 });
+  // Something no service here can ever do never becomes a job: say so, and offer what can be done.
+  const no = body.template ? null : notPossible(body.task);
+  if (no) return NextResponse.json({ error: no.what, notPossible: no }, { status: 422 });
   try {
     if (body.template === "showcase") {
       const built = await buildShowcase(randomUUID().slice(0, 8));

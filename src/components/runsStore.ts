@@ -24,6 +24,11 @@ function connect() {
     const i = list.findIndex((x) => x.id === r.id);
     set({ runs: i < 0 ? [r, ...list] : list.map((x, j) => (j === i ? r : x)) });
   });
+  // A job taken off the list (something that can't be done here).
+  es.addEventListener("remove", (m) => {
+    const { id } = JSON.parse((m as MessageEvent).data) as { id: string };
+    set({ runs: (state.runs ?? []).filter((x) => x.id !== id) });
+  });
   es.onopen = () => set({ connection: "live" });
   es.onerror = () => set({ connection: "reconnecting" }); // EventSource retries on its own
 }
