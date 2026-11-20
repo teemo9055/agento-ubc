@@ -25,9 +25,11 @@ const GLYPH: Record<string, string[]> = {
 
 export function Glyph({ name, size = 32 }: { name: string; size?: number }) {
   const rows = GLYPH[name] ?? GLYPH.coin;
+  // One path for the whole picture, not a square per pixel.
+  const d = rows.map((r, y) => [...r].map((c, x) => (c === "#" ? `M${x} ${y}h1v1h-1z` : "")).join("")).join("");
   return (
     <svg width={size} height={size} viewBox="0 0 8 8" shapeRendering="crispEdges" aria-hidden className="shrink-0">
-      {rows.flatMap((r, y) => [...r].map((c, x) => (c === "#" ? <rect key={`${x}-${y}`} x={x} y={y} width="1" height="1" fill="var(--agent)" /> : null)))}
+      <path d={d} fill="var(--agent)" />
     </svg>
   );
 }

@@ -12,25 +12,8 @@ import type { Net } from "@/lib/networks";
 const CLIENT_KEY = process.env.NEXT_PUBLIC_CIRCLE_CLIENT_KEY ?? "";
 const CLIENT_URL = process.env.NEXT_PUBLIC_CIRCLE_CLIENT_URL ?? "https://modular-sdk.circle.com/v1/rpc/w3s/buidl";
 const STORE = "agento:passkey";
-
-export interface SavedWallet {
-  id: string;
-  publicKey: Hex;
-  username: string;
-  address: Hex;
-}
-
-export const passkeyConfigured = () => Boolean(CLIENT_KEY);
-export const passkeySupported = () => typeof window !== "undefined" && "PublicKeyCredential" in window && passkeyConfigured();
-
-export function savedWallet(): SavedWallet | null {
-  if (typeof window === "undefined") return null;
-  try {
-    return JSON.parse(localStorage.getItem(STORE) ?? "null");
-  } catch {
-    return null;
-  }
-}
+export { passkeyConfigured, passkeySupported, savedWallet, type SavedWallet } from "./saved";
+import { savedWallet, type SavedWallet } from "./saved";
 
 function emitChange() {
   window.dispatchEvent(new Event("agento:wallet"));

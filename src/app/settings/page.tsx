@@ -7,12 +7,15 @@ import { Point, Points } from "@/components/Points";
 import { toast } from "@/components/Toaster";
 import { NotifyToggle } from "@/components/AppShell";
 import { ExchangePanel } from "@/components/ExchangePanel";
-import { WalletPanel } from "@/components/passkey/WalletPanel";
+import dynamic from "next/dynamic";
 import { usePasskeyWallet } from "@/components/passkey/usePasskey";
-import { jobNetwork, usePrefs } from "@/lib/prefs";
+import { jobMode, jobNetwork, usePrefs } from "@/lib/prefs";
 import type { FailureCode } from "@/lib/types";
 import { Marketplace } from "@/components/Marketplace";
 import { Selling } from "@/components/Selling";
+
+// The passkey wallet library is big: it loads only when someone pays with their passkey.
+const WalletPanel = dynamic(() => import("@/components/passkey/WalletPanel").then((m) => m.WalletPanel), { ssr: false, loading: () => <div className="h-24 animate-pulse rounded-xl bg-[#f6f5f1]" /> });
 
 const FAULTS: { code: FailureCode; label: string }[] = [
   { code: "price_increase", label: "Seller raises price" },
@@ -35,6 +38,7 @@ interface Limits {
 interface Config {
   venues?: { id: "paper" | "gemini-sandbox" | "gemini"; name: string }[];
   defaultVenue?: "paper" | "gemini-sandbox" | "gemini";
+  practice?: boolean;
   live: boolean;
   faultsEnabled: boolean;
   liveNeedsCode?: boolean;
@@ -77,7 +81,7 @@ export default function Settings() {
   const [cfg, setCfg] = useState<Config | null>(null);
   const [limits, setLimits] = useState<Limits | null>(null);
   const [saving, setSaving] = useState(false);
-  const pk = usePasskeyWallet();
+  const pk = usePasskeyWallet(false);
 
   useEffect(() => {
     fetch("/api/config")
@@ -106,7 +110,7 @@ export default function Settings() {
     }
   }
 
-  const mode = prefs.mode ?? (cfg?.live && !cfg.liveNeedsCode ? "live" : "demo");
+  const mode = jobMode(prefs, cfg);
 
   return (
     <div className="mx-auto flex max-w-2xl flex-col gap-5">
@@ -156,7 +160,7 @@ export default function Settings() {
 
       <Block id="s-pay" title="Paying" sub="Where the USDC for data and services comes from.">
         <div className="flex flex-wrap gap-2" role="radiogroup" aria-label="Network">
-          {RAILS.map((r) => {
+          {RAILS.filter((r) => r.mode === "live" || cfg?.practice || !cfg?.live).map((r) => {
             const net = r.network ? cfg?.networks?.[r.network] : undefined;
             const off = r.mode === "live" && !(r.network === "mainnet" ? net?.live : cfg?.live);
             const on = ready && mode === r.mode && (r.mode === "demo" || jobNetwork(prefs, cfg ?? null) === r.network);
@@ -239,7 +243,7 @@ export default function Settings() {
         </Link>
       </Block>
 
-      <Block id="s-exchange" title="Exchange" sub="Where Inso's approved orders are placed. Weather and sports markets trade only on Gemini's real exchange; anywhere else they're practice.">
+      <Block id="s-exchange" title="Exchange" sub="Where Inso's approved orders are placed. Weather, sports and Fed markets only exist on Gemini's real exchange, so those orders always go there.">
         <div className="grid grid-cols-1 gap-2 sm:grid-cols-3" role="radiogroup" aria-label="Where orders go" data-testid="venue-choice">
           {(
             [
@@ -247,7 +251,10 @@ export default function Settings() {
               { id: "gemini-sandbox", label: "Gemini test exchange", sub: "Real orders, test money" },
               { id: "gemini", label: "Gemini", sub: "Real orders, real money" },
             ] as const
-          ).map((v) => {
+          )
+            // Practice is only offered until a Gemini account is connected.
+            .filter((v) => v.id !== "paper" || !cfg?.venues || cfg.venues.some((x) => x.id === "paper"))
+            .map((v) => {
             const ok = !cfg?.venues || cfg.venues.some((x) => x.id === v.id);
             const on = ready && (prefs.venue ?? cfg?.defaultVenue ?? "paper") === v.id;
             return (

@@ -11,10 +11,12 @@ import { toast } from "./Toaster";
 import { AgentIcon } from "./AgentIcon";
 import { Icon } from "./Icon";
 import { Point, Points } from "./Points";
-import { WalletPanel } from "./passkey/WalletPanel";
+import dynamic from "next/dynamic";
 import { usePasskeyWallet } from "./passkey/usePasskey";
-import { fundCalls, sendCalls } from "./passkey/wallet";
 import type { Hex } from "viem";
+
+// The passkey wallet library is big: it loads only when someone pays with their passkey.
+const WalletPanel = dynamic(() => import("./passkey/WalletPanel").then((m) => m.WalletPanel), { ssr: false, loading: () => <div className="h-24 animate-pulse rounded-xl bg-[#f6f5f1]" /> });
 
 // Read left to right like the job itself: what you get, how it's done, its limits, what it costs.
 const CARD_ORDER: Card["kind"][] = ["deliverable", "method", "risk", "price"];
@@ -266,7 +268,7 @@ export function CostTable({ run, compact = false }: { run: Run; compact?: boolea
 export function ApproveModal({ run, open, onClose }: { run: Run; open: boolean; onClose: () => void }) {
   const [busy, setBusy] = useState<"" | "sign" | "fund">("");
   const passkey = run.payer === "passkey" && run.mode === "live";
-  const pk = usePasskeyWallet();
+  const pk = usePasskeyWallet(passkey);
   const [err, setErr] = useState("");
   const total = sum(run.lines.filter((l) => !offVault(l.rail)).map((l) => l.approved));
   const big = run.lines.filter((l) => l.bigSpend);
@@ -285,7 +287,9 @@ export function ApproveModal({ run, open, onClose }: { run: Run; open: boolean; 
       setBusy("sign");
       const info = await fetch(`/api/runs/${run.id}/funding`).then((r) => r.json());
       if (info.error) throw new Error(info.error);
-      const txHash: Hex = await sendCalls(fundCalls(info), info.network);
+      // The wallet library loads only when someone pays with their passkey.
+      const w = await import("./passkey/wallet");
+      const txHash: Hex = await w.sendCalls(w.fundCalls(info), info.network);
       setBusy("fund");
       onClose();
       toast(`Signed with your passkey · vault funded with ${fmt(run.cap)} USDC`, "good");

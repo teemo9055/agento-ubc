@@ -1,4 +1,4 @@
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 import { jobById, JOBS, SECTIONS } from "@/lib/jobs";
 import { venueFor } from "./jobs";
 import { validateProposal } from "./tools";
@@ -15,14 +15,25 @@ describe("the job catalog", () => {
     expect(new Set(JOBS.map((j) => j.id)).size).toBe(JOBS.length);
   });
 
-  it("sends weather and sports orders only to Gemini's real exchange, else practice; commodities go where you chose", () => {
+  it("sends weather, sports and Fed orders to Gemini's real exchange; practice only while no Gemini account is connected", () => {
     const wedding = jobById("wedding-cold")!;
     const gold = jobById("ring-gold")!;
+    // Nothing connected: practice.
     expect(venueFor(wedding, "gemini-sandbox")).toBe("paper");
-    expect(venueFor(wedding, "gemini")).toBe("gemini");
+    expect(venueFor(gold, "paper")).toBe("paper");
+    // The test exchange connected: no practice any more; real-only markets wait for the real exchange.
+    vi.stubEnv("GEMINI_SANDBOX_KEY", "k");
+    vi.stubEnv("GEMINI_SANDBOX_SECRET", "s");
+    expect(venueFor(gold, "paper")).toBe("gemini-sandbox");
     expect(venueFor(gold, "gemini-sandbox")).toBe("gemini-sandbox");
-    // The Fed market is only on the real exchange, like weather and sports.
-    expect(venueFor(jobById("news-fed")!, "gemini-sandbox")).toBe("paper");
+    expect(venueFor(wedding, "gemini-sandbox")).toBe("paper");
+    // The real exchange connected too: weather, sports and the Fed go there.
+    vi.stubEnv("GEMINI_LIVE_KEY", "k");
+    vi.stubEnv("GEMINI_LIVE_SECRET", "s");
+    expect(venueFor(wedding, "gemini-sandbox")).toBe("gemini");
+    expect(venueFor(jobById("news-fed")!, "gemini-sandbox")).toBe("gemini");
+    expect(venueFor(gold, "gemini-sandbox")).toBe("gemini-sandbox");
+    vi.unstubAllEnvs();
   });
 });
 

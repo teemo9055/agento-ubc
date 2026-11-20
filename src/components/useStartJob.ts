@@ -4,7 +4,7 @@ import { useRouter } from "next/navigation";
 import { post } from "./useRun";
 import { notPossibleOf } from "./NotPossible";
 import type { NotPossible } from "@/lib/impossible";
-import { jobNetwork, usePrefs, type NetConfig } from "@/lib/prefs";
+import { jobMode, jobNetwork, usePrefs, type NetConfig } from "@/lib/prefs";
 import { usePasskeyWallet } from "./passkey/usePasskey";
 import type { AgentId, Run } from "@/lib/types";
 
@@ -12,8 +12,8 @@ import type { AgentId, Run } from "@/lib/types";
 export function useStartJob() {
   const router = useRouter();
   const [prefs] = usePrefs();
-  const pk = usePasskeyWallet();
-  const [cfg, setCfg] = useState<({ live: boolean; liveNeedsCode?: boolean } & NonNullable<NetConfig>) | null>(null);
+  const pk = usePasskeyWallet(false);
+  const [cfg, setCfg] = useState<({ live: boolean; liveNeedsCode?: boolean; practice?: boolean } & NonNullable<NetConfig>) | null>(null);
   const [busy, setBusy] = useState("");
   const [err, setErr] = useState("");
   const [blocked, setBlocked] = useState<NotPossible | null>(null);
@@ -23,7 +23,7 @@ export function useStartJob() {
       .then(setCfg)
       .catch(() => undefined);
   }, []);
-  const mode = (prefs.mode ?? (cfg?.live && !cfg.liveNeedsCode ? "live" : "demo")) === "live" && cfg?.live ? "live" : "demo";
+  const mode = jobMode(prefs, cfg);
   const usePasskey = mode === "live" && pk.supported && prefs.payFrom === "passkey";
 
   async function start(agent: AgentId | "auto", task: string, key = task) {

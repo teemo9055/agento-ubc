@@ -70,6 +70,8 @@ export interface JobPreview {
   unavailable?: string;
   /** It runs on Arc mainnet, which this server isn't set up for. */
   needsMainnet?: boolean;
+  /** Its market is only on Gemini's real exchange, which isn't connected here. */
+  needsVenue?: boolean;
 }
 
 export const JOBS: JobCardInfo[] = [

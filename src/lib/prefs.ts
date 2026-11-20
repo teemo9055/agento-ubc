@@ -25,6 +25,16 @@ export type NetConfig = { networks?: Partial<Record<"testnet" | "mainnet", { liv
  * The network a job actually pays on: mainnet only when it was chosen and this server can pay there.
  * Otherwise testnet, which never costs real money, and the page says why.
  */
+/**
+ * Whether jobs pay for real on Arc (testnet or mainnet) or on the practice rail. Real whenever this
+ * server can pay onchain: practice is only for a checkout with no wallet keys yet.
+ */
+export function jobMode(prefs: Prefs, cfg: { live?: boolean; liveNeedsCode?: boolean; practice?: boolean } | null): "live" | "demo" {
+  if (!cfg?.live) return "demo";
+  if (cfg.practice && prefs.mode === "demo") return "demo";
+  return !cfg.liveNeedsCode || prefs.accessCode || prefs.payFrom === "passkey" ? "live" : (prefs.mode ?? "demo");
+}
+
 export function jobNetwork(prefs: Prefs, cfg: NetConfig): "testnet" | "mainnet" {
   return prefs.network === "mainnet" && cfg?.networks?.mainnet?.live ? "mainnet" : "testnet";
 }

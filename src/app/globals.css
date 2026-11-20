@@ -205,6 +205,11 @@ body {
 .pix-bubble {
   animation: bob 0.9s steps(1) infinite;
 }
+/* Small mascots in lists stay still: dozens of endless animations keep the page restyling. */
+.mascot-still,
+.mascot-still * {
+  animation: none !important;
+}
 
 /* --agent fills, --agent-ink is text on light backgrounds, --agent-on is text on --agent. */
 :root,

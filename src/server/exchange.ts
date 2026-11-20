@@ -32,8 +32,14 @@ function creds(v: Venue): { key: string; secret: string; base: string } | null {
   return null;
 }
 
-/** Whether orders can go to a venue on this server. Practice always can. */
-export const venueReady = (v: Venue) => v === "paper" || Boolean(creds(v));
+/**
+ * Practice (orders priced live but never sent) only exists while no Gemini account is connected, so
+ * a fresh checkout still works. Once a key is set, every order is real: on the test exchange or with
+ * real money. ALLOW_PRACTICE=true keeps it on (the browser tests use it).
+ */
+export const practiceAllowed = () => process.env.ALLOW_PRACTICE === "true" || (!creds("gemini-sandbox") && !creds("gemini"));
+/** Whether orders can go to a venue on this server. */
+export const venueReady = (v: Venue) => (v === "paper" ? practiceAllowed() : Boolean(creds(v)));
 /** Every venue this server can send orders to, safest first. */
 export const venues = (): Venue[] => (["paper", "gemini-sandbox", "gemini"] as Venue[]).filter(venueReady);
 
@@ -42,7 +48,7 @@ function defaultVenue(): Venue {
   const want = process.env.GEMINI_DEFAULT_VENUE as Venue | undefined;
   if (want && venueReady(want)) return want;
   if (venueReady("gemini-sandbox")) return "gemini-sandbox";
-  if (PROD && venueReady("gemini")) return "gemini";
+  if ((PROD || !practiceAllowed()) && venueReady("gemini")) return "gemini";
   return "paper";
 }
 

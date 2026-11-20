@@ -122,6 +122,28 @@ function grid(agent: AgentId, outfit: Outfit, mood: Mood, glasses = false) {
   return g;
 }
 
+/**
+ * The mascot as one path per colour (plus one for the pupils, which blink), worked out once per look.
+ * A pixel each would be ~150 elements per mascot, and lists show dozens of them.
+ */
+const SHAPES = new Map<string, [string, string, boolean][]>();
+function shapes(agent: AgentId, outfit: Outfit, mood: Mood, glasses: boolean) {
+  const key = `${agent}|${outfit}|${mood}|${glasses}`;
+  const hit = SHAPES.get(key);
+  if (hit) return hit;
+  const by = new Map<string, string>();
+  grid(agent, outfit, mood, glasses).forEach((row, y) =>
+    row.forEach((c, x) => {
+      if (c === "_" || !PALETTE[c]) return;
+      const k = `${PALETTE[c]}${y === 5 && c === "e" ? "|p" : ""}`;
+      by.set(k, `${by.get(k) ?? ""}M${x} ${y}h1.02v1.02h-1.02z`);
+    }),
+  );
+  const list = [...by].map(([k, d]) => [k.split("|")[0], d, k.endsWith("|p")] as [string, string, boolean]);
+  SHAPES.set(key, list);
+  return list;
+}
+
 export function Mascot({
   agent,
   outfit = "none",
@@ -130,6 +152,7 @@ export function Mascot({
   framed = true,
   glasses = false,
   className = "",
+  still,
 }: {
   agent: AgentId;
   outfit?: Outfit;
@@ -138,8 +161,9 @@ export function Mascot({
   framed?: boolean;
   glasses?: boolean;
   className?: string;
+  /** No blinking or twinkling. Small mascots in lists are still by default: a page can show a hundred. */
+  still?: boolean;
 }) {
-  const g = grid(agent, outfit, mood, glasses);
   const label = `${agent} mascot${OUTFIT_LABEL[outfit] ? `, ${OUTFIT_LABEL[outfit].toLowerCase()}` : ""}`;
   return (
     <span
@@ -150,12 +174,10 @@ export function Mascot({
       className={`relative inline-flex shrink-0 items-end justify-center ${framed ? "pix-frame bg-agent-soft" : ""} ${className}`}
       style={{ width: size, height: size }}
     >
-      <svg viewBox="0 0 16 16" width={size * (framed ? 0.82 : 1)} height={size * (framed ? 0.82 : 1)} shapeRendering="crispEdges" className={`mascot mascot-${mood}`} aria-hidden>
-        {g.flatMap((row, y) =>
-          row.map((c, x) =>
-            c === "_" || !PALETTE[c] ? null : <rect key={`${x}-${y}`} x={x} y={y} width={1.02} height={1.02} fill={PALETTE[c]} className={y === 5 && c === "e" ? "mascot-pupil" : undefined} />,
-          ),
-        )}
+      <svg viewBox="0 0 16 16" width={size * (framed ? 0.82 : 1)} height={size * (framed ? 0.82 : 1)} shapeRendering="crispEdges" className={`mascot mascot-${mood} ${still ?? size < 56 ? "mascot-still" : ""}`} aria-hidden>
+        {shapes(agent, outfit, mood, glasses).map(([fill, d, pupil]) => (
+          <path key={`${fill}${pupil ? "p" : ""}`} d={d} fill={fill} className={pupil ? "mascot-pupil" : undefined} />
+        ))}
         {mood === "working" && (
           <g className="mascot-spark">
             <rect x={13} y={1} width={1} height={1} fill="var(--agent)" />

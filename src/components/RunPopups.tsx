@@ -7,7 +7,6 @@ import { Modal } from "./Modal";
 import { Amount, Button } from "./ui";
 import { post } from "./useRun";
 import { toast } from "./Toaster";
-import { changePlanCalls, sendCalls, topUpCalls } from "./passkey/wallet";
 import type { Hex } from "viem";
 
 function Countdown({ until }: { until: string }) {
@@ -42,7 +41,8 @@ export function ReapprovalModal({ run, req, onClose }: { run: Run; req: Reapprov
         const plan = await fetch(`/api/runs/${run.id}/reapproval-plan?${q}`).then((r) => r.json());
         if (plan.error) throw new Error(plan.error);
         toast("Confirm the change with your passkey");
-        txHash = await sendCalls(changePlanCalls(plan), plan.network);
+        const w = await import("./passkey/wallet");
+        txHash = await w.sendCalls(w.changePlanCalls(plan), plan.network);
       }
       await post(`/api/runs/${run.id}/reapproval`, { requestId: req.id, outcome, amount: value?.toString(), txHash });
       toast(outcome === "approved" ? `Approved ${fmt(value ?? BigInt(req.to.amount))} USDC · continuing` : "Denied · nothing extra spent", outcome === "approved" ? "good" : "default");
@@ -151,7 +151,8 @@ export function FailureModal({ run, failure, onClose }: { run: Run; failure: Fai
       let txHash: Hex | undefined;
       if (action === "topup" && run.payer === "passkey" && run.mode === "live" && run.vault) {
         toast("Confirm the top-up with your passkey");
-        txHash = await sendCalls(topUpCalls("0x3600000000000000000000000000000000000000", run.vault, BigInt(run.cap) / 2n || 1_000_000n), run.network);
+        const w = await import("./passkey/wallet");
+        txHash = await w.sendCalls(w.topUpCalls("0x3600000000000000000000000000000000000000", run.vault, BigInt(run.cap) / 2n || 1_000_000n), run.network);
       }
       await post(`/api/runs/${run.id}/failure`, { failureId: failure.id, action, txHash });
       toast(ACTION[action].label === "Cancel job" ? "Cancelling · unspent funds return to you" : `${ACTION[action].label} · on it`);

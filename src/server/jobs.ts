@@ -1,4 +1,5 @@
 import { liveReady } from "./chain";
+import { venueReady } from "./exchange";
 import type { Plan, Proposal, Venue } from "@/lib/types";
 import { jobById, JOBS, type JobCardInfo, type JobPreview } from "@/lib/jobs";
 import * as gemini from "./gemini";
@@ -111,7 +112,7 @@ async function choose(o: Options, venue: Venue, skip: Set<string>, choice?: stri
   const open = o.options.filter((x) => !skip.has(x.contract.symbol));
   const c = open.find((x) => x.key === choice) ?? open.find((x) => x.key === o.def) ?? open[0];
   if (!c) return { error: "Nothing is open for that right now. Try again later." };
-  if (venue !== "gemini-sandbox") return { ...c, venue: c.venue === "gemini" ? "gemini" : venue };
+  if (venue !== "gemini-sandbox") return { ...c, venue };
   // The test exchange lists its own lines: take the one nearest the pick, at the live market's odds for it.
   const test = await gemini.getEvent(c.event.ticker, SANDBOX_BASE).catch(() => null);
   const nearest = test?.contracts.filter((x) => x.strike != null && /above/i.test(x.label) && !skip.has(x.symbol)).sort((a, b) => Math.abs(a.strike! - (c.contract.strike ?? 0)) - Math.abs(b.strike! - (c.contract.strike ?? 0)))[0];
@@ -322,10 +323,15 @@ const CARDS: Record<string, CardDef> = {
 
 /** Where a card's order goes, given where the person wants orders to go and what the market allows. */
 export function venueFor(card: JobCardInfo, want: Venue): Venue {
-  // Weather and sports trade only on Gemini's real exchange: anywhere else they're practice.
-  if (card.section === "weather" || card.section === "sports" || card.id === "news-fed") return want === "gemini" ? "gemini" : "paper";
+  // Weather, sports and the Fed trade only on Gemini's real exchange, so they go there when it's
+  // connected (the card says "Real money"). Practice is only left when no Gemini account is.
+  if (realOnly(card)) return venueReady("gemini") ? "gemini" : "paper";
+  if (want === "paper" && !venueReady("paper")) return venueReady("gemini-sandbox") ? "gemini-sandbox" : "gemini";
   return want;
 }
+
+/** Markets Gemini lists only on its real exchange, not the test one. */
+export const realOnly = (card: JobCardInfo) => card.section === "weather" || card.section === "sports" || card.id === "news-fed";
 
 /** The request text a card opens with, naming the option it's built on. */
 export const askOf = async (id: string, venue: Venue, choice?: string) => {
@@ -378,6 +384,8 @@ export async function previews(want: Venue): Promise<JobPreview[]> {
       const venue = venueFor(card, want);
       // Checks paid in real USDC need Arc mainnet on this server: say so on the card, not after a click.
       if (card.money === "real" && !mainnet) return { id: card.id, venue, needsMainnet: true, unavailable: "Needs Arc mainnet. Set it up in Settings → Paying, then this runs for real USDC." };
+      // A real-exchange-only market with no real exchange connected (and practice off): say what's missing.
+      if (venue === "paper" && !venueReady("paper")) return { id: card.id, venue: "gemini", needsVenue: true, unavailable: "This market is only on Gemini's real exchange. Add your Gemini API key in Settings → Exchange to trade it." };
       const cost = def.cost?.();
       if (!def.options) return { id: card.id, cost: cost?.usd, steps: cost?.steps, venue };
       const o = await Promise.race([def.options(), new Promise<null>((r) => setTimeout(() => r(null), 6000))]).catch(() => null);

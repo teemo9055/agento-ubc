@@ -14,11 +14,12 @@ import { Icon } from "@/components/Icon";
 import { CAPABILITIES, WHERE_LABEL, type Where } from "@/lib/capabilities";
 import { Point, Points, type PointTone } from "@/components/Points";
 import { usePasskeyWallet } from "@/components/passkey/usePasskey";
-import { jobNetwork, mainnetHeldBack, usePrefs, type NetConfig } from "@/lib/prefs";
+import { jobMode, jobNetwork, mainnetHeldBack, usePrefs, type NetConfig } from "@/lib/prefs";
 
 type Config = {
   live: boolean;
   liveNeedsCode?: boolean;
+  practice?: boolean;
   setup?: string[];
 } & NonNullable<NetConfig>;
 
@@ -61,7 +62,7 @@ export default function NewJob() {
   const [err, setErr] = useState("");
   const [blocked, setBlocked] = useState<NotPossibleInfo | null>(null);
   const [prefs, , ready] = usePrefs();
-  const pk = usePasskeyWallet();
+  const pk = usePasskeyWallet(false);
   useAgentTheme(who === "auto" ? "inso" : who);
 
   useEffect(() => {
@@ -77,7 +78,7 @@ export default function NewJob() {
       .catch(() => undefined);
   }, []);
 
-  const mode = (prefs.mode ?? (cfg?.live && !cfg.liveNeedsCode ? "live" : "demo")) === "live" && cfg?.live ? "live" : "demo";
+  const mode = jobMode(prefs, cfg);
   const usePasskey = mode === "live" && pk.supported && prefs.payFrom === "passkey";
   const needsWallet = usePasskey && !pk.wallet;
   const network = jobNetwork(prefs, cfg);

@@ -4,7 +4,7 @@ import { AnimatePresence, motion } from "framer-motion";
 import { Icon } from "./Icon";
 import { Spinner } from "./ui";
 import { Glyph } from "./Glyph";
-import type { JobCardInfo, JobPreview, JobSection } from "@/lib/jobs";
+import type { JobCardInfo, JobChoice, JobPreview, JobSection } from "@/lib/jobs";
 import { JOBS, SECTIONS } from "@/lib/jobs";
 import type { AgentId } from "@/lib/types";
 
@@ -128,18 +128,7 @@ function JobTile({ job, p, i, onStart, busy, disabled, loading }: { job: JobCard
       <p className="mt-1 text-[13px] leading-snug text-ink-2">{job.does}</p>
 
       <div className="mt-auto pt-4">
-        {p?.choices && p.choices.length > 1 && !off && (
-          <label className="mb-2.5 flex items-center gap-2 rounded-full border-[1.5px] border-ink bg-panel py-1 pl-3 pr-1 shadow-[2px_2px_0_0_var(--agent)] focus-within:ring-2 focus-within:ring-agent/40">
-            <span className="shrink-0 text-[11px] font-semibold uppercase tracking-wide text-agent-ink">{p.pick ?? "Pick"}</span>
-            <select value={choice?.id} onChange={(e) => setPicked(e.target.value)} disabled={disabled} className="h-8 min-w-0 flex-1 cursor-pointer truncate rounded-full bg-transparent pr-1 text-[13px] font-semibold outline-none" data-testid="job-pick">
-              {p.choices.map((c) => (
-                <option key={c.id} value={c.id}>
-                  {c.label}
-                </option>
-              ))}
-            </select>
-          </label>
-        )}
+        {p?.choices && p.choices.length > 1 && !off && <Picker label={p.pick ?? "Pick"} choices={p.choices} value={choice?.id} onChange={setPicked} disabled={disabled} />}
         {job.agent === "inso" ? <Odds p={shown} loading={loading} /> : <Cost job={job} p={p} loading={loading} />}
         <button
           type="button"
@@ -153,7 +142,7 @@ function JobTile({ job, p, i, onStart, busy, disabled, loading }: { job: JobCard
               <Spinner /> Setting it up
             </>
           ) : off ? (
-            p?.needsMainnet ? "Needs Arc mainnet" : "Not open right now"
+            p?.needsMainnet ? "Needs Arc mainnet" : p?.needsVenue ? "Needs Gemini's real exchange" : "Not open right now"
           ) : (
             <>
               Start <Icon name="arrow" size={15} className="transition-transform group-hover:translate-x-0.5" />
@@ -162,6 +151,114 @@ function JobTile({ job, p, i, onStart, busy, disabled, loading }: { job: JobCard
         </button>
       </div>
     </motion.article>
+  );
+}
+
+/**
+ * What the cover is about, picked on the card: a button that reads like a field ("City · Chicago"),
+ * opening a list over the card's lower half with each option's odds. Long lists get a filter box.
+ */
+function Picker({ label, choices, value, onChange, disabled }: { label: string; choices: JobChoice[]; value?: string; onChange: (id: string) => void; disabled: boolean }) {
+  const [open, setOpen] = useState(false);
+  const [q, setQ] = useState("");
+  const [at, setAt] = useState(0);
+  const box = useRef<HTMLDivElement>(null);
+  const current = choices.find((c) => c.id === value) ?? choices[0];
+  const shown = q ? choices.filter((c) => c.label.toLowerCase().includes(q.toLowerCase())) : choices;
+  useEffect(() => {
+    if (!open) return;
+    const away = (e: PointerEvent) => !box.current?.contains(e.target as Node) && setOpen(false);
+    document.addEventListener("pointerdown", away);
+    return () => document.removeEventListener("pointerdown", away);
+  }, [open]);
+  const pick = (id: string) => {
+    onChange(id);
+    setOpen(false);
+    setQ("");
+  };
+  const keys = (e: React.KeyboardEvent) => {
+    if (e.key === "Escape") return setOpen(false);
+    if (e.key === "ArrowDown" || e.key === "ArrowUp") {
+      e.preventDefault();
+      if (!open) return setOpen(true);
+      setAt((i) => Math.max(0, Math.min(shown.length - 1, i + (e.key === "ArrowDown" ? 1 : -1))));
+    }
+    if (e.key === "Enter" && open && shown[at]) {
+      e.preventDefault();
+      pick(shown[at].id);
+    }
+  };
+  return (
+    <div ref={box} className="mb-2.5" onKeyDown={keys}>
+      <button
+        type="button"
+        disabled={disabled}
+        onClick={() => {
+          setOpen((o) => !o);
+          setAt(Math.max(0, choices.indexOf(current)));
+        }}
+        aria-haspopup="listbox"
+        aria-expanded={open}
+        aria-label={`${label}: ${current?.label}`}
+        className={`pressable flex h-11 w-full items-center gap-2.5 rounded-xl border-[1.5px] border-ink bg-panel px-3 text-left transition-shadow ${open ? "shadow-[3px_3px_0_0_var(--agent)]" : "hover:shadow-[3px_3px_0_0_var(--agent)]"}`}
+        data-testid="job-pick"
+      >
+        <span className="shrink-0 rounded-md bg-agent-soft px-1.5 py-0.5 text-[10.5px] font-semibold uppercase tracking-wide text-agent-ink">{label}</span>
+        <span className="min-w-0 flex-1 truncate text-[14px] font-semibold">{current?.label}</span>
+        <Icon name="chevron" size={14} className={`shrink-0 transition-transform ${open ? "-rotate-90" : "rotate-90"}`} />
+      </button>
+      <AnimatePresence>
+        {open && (
+          <motion.div
+            initial={{ opacity: 0, y: -4 }}
+            animate={{ opacity: 1, y: 0 }}
+            exit={{ opacity: 0, y: -4 }}
+            transition={{ duration: 0.14 }}
+            className="absolute inset-x-4 bottom-4 z-20 flex flex-col overflow-hidden rounded-2xl border-[1.5px] border-ink bg-panel shadow-[4px_4px_0_0_var(--color-ink)]"
+            style={{ top: (box.current?.offsetTop ?? 0) + 50 }}
+          >
+            {choices.length > 7 && (
+              <label className="flex items-center gap-2 border-b border-line px-3 py-2 focus-within:bg-agent-soft/40">
+                <Icon name="search" size={14} className="text-ink-3" />
+                <span className="sr-only">Filter {label.toLowerCase()}</span>
+                <input
+                  autoFocus
+                  value={q}
+                  onChange={(e) => {
+                    setQ(e.target.value);
+                    setAt(0);
+                  }}
+                  placeholder={`Search ${choices.length} ${label === "City" ? "cities" : "options"}`}
+                  className="min-w-0 flex-1 bg-transparent text-[13.5px] outline-none focus-visible:outline-none"
+                />
+              </label>
+            )}
+            <ul role="listbox" aria-label={label} className="overflow-y-auto overscroll-contain p-1.5">
+              {shown.map((c, i) => {
+                const on = c.id === current?.id;
+                return (
+                  <li key={c.id} role="option" aria-selected={on}>
+                    <button
+                      type="button"
+                      onClick={() => pick(c.id)}
+                      onMouseEnter={() => setAt(i)}
+                      className={`flex w-full items-center gap-2 rounded-lg px-2.5 py-2 text-left text-[13.5px] ${i === at ? "bg-agent-soft" : ""} ${on ? "font-semibold text-agent-ink" : "text-ink"}`}
+                      data-testid="job-pick-option"
+                    >
+                      <span className="min-w-0 flex-1 truncate">{c.label}</span>
+                      {c.line && c.line !== c.label && <span className="hidden truncate text-[11.5px] text-ink-3 min-[380px]:block">{c.line}</span>}
+                      <span className="num w-10 shrink-0 text-right text-[12.5px] font-semibold text-agent-ink">{pct(c.chance)}</span>
+                      {on ? <Icon name="check" size={13} stroke={2.4} className="shrink-0" /> : <span className="w-[13px] shrink-0" />}
+                    </button>
+                  </li>
+                );
+              })}
+              {!shown.length && <li className="px-2.5 py-3 text-[13px] text-ink-3">Nothing matches “{q}”.</li>}
+            </ul>
+          </motion.div>
+        )}
+      </AnimatePresence>
+    </div>
   );
 }
 

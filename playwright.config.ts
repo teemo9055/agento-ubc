@@ -16,6 +16,6 @@ export default defineConfig({
     url: "http://localhost:3100/api/config",
     reuseExistingServer: true,
     timeout: 240_000,
-    env: { ...NO_MAINNET, DEMO_DELAY_SCALE: "0.2", FAULT_TIMEOUT_MS: "1500", AI_DISABLED: "true", PERSIST: "false", MAP_SPACING_MS: process.env.MARKET_DATA === "live" ? "1100" : "0", MARKET_DATA: process.env.MARKET_DATA === "live" ? "" : (process.env.MARKET_DATA ?? "replay") },
+    env: { ...NO_MAINNET, ALLOW_PRACTICE: "true", DEMO_DELAY_SCALE: "0.2", FAULT_TIMEOUT_MS: "1500", AI_DISABLED: "true", PERSIST: "false", MAP_SPACING_MS: process.env.MARKET_DATA === "live" ? "1100" : "0", MARKET_DATA: process.env.MARKET_DATA === "live" ? "" : (process.env.MARKET_DATA ?? "replay") },
   },
 });
