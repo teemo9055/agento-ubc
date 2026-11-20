@@ -581,6 +581,10 @@ export async function validateProposal(agent: AgentId, input: unknown, id: strin
             : `Contract ${raw.symbol} not found in event ${raw.eventTicker}`,
       };
     if (c.open === false) return { error: `${c.label} isn't open for trading right now` };
+    // On the test exchange the order rests there, but prices are read from the live market for the
+    // same contract: that's where people trade, and what "would it fill" is checked against.
+    const liveC = venue === "gemini-sandbox" ? (await gemini.getEvent(raw.eventTicker, gemini.PROD_BASE).catch(() => null))?.contracts.find((x) => x.symbol === raw.symbol) : undefined;
+    const px = liveC ?? c;
     const left = c.expiry ? Date.parse(c.expiry) - Date.now() : Infinity;
     if (left < MIN_EXPIRY_MS) return { error: `${c.label} closes ${left <= 0 ? "now" : `in ${Math.max(1, Math.round(left / 60_000))} min`}; too soon for an order to rest. Pick a later contract.` };
     // A post-only line takes only orders that wait: keep the limit just under the cheapest seller so it rests.
@@ -619,10 +623,11 @@ export async function validateProposal(agent: AgentId, input: unknown, id: strin
     if (maxPrice * quantity > limits().maxOrderUsd) return { error: `Order over the user's $${limits().maxOrderUsd} per-order limit (set in Settings). Make it smaller.` };
     if (maxPrice !== raw.maxPrice) adjustments.push(`Price rounded to ${Math.round(maxPrice * 100)}¢`);
     // Buy now or wait: on the test exchange, where a waiting order rarely fills, it buys now unless told otherwise.
-    const fill: "now" | "wait" | undefined = raw.orderType !== "limit" || restAt != null ? undefined : (raw.fill ?? (venue === "gemini-sandbox" ? "now" : undefined)) || undefined;
+    // Resting is the default: the order stays open on the exchange where you can see it. "Buy now" is asked for.
+    const fill: "now" | "wait" | undefined = raw.orderType !== "limit" || restAt != null ? undefined : raw.fill || undefined;
     action = { kind: "prediction_order", eventTicker: raw.eventTicker, symbol: raw.symbol, label: raw.label, event: ev.title, side: raw.side, orderType: raw.orderType, maxPrice, stopPrice, quantity, ...(fill ? { fill } : {}) };
     // Tell the user whether this buys now or waits: the cheapest seller right now is the ask.
-    const askNow = raw.side === "yes" ? c.ask : c.bid != null ? round2(1 - c.bid) : null;
+    const askNow = raw.side === "yes" ? px.ask : px.bid != null ? round2(1 - px.bid) : null;
     if (fill === "now")
       adjustments.push(
         askNow != null && maxPrice >= askNow
@@ -630,6 +635,12 @@ export async function validateProposal(agent: AgentId, input: unknown, id: strin
           : askNow != null
             ? `Buy now: nobody is selling at ${Math.round(maxPrice * 100)}¢ or less right now (cheapest is ${Math.round(askNow * 100)}¢), so it would buy nothing. Raise the price to buy, or let it wait`
             : "Buy now: nobody is selling right now, so it would buy nothing. Let it wait instead",
+      );
+    else if (raw.orderType === "limit" && askNow != null && liveC)
+      adjustments.push(
+        maxPrice >= askNow
+          ? `On the live market this would fill now at ${Math.round(askNow * 100)}¢; on the test exchange it stays open until a seller there matches it`
+          : `Waits: the live market's cheapest seller is at ${Math.round(askNow * 100)}¢, above your ${Math.round(maxPrice * 100)}¢`,
       );
     else if (raw.orderType === "limit" && askNow != null)
       adjustments.push(
@@ -640,7 +651,7 @@ export async function validateProposal(agent: AgentId, input: unknown, id: strin
     else if (raw.orderType === "limit") adjustments.push("Waits on the book: no sellers right now");
     if (Number.isFinite(left)) adjustments.push(`Contract closes ${new Date(Date.parse(c.expiry!)).toUTCString().replace(/:\d\d GMT$/, " UTC")}`);
     eventContracts = ev.contracts.map((x) => x.symbol);
-    market = { ask: raw.side === "yes" ? c.ask : c.bid != null ? round2(1 - c.bid) : null, bid: raw.side === "yes" ? c.bid : c.ask != null ? round2(1 - c.ask) : null, closesAt: c.expiry };
+    market = { ask: raw.side === "yes" ? px.ask : px.bid != null ? round2(1 - px.bid) : null, bid: raw.side === "yes" ? px.bid : px.ask != null ? round2(1 - px.ask) : null, closesAt: c.expiry };
     }
   } else if (raw?.kind === "spot_order") {
     const symbol = raw.symbol.toLowerCase();

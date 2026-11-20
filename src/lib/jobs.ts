@@ -80,6 +80,8 @@ export interface JobPreview {
   unavailable?: string;
   /** It runs on Arc mainnet, which this server isn't set up for. */
   needsMainnet?: boolean;
+  /** Gemini lists it only on its live exchange, and the account there can't trade yet. */
+  needsVerified?: boolean;
   /** Its market is only on Gemini's real exchange, which isn't connected here. */
   needsVenue?: boolean;
 }
@@ -97,6 +99,9 @@ export const JOBS: JobCardInfo[] = [
   { id: "business-check", agent: "worko", section: "verify", title: "Can I trust this contractor?", does: "Finds them on Google, checks the phone and site it lists, then news and complaints", glyph: "tool", money: "real", inputs: [{ name: "business", type: "company_name", label: "Business and city", example: "Bay Area Plumbing, San Francisco" }] },
   // ---------- Inso ----------
   { id: "news-crypto", agent: "inso", section: "news", title: "Bitcoin's in the headlines. Is it priced in?", does: "Reads today's Bitcoin news, then bets on a price line", glyph: "chart", money: "real" },
+  { id: "btc-today", agent: "inso", section: "news", title: "Where does Bitcoin end today?", does: "Checks the live price and today's news, then bets on a line for this afternoon", glyph: "chart", money: "real" },
+  { id: "news-eth", agent: "inso", section: "news", title: "Ether's moving. Is it priced in?", does: "Reads the Ether news and other markets, then bets on a price line", glyph: "chart", money: "real" },
+  { id: "news-sol", agent: "inso", section: "news", title: "Solana's in the headlines", does: "Reads the Solana news and other markets, then bets on a price line", glyph: "chart", money: "real" },
   { id: "news-oil", agent: "inso", section: "news", title: "Oil supply news could raise my fuel bill", does: "Reads the oil news, then covers a price jump", glyph: "coin", money: "real" },
   { id: "news-fed", agent: "inso", section: "news", title: "Rate news could raise my mortgage", does: "Reads the Fed news, then covers a bigger hike", glyph: "bank", money: "real" },
   { id: "wedding-cold", agent: "inso", section: "weather", title: "Outdoor wedding, and it might be cold", does: "Pays out if the day stays chilly", glyph: "cold", money: "any" },
@@ -106,6 +111,7 @@ export const JOBS: JobCardInfo[] = [
   { id: "bar-night", agent: "inso", section: "sports", title: "My sports bar is slow when the home team loses", does: "Covers a slow night if they lose", glyph: "shop", money: "any" },
   { id: "heating-gas", agent: "inso", section: "commodities", title: "My heating bill jumps if gas spikes", does: "Pays out if natural gas rises past a line", glyph: "cold", money: "any" },
   { id: "ring-gold", agent: "inso", section: "commodities", title: "Buying a gold ring soon", does: "Covers a gold price jump before you buy", glyph: "coin", money: "any" },
+  { id: "silver-jump", agent: "inso", section: "commodities", title: "I buy silver for my jewellery", does: "Checks the live silver price, then covers a jump past a line", glyph: "coin", money: "any" },
   { id: "copper-quote", agent: "inso", section: "commodities", title: "I quoted a job at a fixed price", does: "Covers a copper price jump that eats your margin", glyph: "tool", money: "any" },
   { id: "fuel-costs", agent: "inso", section: "commodities", title: "Fuel is my biggest cost", does: "Pays out if oil rises past a line", glyph: "chart", money: "any" },
 ];

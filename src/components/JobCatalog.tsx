@@ -164,7 +164,7 @@ function JobTile({ job, p, i, onStart, busy, disabled, loading }: { job: JobCard
               <Spinner /> Setting it up
             </>
           ) : off ? (
-            p?.needsMainnet ? "Needs Arc mainnet" : p?.needsVenue ? "Needs Gemini's real exchange" : "Not open right now"
+            p?.needsMainnet ? "Needs Arc mainnet" : p?.needsVerified ? "Needs a verified Gemini account" : p?.needsVenue ? "Needs Gemini's real exchange" : "Not open right now"
           ) : (
             <>
               Start <Icon name="arrow" size={15} className="transition-transform group-hover:translate-x-0.5" />

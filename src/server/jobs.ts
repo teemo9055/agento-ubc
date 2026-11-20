@@ -1,5 +1,5 @@
 import { liveReady } from "./chain";
-import { venueReady } from "./exchange";
+import { liveCanTrade, venueReady } from "./exchange";
 import type { Plan, Proposal, Venue } from "@/lib/types";
 import { jobById, JOBS, type JobCardInfo, type JobPreview } from "@/lib/jobs";
 import * as gemini from "./gemini";
@@ -84,9 +84,10 @@ async function sportsOptions(prefix: string): Promise<Options> {
 }
 
 /** Commodities and coins: the month-end lines a jump would cross, read fresh; the default is a cheap one. */
-async function lineOptions(prefixes: string[], search?: string): Promise<Options> {
+async function lineOptions(prefixes: string[], search?: string, minHours = 24, soonest = false): Promise<Options> {
   for (const prefix of prefixes) {
-    for (const listed of (await eventsOf(prefix, PROD_BASE, 24, search)).reverse()) {
+    const found = await eventsOf(prefix, PROD_BASE, minHours, search);
+    for (const listed of soonest ? found : found.reverse()) {
       // Read fresh: lines open and close through the day, and the list above can be a minute old.
       const event = await gemini.getEvent(listed.ticker, PROD_BASE).catch(() => listed);
       const lines = event.contracts.filter((x) => /above/i.test(x.label) && x.open === true && (yesPrice(x) ?? 0) >= 0.03 && (yesPrice(x) ?? 1) <= 0.6).sort((a, b) => (a.strike ?? 0) - (b.strike ?? 0));
@@ -114,23 +115,30 @@ async function choose(o: Options, venue: Venue, skip: Set<string>, choice?: stri
   if (venue !== "gemini-sandbox") return { ...c, venue };
   // The test exchange lists its own lines: take the one nearest the pick, at the live market's odds for it.
   const test = await gemini.getEvent(c.event.ticker, SANDBOX_BASE).catch(() => null);
-  const lines = test?.contracts.filter((x) => x.strike != null && /above/i.test(x.label) && !skip.has(x.symbol)) ?? [];
+  const all = test?.contracts.filter((x) => !skip.has(x.symbol)) ?? [];
+  const lines = all.filter((x) => x.strike != null && /above/i.test(x.label));
   const byDistance = (a: MarketContract, b: MarketContract) => Math.abs(a.strike! - (c.contract.strike ?? 0)) - Math.abs(b.strike! - (c.contract.strike ?? 0));
-  const nearest = [...lines].sort(byDistance)[0];
+  // An up/down market has one contract and no strike: only the same contract will do.
+  const nearest = all.find((x) => x.symbol === c.contract.symbol) ?? (c.contract.strike != null ? [...lines].sort(byDistance)[0] : undefined);
   if (!test || !nearest) {
     if (!venueReady("paper")) return { error: "This market isn't on Gemini's test exchange. Pick another line, or connect the real exchange in Settings." };
     return { ...c, venue: "paper", note: "This market isn't on Gemini's test exchange, so this one is practice." };
   }
-  // The test exchange has few traders: a buy only fills if someone there is selling. When a line has a
-  // seller, use it at the seller's price so the order fills now; otherwise say plainly it will wait.
-  const selling = lines.filter((x) => x.ask != null && x.ask > 0 && x.ask <= 0.9).sort(byDistance)[0];
-  if (selling) {
-    const moved = selling.symbol !== nearest.symbol;
-    return { ...c, event: test, contract: selling, price: selling.ask!, venue: "gemini-sandbox", note: `On Gemini's test exchange${moved ? `, “${selling.label}” is the line with a seller right now, so I used it` : ""}: buying at the seller's ${Math.round(selling.ask! * 100)}¢ fills straight away (test money).` };
-  }
-  const ref = c.event.contracts.filter((x) => x.strike != null && yesPrice(x) != null).sort((a, b) => Math.abs(a.strike! - nearest.strike!) - Math.abs(b.strike! - nearest.strike!))[0];
-  const p = Math.min(0.9, Math.max(0.03, ref ? yesPrice(ref)! : c.price));
-  return { ...c, event: test, contract: nearest, price: p, venue: "gemini-sandbox", note: "Heads up: nobody is selling this on Gemini's test exchange right now (few people trade there), so the order is priced from the live market and will wait until a seller shows up. On the real exchange, market makers sell all day." };
+  // Same contract name on both exchanges: keep the person's line when the test exchange lists it.
+  // The price comes from the live market, where people actually trade; the test exchange's own
+  // prices are stale. The order rests there, visible, and the app tracks the live market beside it.
+  const same = all.find((x) => x.symbol === c.contract.symbol);
+  const pick = same ?? nearest;
+  const ref = same ? c.contract : c.event.contracts.filter((x) => x.strike != null && yesPrice(x) != null).sort((a, b) => Math.abs(a.strike! - (pick.strike ?? 0)) - Math.abs(b.strike! - (pick.strike ?? 0)))[0];
+  const p = Math.min(0.9, Math.max(0.03, same ? c.price : ref ? yesPrice(ref)! : c.price));
+  return {
+    ...c,
+    event: test,
+    contract: pick,
+    price: p,
+    venue: "gemini-sandbox",
+    note: `Your order goes on Gemini's test exchange through its prediction-market API${same ? "" : ` (on “${pick.label}”, its nearest line)`}, at the live market's ${Math.round(p * 100)}¢, and stays open there until it fills. The app also follows the live market and tells you if and when it would have filled.`,
+  };
 }
 
 // ---------- cards ----------
@@ -432,6 +440,9 @@ const CARDS: Record<string, CardDef> = {
   }),
   // Inso: news + markets (headlines bought in real USDC on Arc mainnet, then the market)
   "news-crypto": coverCard("Bet: Bitcoin moves up", { protects: "missing a Bitcoin rally", usd: 15 }, () => lineOptions(["BTC2"], "BTC price"), (c) => `Bitcoin's in the news. Read the headlines, then bet on “${c.contract.label}” by ${day(c.event)}.`, { oracle: "btcusd", news: "Bitcoin price", odds: "bitcoin" }),
+  "news-eth": coverCard("Bet: Ether moves up", { protects: "missing an Ether rally", usd: 15 }, () => lineOptions(["ETH2"], "ETH price"), (c) => `Ether's in the news. Read the headlines and other markets, then bet on “${c.contract.label}” by ${day(c.event)}.`, { oracle: "ethusd", news: "Ethereum price", odds: "ethereum" }),
+  "news-sol": coverCard("Bet: Solana moves up", { protects: "missing a Solana rally", usd: 15 }, () => lineOptions(["SOL2"], "SOL price"), (c) => `Solana's in the news. Read the headlines and other markets, then bet on “${c.contract.label}” by ${day(c.event)}.`, { oracle: "solusd", news: "Solana price", odds: "solana" }),
+  "btc-today": coverCard("Bet: Bitcoin by this afternoon", { protects: "missing a Bitcoin move today", usd: 10 }, () => lineOptions(["BTC2"], "BTC price", 1, true), (c) => `Where does Bitcoin end today? Check the live price and the news first, then bet on “${c.contract.label}” by ${day(c.event)}.`, { oracle: "btcusd", news: "Bitcoin price today" }),
   "news-oil": coverCard("Cover: oil jumps on the news", { protects: "a higher fuel bill", usd: 25 }, () => lineOptions(["WTI", "BRENT"], "Oil"), (c) => `Oil supply is in the news. Read it, then cover me if oil reaches ${c.contract.label} by ${day(c.event)}.`, { news: "OPEC oil supply", odds: "oil price" }),
   "news-fed": coverCard("Cover: a bigger rate hike", { protects: "a bigger mortgage payment", usd: 40 }, fedOptions, (c) => `Rate news could raise my mortgage. Read it, then cover me if the Fed says “${c.contract.label}”.`, { news: "Federal Reserve rate decision", odds: "fed decision" }),
   // Inso: weather (the order goes to Gemini's real exchange; practice without it)
@@ -444,6 +455,7 @@ const CARDS: Record<string, CardDef> = {
   // Inso: commodities (real orders on Gemini's test exchange)
   "heating-gas": coverCard("Cover: a natural gas spike", { protects: "a higher heating bill", usd: 20 }, () => lineOptions(["NGAS"], "Natural Gas"), (c) => `My heating bill jumps if natural gas spikes. Cover me if it reaches ${c.contract.label}.`),
   "ring-gold": coverCard("Cover: a gold price jump", { protects: "a pricier gold ring", usd: 25 }, () => lineOptions(["XAU"], "Gold"), (c) => `I'm buying a gold ring soon. Cover me if gold reaches ${c.contract.label}.`, { oracle: "xauusd" }),
+  "silver-jump": coverCard("Cover: a silver price jump", { protects: "pricier silver for my jewellery stock", usd: 25 }, () => lineOptions(["XAG"], "Silver"), (c) => `I buy silver for my jewellery business. Cover me if silver reaches ${c.contract.label}.`, { oracle: "xagusd" }),
   "copper-quote": coverCard("Cover: a copper price jump", { protects: "a thinner margin on the job", usd: 25 }, () => lineOptions(["COPPER"], "Copper"), (c) => `I quoted a wiring job at a fixed price. Cover me if copper reaches ${c.contract.label}.`),
   "fuel-costs": coverCard("Cover: an oil price jump", { protects: "higher fuel costs", usd: 30 }, () => lineOptions(["WTI", "BRENT"], "Oil"), (c) => `Fuel is my biggest cost. Cover me if oil reaches ${c.contract.label}.`),
 };
@@ -452,7 +464,9 @@ const CARDS: Record<string, CardDef> = {
 export function venueFor(card: JobCardInfo, want: Venue): Venue {
   // Weather, sports and the Fed trade only on Gemini's real exchange, so they go there when it's
   // connected (the card says "Real money"). Practice is only left when no Gemini account is.
-  if (realOnly(card)) return venueReady("gemini") ? "gemini" : "paper";
+  // These go through Gemini's live exchange or not at all: the card says so until the account can trade.
+  // Practice exists only where no Gemini account is connected at all (the automated tests).
+  if (realOnly(card)) return venueReady("paper") && !venueReady("gemini") ? "paper" : "gemini";
   if (want === "paper" && !venueReady("paper")) return venueReady("gemini-sandbox") ? "gemini-sandbox" : "gemini";
   return want;
 }
@@ -505,10 +519,12 @@ let cache: { at: number; want: Venue; mainnet: boolean; list: JobPreview[] } | n
 export async function previews(want: Venue): Promise<JobPreview[]> {
   const mainnet = liveReady("mainnet");
   if (cache && cache.want === want && cache.mainnet === mainnet && Date.now() - cache.at < 45_000) return cache.list;
+  const live = JOBS.some(realOnly) ? await liveCanTrade().catch(() => ({ ok: false, why: "Gemini didn't answer" })) : { ok: true };
   const list = await Promise.all(
     JOBS.map(async (card): Promise<JobPreview> => {
       const def = CARDS[card.id];
       const venue = venueFor(card, want);
+      if (realOnly(card) && venue === "gemini" && !live.ok) return { id: card.id, venue: "gemini", needsVerified: true, unavailable: `Needs a verified Gemini account: this market trades only on Gemini's live exchange, and ${live.why}.` };
       // Checks paid in real USDC need Arc mainnet on this server: say so on the card, not after a click.
       if (card.money === "real" && !mainnet) return { id: card.id, venue, needsMainnet: true, unavailable: "Needs Arc mainnet. Set it up in Settings → Paying, then this runs for real USDC." };
       // A real-exchange-only market with no real exchange connected (and practice off): say what's missing.

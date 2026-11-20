@@ -451,6 +451,8 @@ export interface OrderResult {
   updatedAt?: string;
   /** A "buy now" order the exchange let rest: cancel what isn't filled at this time. */
   cancelAfter?: string;
+  /** The same contract on Gemini's live market, followed beside a test-exchange or practice order: would it have filled, at what price and when. */
+  shadow?: { state: "waiting" | "filled"; price?: number; at?: string; liveAsk?: number };
   /** Fingerprint of the order written to Arc: digest of the order record and the transaction. */
   anchor?: { digest: string; tx: string };
 }

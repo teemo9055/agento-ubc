@@ -92,7 +92,8 @@ function closesIn(iso?: string) {
 export function LiveMarket({ action, hedge, venue, settlement, held }: { action: MoveAction; hedge?: Proposal["hedge"]; venue?: Venue; settlement?: Settlement; /** Contracts actually held (or simulated), for "worth now". */ held?: number }) {
   const a = action.kind === "prediction_order" ? action : undefined;
   const watches = useMemo<Watch[]>(() => (!a ? [] : a.combo ? a.combo.legs.map((l) => ({ eventTicker: l.eventTicker, symbol: l.symbol })) : [{ eventTicker: a.eventTicker, symbol: a.symbol }]), [a]);
-  const ticks = useLive(watches, venue, !settlement);
+  // A test-exchange order rests there, but its prices are followed on the live market, where people trade.
+  const ticks = useLive(watches, venue === "gemini-sandbox" ? undefined : venue, !settlement);
   if (!a || a.trade === "sell") return null;
   const first = ticks[watches[0]?.symbol];
   const cost = a.maxPrice * a.quantity;

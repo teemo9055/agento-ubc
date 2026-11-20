@@ -129,6 +129,20 @@ export async function tradingStatus(): Promise<TradingStatus> {
   }
 }
 
+/**
+ * Can orders go to Gemini's live exchange right now? Keys alone aren't enough: an account that
+ * isn't verified yet is refused. Read once every few minutes; markets only listed there wait for it.
+ */
+let liveCheck: { at: number; v: { ok: boolean; why?: string } } | undefined;
+export async function liveCanTrade(): Promise<{ ok: boolean; why?: string }> {
+  if (!venueReady("gemini")) return { ok: false, why: "no Gemini account is connected for the live exchange" };
+  if (liveCheck && Date.now() - liveCheck.at < 5 * 60_000) return liveCheck.v;
+  const st = await venueStore.run("gemini", tradingStatus).catch((e) => ({ connected: false, error: (e as Error).message }) as TradingStatus);
+  const v = st.connected && st.termsAccepted !== false ? { ok: true } : { ok: false, why: st.connected ? "the prediction-market terms aren't accepted yet" : "your Gemini account isn't verified for trading yet" };
+  liveCheck = { at: Date.now(), v };
+  return v;
+}
+
 export interface CheckStep {
   step: string;
   ok: boolean;

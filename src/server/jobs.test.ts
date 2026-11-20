@@ -15,7 +15,7 @@ describe("the job catalog", () => {
     expect(new Set(JOBS.map((j) => j.id)).size).toBe(JOBS.length);
   });
 
-  it("sends weather, sports and Fed orders to Gemini's real exchange; practice only while no Gemini account is connected", () => {
+  it("sends weather, sports and Fed orders to Gemini's real exchange; practice only while no Gemini account is connected at all", () => {
     const wedding = jobById("wedding-cold")!;
     const gold = jobById("ring-gold")!;
     // Nothing connected: practice.
@@ -26,7 +26,8 @@ describe("the job catalog", () => {
     vi.stubEnv("GEMINI_SANDBOX_SECRET", "s");
     expect(venueFor(gold, "paper")).toBe("gemini-sandbox");
     expect(venueFor(gold, "gemini-sandbox")).toBe("gemini-sandbox");
-    expect(venueFor(wedding, "gemini-sandbox")).toBe("paper");
+    // Real-only markets never become practice once Gemini is connected: they wait for the live exchange.
+    expect(venueFor(wedding, "gemini-sandbox")).toBe("gemini");
     // The real exchange connected too: weather, sports and the Fed go there.
     vi.stubEnv("GEMINI_LIVE_KEY", "k");
     vi.stubEnv("GEMINI_LIVE_SECRET", "s");

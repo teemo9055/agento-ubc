@@ -10,6 +10,7 @@ import { SELLERS } from "../sellers";
 import { PRODUCTS } from "../x402";
 import * as gemini from "../gemini";
 import * as geo from "../geo";
+import { checkShadow } from "../shadow";
 import { cancelOrder, describeAction, ExchangeError, marketBase, notionalOf, placeOrder, refreshOrder, VENUE_NAME, VENUE_NOTE } from "../exchange";
 import { templateOf, watchesOrder } from "@/lib/templates";
 import { doesLine } from "@/lib/plain";
@@ -580,6 +581,8 @@ export function toolboxAgent(id: AgentId): AgentDef {
           // Retryable: the user can accept terms or fund the account, then retry.
           throw new PhaseFailure("exchange_rejected", `${VENUE_NAME[p.venue]}: ${err.message}`);
         }
+        // Beside a test-exchange order: would the live market have filled it at this price right now?
+        mem.order = await checkShadow(mem.order, a).catch(() => mem.order!);
         ctx.order?.(mem.order);
         // Buy now, on an exchange that let the order rest: give it a moment, then cancel what didn't fill.
         if (mem.order.cancelAfter && mem.order.status === "open") {
@@ -672,7 +675,9 @@ async function watch(mem: Mem, ctx: AgentCtx, action: MoveAction) {
   let cur = o;
   while (Date.now() < until && cur.status === "open") {
     await new Promise((r) => setTimeout(r, WATCH_POLL_MS));
-    const next = await refreshOrder(cur, action.kind).catch(() => cur);
+    const next = await refreshOrder(cur, action.kind)
+      .then((o) => checkShadow(o, action))
+      .catch(() => cur);
     if (JSON.stringify(next) !== JSON.stringify(cur)) ctx.order?.(next);
     cur = next;
     mem.order = cur;

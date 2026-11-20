@@ -51,6 +51,7 @@ import { isDemoResource } from "./catalog/demo";
 import { buildReport } from "./report";
 import { followUp } from "./follow-up";
 import { VENDOR_TOOLS } from "./vendor-tools";
+import { checkShadow, followsLive } from "./shadow";
 import { checkNext, doneThinking, RESERVE_ID, researchSettled, reserveFor, think, thinks, thoughtOf } from "./think";
 
 /** Who planned a recipe sold to an outside agent: such runs don't teach the book again. */
@@ -1436,6 +1437,17 @@ function trackOpenOrders() {
     for (const ctl of runs.values()) {
       if (dueToSettle(ctl.run)) void settleRun(ctl.run.id).catch((e) => console.warn(`settle ${ctl.run.id}:`, (e as Error).message));
       const o = ctl.run.order;
+      // Test-exchange and practice orders: keep following the live market until it would have filled.
+      if (o && ctl.run.status === "done" && followsLive(o, ctl.run.proposal?.action) && o.shadow?.state !== "filled") {
+        void checkShadow(o, ctl.run.proposal!.action!).then(
+          (next) => {
+            if (next === o || ctl.run.order !== o) return;
+            emit(ctl, { type: "order.updated", order: next });
+            if (next.shadow?.state === "filled") log(ctl, { kind: "failure", what: `The live market reached your price`, why: `A live seller offered it at ${Math.round((next.shadow.price ?? 0) * 100)}¢: your order would have filled there`, outcome: "approved", by: "system" });
+          },
+          (e) => console.warn(`live check ${ctl.run.id}:`, (e as Error).message),
+        );
+      }
       if (o?.status !== "open" || o.venue === "paper") continue;
       void refreshRunOrder(ctl.run.id).then(
         (run) => {
@@ -1465,7 +1477,8 @@ export async function settleRun(runId: string) {
   const ctl = ctlOf(runId);
   const a = ctl.run.proposal?.action;
   if (!dueToSettle(ctl.run) || a?.kind !== "prediction_order") return ctl.run;
-  const base = marketBase(ctl.run.order!.venue);
+  // Test-exchange markets don't resolve meaningfully: the live market's result decides.
+  const base = ctl.run.order!.venue === "gemini" ? marketBase("gemini") : gemini.PROD_BASE;
   const tickers = [...new Set(a.combo ? a.combo.legs.map((l) => l.eventTicker) : [a.eventTicker])];
   const events = await Promise.all(tickers.map((t) => gemini.getEvent(t, base).catch(() => null)));
   const resolved = new Map(events.flatMap((e) => (e?.contracts ?? []).map((c) => [c.symbol, c.resolved] as const)));

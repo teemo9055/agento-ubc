@@ -4,8 +4,8 @@ import { jobById } from "@/lib/jobs";
 import { coerce } from "@/server/dataflow";
 import { liveAllowed } from "@/server/access";
 import { liveReady } from "@/server/chain";
-import { tradingVenue, venueReady, withVenue } from "@/server/exchange";
-import { askOf, buildChecked, venueFor } from "@/server/jobs";
+import { liveCanTrade, tradingVenue, venueReady, withVenue } from "@/server/exchange";
+import { askOf, buildChecked, realOnly, venueFor } from "@/server/jobs";
 import { withNet } from "@/server/netContext";
 import { createRun, discard, offerMove, offerPlan } from "@/server/orchestrator";
 import { validateProposal } from "@/server/tools";
@@ -51,6 +51,11 @@ export async function POST(req: NextRequest) {
   }
   const want: Venue = b.data.venue && venueReady(b.data.venue) ? b.data.venue : tradingVenue();
   const venue = venueFor(card, want);
+  // Weather, sports and the Fed trade only on Gemini's live exchange: no stand-in order is made.
+  if (realOnly(card) && venue === "gemini") {
+    const live = await liveCanTrade();
+    if (!live.ok) return NextResponse.json({ error: `Needs a verified Gemini account: this market trades only on Gemini's live exchange, and ${live.why}. Try a crypto or commodity card: those run on Gemini's test exchange.` }, { status: 409 });
+  }
   try {
     // The request reads with the market it's built on ("I have tickets for Portland vs New York…").
     const ask = (await withVenue(venue, () => askOf(card.id, venue, b.data.choice, inputs)).catch(() => undefined)) ?? card.title;

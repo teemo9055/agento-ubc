@@ -1,5 +1,5 @@
 import { fmt } from "./money";
-import type { Run } from "./types";
+import type { OrderResult, Run } from "./types";
 
 export interface Outcome {
   tone: "good" | "warn" | "bad" | "info";
@@ -13,6 +13,14 @@ const VENUE = { paper: "practice", "gemini-sandbox": "Gemini's test exchange", g
 const price = (x: number) => (x < 1 ? `${Math.round(x * 100)}¢` : `$${x.toLocaleString()}`);
 
 /** The state of a job in one or two plain sentences, from the facts on record. */
+/** The live market beside a test-exchange or practice order, in one line. */
+export function liveLine(o: OrderResult | undefined, limit?: number): string | undefined {
+  const sh = o?.shadow;
+  if (!sh) return undefined;
+  if (sh.state === "filled") return `Live market: would have filled at ${price(sh.price ?? 0)}${sh.at ? ` at ${new Date(sh.at).toUTCString().slice(17, 22)} UTC` : ""}`;
+  return sh.liveAsk != null ? `Live market: cheapest seller at ${price(sh.liveAsk)}${limit != null ? `, waiting for your ${price(limit)}` : ""}` : "Live market: no sellers right now";
+}
+
 export function outcomeOf(run: Run): Outcome {
   const o = run.order;
   const needs = run.pendingFailures.length + run.pendingReapprovals.length;
@@ -53,10 +61,22 @@ export function outcomeOf(run: Run): Outcome {
   }
   if (o && run.proposal?.action && run.proposal.action.kind !== "itinerary") {
     const of = o.quantity != null ? `${o.filledQuantity ?? 0} of ${o.quantity}` : "";
+    const limit = run.proposal.action.kind === "prediction_order" ? run.proposal.action.maxPrice : undefined;
+    const live = liveLine(o, limit);
+    const closes = run.proposal.market?.closesAt ? Date.parse(run.proposal.market.closesAt) : NaN;
+    const closedNoFill = o.shadow?.state === "waiting" && !(o.filledQuantity ?? 0) && Number.isFinite(closes) && closes <= Date.now();
     switch (o.status) {
       case "simulated":
-        return { tone: "warn", headline: "Practice run: no order was sent", detail: "No exchange is connected, so nothing was bought or sold. Connect Gemini in Settings to place real orders." };
+        return live
+          ? { tone: "warn", headline: closedNoFill ? `Practice run: it wouldn't have filled, the live market never came down to ${price(limit ?? 0)}` : "Practice run: no order was sent", detail: `${live}. No money moved.` }
+          : { tone: "warn", headline: "Practice run: no order was sent", detail: "No exchange is connected, so nothing was bought or sold. Connect Gemini in Settings to place real orders." };
       case "open":
+        if (o.venue === "gemini-sandbox")
+          return {
+            tone: closedNoFill ? "warn" : "info",
+            headline: closedNoFill ? `It wouldn't have filled: the live market never came down to ${price(limit ?? 0)}` : `Open on Gemini's test exchange${o.orderId ? ` · order #${o.orderId}` : ""}${of ? ` (${of} filled)` : ""}`,
+            detail: `${live ? `${live}. ` : ""}Placed through Gemini's prediction-market API. It stays open there until a test-exchange seller matches it, and you can cancel it any time.`,
+          };
         return {
           tone: "info",
           headline: `Order placed, waiting to ${selling ? "sell" : "fill"}${of ? ` (${of} so far)` : ""}`,

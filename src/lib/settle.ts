@@ -8,8 +8,12 @@ type Resolved = "yes" | "no" | undefined;
  */
 export function settle(action: MoveAction | undefined, order: OrderResult | undefined, resolvedOf: (symbol: string) => Resolved, at = new Date().toISOString()): Settlement | undefined {
   if (!action || action.kind !== "prediction_order" || action.trade === "sell" || !order) return undefined;
-  const practice = order.status === "simulated";
-  const quantity = practice ? action.quantity : (order.filledQuantity ?? 0);
+  // A real fill counts first. Otherwise a test-exchange or practice order counts as if it filled when
+  // the live market reached its price (the shadow fill), at that price: what it would have paid.
+  const real = order.status !== "simulated" ? (order.filledQuantity ?? 0) : 0;
+  const shadow = real === 0 && order.shadow?.state === "filled" ? order.shadow : undefined;
+  const practice = order.status === "simulated" || Boolean(shadow);
+  const quantity = real > 0 ? real : shadow ? action.quantity : order.status === "simulated" && !order.shadow ? action.quantity : 0;
   if (!(quantity > 0)) return undefined;
   let resolved: Resolved;
   let legs: Settlement["legs"];
@@ -21,6 +25,6 @@ export function settle(action: MoveAction | undefined, order: OrderResult | unde
   } else resolved = resolvedOf(action.symbol);
   if (!resolved) return undefined;
   const won = resolved === action.side;
-  const cost = Math.round(quantity * (order.avgPrice ?? action.maxPrice) * 100) / 100;
+  const cost = Math.round(quantity * ((real > 0 ? order.avgPrice : shadow?.price) ?? action.maxPrice) * 100) / 100;
   return { resolved, won, quantity, paid: won ? quantity : 0, cost, practice, at, legs };
 }

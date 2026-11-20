@@ -32,6 +32,7 @@ import {
 import { Fold } from "@/components/Fold";
 import { DoneHero } from "@/components/DoneHero";
 import { Thinking, thinkingSub } from "@/components/Thinking";
+import { OrderChips } from "@/components/OrderChips";
 import { buildReceipt } from "@/lib/receipt";
 import { NetProvider } from "@/components/NetContext";
 import { NETWORKS } from "@/lib/networks";
@@ -587,6 +588,7 @@ export default function RunPage({
           <Fold title="All stages" sub={stagesSub(run)} testId="fold-running-stages" open={pending.length > 0}>
             <PhaseGraph phases={run.phases} lines={run.lines} simulated={run.mode === "demo"} run={run} />
           </Fold>
+          <OrderChips run={run} />
           {run.proposal?.action?.kind === "prediction_order" &&
             run.proposal.action.trade !== "sell" && (
               <LiveMarket
@@ -621,6 +623,7 @@ export default function RunPage({
           {/* Done: the answer first and alone; what backs it up is folded below. */}
           <Assemble play={live ? "status" : null}>{run.report ? <DoneHero run={run} /> : <StatusCard run={run} steps={false} />}</Assemble>
           {run.report && <StatusCard run={run} steps={false} actionsOnly />}
+          {run.status !== "cancelled" && <OrderChips run={run} />}
           {run.proposal?.action?.kind === "prediction_order" &&
             run.proposal.action.trade !== "sell" &&
             run.status !== "cancelled" && (
