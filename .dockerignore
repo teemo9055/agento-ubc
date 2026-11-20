@@ -9,3 +9,5 @@ contracts/cache
 contracts/broadcast
 test-results
 playwright-report
+agento-secrets.env.txt
+SAVE-THESE-SECRETS

@@ -3,6 +3,11 @@ WORKDIR /app
 COPY package.json package-lock.json ./
 RUN npm ci
 COPY . .
+# Browser-side settings are baked in at build time; Railway passes service variables as build args.
+ARG NEXT_PUBLIC_CIRCLE_CLIENT_KEY
+ARG NEXT_PUBLIC_CIRCLE_CLIENT_URL
+ARG NEXT_PUBLIC_EXPLORER_URL
+ARG NEXT_PUBLIC_NETWORK_MODE
 RUN npm run build
 
 FROM node:22-bookworm-slim
