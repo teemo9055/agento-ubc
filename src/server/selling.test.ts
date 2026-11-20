@@ -1,5 +1,8 @@
 import { describe, expect, it, vi } from "vitest";
 
+// These tests cover coin (spot) orders, which the app keeps switched off by default.
+process.env.SPOT_ORDERS = "1";
+
 vi.mock("@/server/agents/ai-planning", async (orig) => ({ ...(await orig<typeof import("@/server/agents/ai-planning")>()), spotSymbols: async () => ["btcusd"] }));
 vi.mock("@/server/gemini", async (orig) => {
   const real = await orig<typeof import("@/server/gemini")>();

@@ -224,7 +224,7 @@ export function describeAction(a: MoveAction) {
       ? a.trade === "sell"
         ? `Sell ${a.quantity} × ${a.side.toUpperCase()} “${a.label}” at ≥ ${cents(a.maxPrice)}`
         : `${a.quantity} × ${a.side.toUpperCase()} “${a.label}” once it rises to ${cents(a.stopPrice ?? a.maxPrice)}, paying ≤ ${cents(a.maxPrice)}`
-      : `${a.quantity} × ${a.side.toUpperCase()} “${a.label}” at ≤ ${cents(a.maxPrice)}${a.fill === "now" ? ", buy now" : ""}`;
+      : `Prediction order: ${a.quantity} × ${a.side.toUpperCase()} “${a.label}” at ≤ ${cents(a.maxPrice)}${a.fill === "now" ? ", buy now" : ""}`;
   if (a.kind === "spot_order") return `${a.side === "buy" ? "Buy" : "Sell"} $${a.amountUsd} of ${a.symbol.replace(/usd$/, "").toUpperCase()} at ${a.side === "buy" ? "≤" : "≥"} $${a.limitPrice}`;
   return `Itinerary: ${a.stops.join(" → ")}`;
 }
@@ -330,6 +330,8 @@ export async function placeOrder(action: MoveAction, since = Date.now()): Promis
     };
   }
 
+  // Only prediction-market orders go to Gemini from this app; a coin order from an old saved job stops here.
+  if (process.env.SPOT_ORDERS !== "1") throw new ExchangeError("Only prediction-market orders are placed from this app; this coin order was not sent");
   // Round to the symbol's steps so the exchange accepts it, never above the approved amount.
   const rules = await spotRules(action.symbol);
   if (!rules.open) throw new ExchangeError(`${action.symbol.toUpperCase()} isn't open for trading`);

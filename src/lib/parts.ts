@@ -25,7 +25,7 @@ export function partsOf(p: Proposal): Part[] {
   if (t === "check_trade") out.push({ id: "check", label: checks.length > 1 ? "Check the conditions" : "Check the condition", sub: checks.map(conditionLabel).join(" and ") });
   const a = p.action;
   if (a && a.kind !== "itinerary") {
-    out.push({ id: "act", label: a.kind === "prediction_order" ? (a.trade === "sell" ? "Place the sell" : "Place the order") : "Place the trade", sub: actionText(a) });
+    out.push({ id: "act", label: a.kind === "prediction_order" ? (a.trade === "sell" ? "Sell on the prediction market" : "Place the prediction order") : "Place the trade", sub: actionText(a) });
     if (watchesOrder(p)) out.push({ id: "watch", label: "Watch until filled" });
   } else if (a?.kind === "itinerary") out.push({ id: "act", label: "Plan the days", sub: `${a.stops.length} stops · ≤ ${a.hoursPerDay} h a day` });
   return out;

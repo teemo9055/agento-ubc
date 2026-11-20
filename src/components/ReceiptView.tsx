@@ -109,7 +109,7 @@ function CheckIt({ run, vendorsPaid }: { run: Run; vendorsPaid: boolean }) {
     tiles.push({ key: "gw", label: "Circle Gateway", title: "Marketplace lookups", body: "Paid from the app's Gateway balance, not your wallet. Each lookup below shows its Circle transfer id and status, and the Arc transaction once Circle settles its batch." });
   const o = run.order;
   if (o && o.venue !== "paper")
-    tiles.push({ key: "gem", label: o.venue === "gemini" ? "Gemini" : "Gemini test exchange", title: "Your order", body: `${o.orderId ? `Order ${o.orderId}: ` : ""}it's in the Gemini account's orders, not on Arc.`, href: o.venue === "gemini" ? "https://exchange.gemini.com" : "https://exchange.sandbox.gemini.com", link: "Open Gemini" });
+    tiles.push({ key: "gem", label: o.venue === "gemini" ? "Gemini prediction market" : "Gemini prediction market · test", title: "Your prediction order", body: `${o.orderId ? `Order ${o.orderId}${o.symbol ? ` on ${o.symbol}` : ""}: ` : ""}placed with Gemini's prediction-market API. It's under Predictions in the Gemini account, not on Arc.`, href: o.venue === "gemini" ? "https://exchange.gemini.com/predictions" : "https://exchange.sandbox.gemini.com/predictions", link: "Open Predictions" });
   else if (o) tiles.push({ key: "gem", label: "Gemini", title: "Practice order", body: "Priced from Gemini's live market but never sent, so there's no order to find on Gemini." });
   if (!tiles.length) return null;
   return (

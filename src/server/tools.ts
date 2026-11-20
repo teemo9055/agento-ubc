@@ -422,9 +422,13 @@ export const researchMenu = (agent?: AgentId) =>
     .join("\n");
 
 /** What each agent may propose to do. */
+/** Spot (coin) orders are off unless SPOT_ORDERS=1: the app places only prediction-market orders on Gemini. */
+export const spotOrdersOn = () => process.env.SPOT_ORDERS === "1";
 export const ACTIONS: Record<AgentId, MoveAction["kind"][]> = {
   inso: ["prediction_order"],
-  trado: ["spot_order", "prediction_order"],
+  get trado(): MoveAction["kind"][] {
+    return spotOrdersOn() ? ["spot_order", "prediction_order"] : ["prediction_order"];
+  },
   worko: ["itinerary"],
 };
 
@@ -654,6 +658,7 @@ export async function validateProposal(agent: AgentId, input: unknown, id: strin
     market = { ask: raw.side === "yes" ? px.ask : px.bid != null ? round2(1 - px.bid) : null, bid: raw.side === "yes" ? px.bid : px.ask != null ? round2(1 - px.ask) : null, closesAt: c.expiry };
     }
   } else if (raw?.kind === "spot_order") {
+    if (!spotOrdersOn()) return { error: "Only prediction-market orders are placed in this app (Gemini's prediction-market API). Make it a prediction order on a price line instead." };
     const symbol = raw.symbol.toLowerCase();
     const list = await spotSymbols().catch(() => [] as string[]);
     if (list.length && !list.includes(symbol)) return { error: `Unknown symbol ${raw.symbol}` };

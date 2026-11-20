@@ -1,6 +1,9 @@
 import { beforeAll, describe, expect, it, vi } from "vitest";
 import type { FailureAction, FailureCode, Run } from "@/lib/types";
 
+// These tests cover coin (spot) orders, which the app keeps switched off by default.
+process.env.SPOT_ORDERS = "1";
+
 vi.mock("@/server/gemini", async (orig) => {
   const real = await orig<typeof import("@/server/gemini")>();
   const series = Array.from({ length: 20 }, (_, i) => ({ t: i * 60_000, p: 0.4 + i * 0.01 }));

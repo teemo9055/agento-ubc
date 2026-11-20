@@ -224,7 +224,7 @@ export function planFromProposal(p: Proposal): PlanDraft {
   if (a && a.kind !== "itinerary") {
     const venue = p.venue;
     lines.push({ id: "order", phaseId: "act", purpose: describeAction(a), service: a.kind === "prediction_order" ? "prediction order" : "spot order", payeeName: VENUE_NAME[venue], payee: EXCHANGE_PAYEE, rail: "exchange", approved: usd(notionalOf(a)) });
-    phases.push({ id: "act", label: a.kind === "prediction_order" ? (a.trade === "sell" ? "Place the sell" : "Place the order") : "Place the trade", sub: `${doesLine(a).label} · ${doesLine(a).detail}`, dependsOn: before, optional: false, lineId: "order" });
+    phases.push({ id: "act", label: a.kind === "prediction_order" ? (a.trade === "sell" ? "Sell on the prediction market" : "Place the prediction order") : "Place the trade", sub: `${doesLine(a).label} · ${doesLine(a).detail}`, dependsOn: before, optional: false, lineId: "order" });
     if (watchesOrder(p)) phases.push({ id: "watch", label: "Watch until filled", sub: `up to ${WATCH_MINUTES} min, then tracked in the background`, dependsOn: ["act"], optional: false });
   } else if (a?.kind === "itinerary") {
     phases.push({ id: "act", label: "Plan the days", sub: `${a.stops.length} stops · ≤ ${a.hoursPerDay} h a day`, dependsOn: before, optional: false });
@@ -580,6 +580,14 @@ export function toolboxAgent(id: AgentId): AgentDef {
           ctx.order?.({ venue: p.venue, status: "rejected", detail: err.message, notional: 0 });
           // Retryable: the user can accept terms or fund the account, then retry.
           throw new PhaseFailure("exchange_rejected", `${VENUE_NAME[p.venue]}: ${err.message}`);
+        }
+        // Gemini's own record of the order, read back from the prediction-market API: proof of what was placed.
+        if (a.kind === "prediction_order" && mem.order.orderId && mem.order.venue !== "paper") {
+          const back = await refreshOrder(mem.order, a.kind).catch(() => undefined);
+          if (back) {
+            mem.order = back;
+            ctx.decide?.(`Gemini confirms prediction order #${back.orderId} on ${a.symbol}`, `${back.status}, ${back.filledQuantity ?? 0} of ${a.quantity} filled · read back from /v1/prediction-markets/orders on ${VENUE_NAME[back.venue]}`);
+          }
         }
         // Beside a test-exchange order: would the live market have filled it at this price right now?
         mem.order = await checkShadow(mem.order, a).catch(() => mem.order!);
