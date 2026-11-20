@@ -43,6 +43,9 @@ export function GeminiAccount() {
           Open on Gemini <Icon name="external" size={11} />
         </a>
       </div>
+      <a href="/settings#exchange" className="mt-1 inline-block text-[12px] text-ink-3 underline decoration-line underline-offset-2" data-testid="gemini-which-account">
+        Not seeing these on Gemini&apos;s site? Check which account Agento trades on
+      </a>
       {a.error ? (
         <p className="mt-3 text-[13.5px] text-bad">Couldn&apos;t read the account: {a.error}</p>
       ) : empty ? (

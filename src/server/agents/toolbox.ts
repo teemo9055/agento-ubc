@@ -11,6 +11,7 @@ import { PRODUCTS } from "../x402";
 import * as gemini from "../gemini";
 import * as geo from "../geo";
 import { checkShadow } from "../shadow";
+import { tradingAccountName, withVenue } from "../exchange";
 import { cancelOrder, describeAction, ExchangeError, marketBase, notionalOf, placeOrder, refreshOrder, VENUE_NAME, VENUE_NOTE } from "../exchange";
 import { templateOf, watchesOrder } from "@/lib/templates";
 import { doesLine } from "@/lib/plain";
@@ -586,7 +587,8 @@ export function toolboxAgent(id: AgentId): AgentDef {
           const back = await refreshOrder(mem.order, a.kind).catch(() => undefined);
           if (back) {
             mem.order = back;
-            ctx.decide?.(`Gemini confirms prediction order #${back.orderId} on ${a.symbol}`, `${back.status}, ${back.filledQuantity ?? 0} of ${a.quantity} filled · read back from /v1/prediction-markets/orders on ${VENUE_NAME[back.venue]}`);
+            const acct = await withVenue(back.venue, () => tradingAccountName()).catch(() => undefined);
+            ctx.decide?.(`Gemini confirms prediction order #${back.orderId} on ${a.symbol}`, `${back.status}, ${back.filledQuantity ?? 0} of ${a.quantity} filled · read back from /v1/prediction-markets/orders on ${VENUE_NAME[back.venue]}${acct ? `, account ${acct}` : ""}`);
           }
         }
         // Beside a test-exchange order: would the live market have filled it at this price right now?

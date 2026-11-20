@@ -32,6 +32,9 @@ function creds(v: Venue): { key: string; secret: string; base: string } | null {
   return null;
 }
 
+/** For a master key: the account (its shortname, e.g. "primary") orders go to. Account keys don't need it. */
+const accountFor = (v: Venue) => (v === "gemini-sandbox" ? process.env.GEMINI_SANDBOX_ACCOUNT : v === "gemini" ? process.env.GEMINI_LIVE_ACCOUNT : undefined)?.trim() || undefined;
+
 /**
  * Practice (orders priced live but never sent) only exists while no Gemini account is connected, so
  * a fresh checkout still works. Once a key is set, every order is real: on the test exchange or with
@@ -87,7 +90,9 @@ async function priv<T = Record<string, unknown>>(path: string, body: Record<stri
   const SECRET = c.secret;
   // Nonces must increase per key, even for calls in the same millisecond.
   lastNonce = Math.max(Date.now(), lastNonce + 1);
-  const payload = Buffer.from(JSON.stringify({ request: path, nonce: lastNonce, ...body })).toString("base64");
+  // A master key trades whichever account is named; an account key trades its own account.
+  const account = accountFor(tradingVenue());
+  const payload = Buffer.from(JSON.stringify({ request: path, nonce: lastNonce, ...(account && !("account" in body) ? { account } : {}), ...body })).toString("base64");
   const signature = createHmac("sha384", SECRET).update(payload).digest("hex");
   const res = await fetch(`${tradeBase()}${path}`, {
     method,
@@ -141,6 +146,76 @@ export async function liveCanTrade(): Promise<{ ok: boolean; why?: string }> {
   const v = st.connected && st.termsAccepted !== false ? { ok: true } : { ok: false, why: st.connected ? "the prediction-market terms aren't accepted yet" : "your Gemini account isn't verified for trading yet" };
   liveCheck = { at: Date.now(), v };
   return v;
+}
+
+const accountNames = new Map<Venue, { at: number; name?: string }>();
+/** The name of the Gemini account orders go to ("Primary"), read once every few minutes. */
+export async function tradingAccountName(): Promise<string | undefined> {
+  const v = tradingVenue();
+  if (v === "paper") return undefined;
+  const hit = accountNames.get(v);
+  if (hit && Date.now() - hit.at < 10 * 60_000) return hit.name;
+  const r = await priv<{ account?: { accountName?: string; shortName?: string } }>("/v1/account", {}).catch(() => null);
+  const name = r?.account ? `${r.account.accountName ?? ""}${r.account.shortName ? ` (${r.account.shortName})` : ""}`.trim() : undefined;
+  accountNames.set(v, { at: Date.now(), name });
+  return name;
+}
+
+export interface AccountCheck {
+  venue: Venue;
+  venueName: string;
+  connected: boolean;
+  /** The account the key places orders on. */
+  account?: { name: string; shortName: string; type?: string };
+  /** A master key can reach every account in the group; orders need the account named. */
+  masterKey: boolean;
+  /** For a master key: the accounts it can trade, by shortname. */
+  accounts?: { name: string; shortName: string }[];
+  /** The account set in .env.local for a master key, if any. */
+  accountSetting?: string;
+  termsAccepted?: boolean;
+  open: AccountOrder[];
+  recent: AccountOrder[];
+  positions: Position[];
+  error?: string;
+}
+
+/**
+ * Which Gemini account Agento trades on, read from Gemini: the account behind the key (or, for a
+ * master key, the accounts it could trade), the terms, and the orders and positions on that account.
+ */
+export async function accountCheck(): Promise<AccountCheck> {
+  const venue = tradingVenue();
+  const base: AccountCheck = { venue, venueName: VENUE_NAME[venue], connected: false, masterKey: false, open: [], recent: [], positions: [], accountSetting: accountFor(venue) };
+  if (venue === "paper") return base;
+  // Only a master key may list the accounts in its group.
+  const list = await priv<{ name?: string; account?: string; type?: string }[]>("/v1/account/list", {}).catch(() => null);
+  const masterKey = Array.isArray(list);
+  const accounts = masterKey ? list!.map((a) => ({ name: a.name ?? a.account ?? "", shortName: a.account ?? "" })) : undefined;
+  let account: AccountCheck["account"];
+  let error: string | undefined;
+  try {
+    const r = await priv<{ account?: { accountName?: string; shortName?: string; type?: string } }>("/v1/account", {});
+    if (r.account) account = { name: r.account.accountName ?? "", shortName: r.account.shortName ?? "", type: r.account.type };
+  } catch (e) {
+    error = masterKey && !accountFor(venue) ? "This is a master key: it needs to be told which account to trade. Set the account below." : (e as Error).message;
+  }
+  const terms = await priv<{ hasAcceptedLatest: boolean }>("/v1/prediction-markets/terms/status", {}, "GET").then((t) => t.hasAcceptedLatest, () => undefined);
+  const book = await predictionAccount().catch((e) => ({ openOrders: [] as AccountOrder[], recent: [] as AccountOrder[], positions: [] as Position[], error: (e as Error).message }));
+  const history = await priv<{ orders?: { orderId: number | string; symbol?: string; side?: string; outcome?: string; price?: string; quantity?: string; filledQuantity?: string; status?: string; createdAt?: string }[] }>("/v1/prediction-markets/orders/history", { limit: 10 })
+    .then((r) => (r.orders ?? []).map((o) => ({ orderId: String(o.orderId), symbol: o.symbol ?? "", side: (o.side === "sell" ? "sell" : "buy") as "buy" | "sell", outcome: (o.outcome === "no" ? "no" : "yes") as "yes" | "no", price: Number(o.price ?? 0), quantity: Number(o.quantity ?? 0), filled: Number(o.filledQuantity ?? 0), status: o.status ?? "", createdAt: o.createdAt })), () => [] as AccountOrder[]);
+  return {
+    ...base,
+    connected: Boolean(account) || terms !== undefined,
+    account,
+    masterKey,
+    accounts,
+    termsAccepted: terms,
+    open: book.openOrders,
+    recent: [...history].sort((a, b) => (b.createdAt ?? "").localeCompare(a.createdAt ?? "")).slice(0, 10),
+    positions: book.positions,
+    error: error ?? ("error" in book ? book.error : undefined),
+  };
 }
 
 export interface CheckStep {

@@ -6,6 +6,7 @@ import { Button, Spinner } from "./ui";
 import { toast } from "./Toaster";
 import { Icon } from "./Icon";
 import { Point, Points } from "./Points";
+import { GeminiCheck } from "./GeminiCheck";
 
 interface Status {
   venue: Venue;
@@ -119,6 +120,7 @@ export function ExchangePanel() {
           )}
         </div>
       )}
+      {(s.venue === "gemini-sandbox" || s.venue === "gemini") && <GeminiCheck />}
       {terms && <div className="mt-2 max-h-48 overflow-y-auto whitespace-pre-wrap rounded-lg border border-line bg-panel p-2 text-[11.5px] text-ink-2">{terms}</div>}
     </div>
   );
