@@ -6,7 +6,7 @@ import { txUrl } from "@/lib/format";
 import { Icon } from "./Icon";
 import { Point, Points } from "./Points";
 
-const VERDICT: Record<NonNullable<ReportT["verdict"]>, { text: string; cls: string }> = {
+export const VERDICT: Record<NonNullable<ReportT["verdict"]>, { text: string; cls: string }> = {
   looks_fine: { text: "Looks fine", cls: "bg-good/10 text-good border-good/40" },
   be_careful: { text: "Be careful", cls: "bg-warn/20 text-warn-ink border-warn" },
   do_not_proceed: { text: "Don't go ahead", cls: "bg-bad/10 text-bad border-bad/40" },

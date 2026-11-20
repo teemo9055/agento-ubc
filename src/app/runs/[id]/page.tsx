@@ -29,7 +29,9 @@ import {
   ReviewTotal,
   StatusCard,
 } from "@/components/JobBrief";
-import { ReceiptView } from "@/components/ReceiptView";
+import { Fold } from "@/components/Fold";
+import { DoneHero } from "@/components/DoneHero";
+import { buildReceipt } from "@/lib/receipt";
 import { NetProvider } from "@/components/NetContext";
 import { NETWORKS } from "@/lib/networks";
 import { LiveMarket } from "@/components/Live";
@@ -577,17 +579,9 @@ export default function RunPage({
               onCancel={() => setCancelling(true)}
             />
           </Assemble>
-          <section
-            className="rounded-2xl border border-line bg-panel px-3 py-5 sm:px-5"
-            aria-label="Steps"
-          >
-            <PhaseGraph
-              phases={run.phases}
-              lines={run.lines}
-              simulated={run.mode === "demo"}
-              run={run}
-            />
-          </section>
+          <Fold title="All stages" sub={stagesSub(run)} testId="fold-running-stages" open={pending.length > 0}>
+            <PhaseGraph phases={run.phases} lines={run.lines} simulated={run.mode === "demo"} run={run} />
+          </Fold>
           {run.proposal?.action?.kind === "prediction_order" &&
             run.proposal.action.trade !== "sell" && (
               <LiveMarket
@@ -619,10 +613,9 @@ export default function RunPage({
 
       {finished && (
         <>
-          {/* Done: the summary is the receipt, under one line on how it ended. */}
-          <Assemble play={live ? "status" : null}>
-            <StatusCard run={run} steps={false} />
-          </Assemble>
+          {/* Done: the answer first and alone; what backs it up is folded below. */}
+          <Assemble play={live ? "status" : null}>{run.report ? <DoneHero run={run} /> : <StatusCard run={run} steps={false} />}</Assemble>
+          {run.report && <StatusCard run={run} steps={false} actionsOnly />}
           {run.proposal?.action?.kind === "prediction_order" &&
             run.proposal.action.trade !== "sell" &&
             run.status !== "cancelled" && (
@@ -638,38 +631,51 @@ export default function RunPage({
                 }
               />
             )}
-          {run.proposal?.compose && (
-            <section className="rounded-2xl border border-line bg-panel px-3 py-5 sm:px-5" aria-label="Steps" data-testid="done-graph">
-              <Replay run={run} />
+          {/* A trip's day-by-day plan is the answer itself, so it stays in view. */}
+          {hasVisual && run.proposal?.action?.kind === "itinerary" && (
+            <section className="min-w-0 rounded-2xl border border-line bg-panel p-4" aria-label="Result">
+              <AgentWidget run={run} />
             </section>
           )}
+          <div className="flex flex-wrap items-center gap-2.5">
+            <Link
+              href={`/runs/${run.id}/receipt`}
+              className="pressable inline-flex min-h-11 items-center gap-2 rounded-full border-[1.5px] border-ink bg-panel px-4 text-[14px] font-semibold hover:bg-agent-soft"
+              data-testid="receipt-summary"
+            >
+              Paid <span className="num" data-testid="receipt-total">{fmt(buildReceipt(run).total)}</span> USDC · see receipt
+              <Icon name="chevron" size={13} />
+            </Link>
+            {run.proposal?.then?.watch && (
+              <span className="inline-flex min-h-11 items-center gap-2 rounded-full bg-agent-soft px-4 text-[14px] font-semibold text-agent-ink">
+                Watching · {run.proposal.then.watch.days} days
+              </span>
+            )}
+          </div>
           {run.report && (
-            <div className="space-y-1.5">
+            <Fold title="Why we're sure" sub={whySub(run)} testId="fold-why">
               <Report run={run} />
               <Link href={`/runs/${run.id}/report`} className="inline-flex items-center gap-1 text-[13px] text-ink-2 underline decoration-line underline-offset-2 hover:text-ink" data-testid="report-page">
                 Report on its own page <Icon name="external" size={12} />
               </Link>
-            </div>
+            </Fold>
           )}
-          {hasVisual && (
-            <section
-              className="min-w-0 rounded-2xl border border-line bg-panel p-4"
-              aria-label="Result"
-            >
+          {run.phases.length > 1 && (
+            <Fold title="How it was checked" sub={`${run.phases.filter((p) => p.lineId).length} stages, each using what the last one found`} testId="fold-stages">
+              {run.proposal?.compose ? (
+                <div data-testid="done-graph">
+                  <Replay run={run} />
+                </div>
+              ) : (
+                <PhaseGraph phases={run.phases} lines={run.lines} simulated={run.mode === "demo"} run={run} />
+              )}
+            </Fold>
+          )}
+          {hasVisual && run.proposal?.action?.kind !== "itinerary" && (
+            <Fold title="What each source returned" sub="The data behind the answer" testId="fold-data">
               <AgentWidget run={run} />
-            </section>
+            </Fold>
           )}
-          <ReceiptView run={run} />
-          <div className="flex flex-wrap items-center justify-between gap-3 text-[13px] text-ink-2">
-            <VaultNote run={run} />
-            <Link
-              href={`/runs/${run.id}/receipt`}
-              className="inline-flex items-center gap-1 underline decoration-line underline-offset-2 hover:text-ink"
-              data-testid="receipt-summary"
-            >
-              Receipt on its own page <Icon name="external" size={12} />
-            </Link>
-          </div>
           {run.status === "done" && <WatchThis run={run} />}
         </>
       )}
@@ -1020,4 +1026,21 @@ export default function RunPage({
       </div>
     </NetProvider>
   );
+}
+
+/** One line on what backs the verdict: how many checks passed and how many need a look. */
+function whySub(run: Run): string {
+  const s = run.report?.signals ?? [];
+  if (!s.length) return `${run.report?.claims.length ?? 0} findings, each with its source`;
+  const good = s.filter((x) => x.level === "good").length;
+  const other = s.length - good;
+  return `${good} check${good === 1 ? "" : "s"} passed${other ? `, ${other} to look at` : ""}`;
+}
+
+/** "1 done, 1 working, 2 to go": where the stages stand, in one line. */
+function stagesSub(run: Run): string {
+  const done = run.phases.filter((p) => p.status === "done" || p.status === "skipped").length;
+  const working = run.phases.filter((p) => p.status === "active" || p.status === "failed_waiting" || p.status === "awaiting_reapproval").length;
+  const left = run.phases.length - done - working;
+  return [`${done} done`, working ? `${working} working` : "", left ? `${left} to go` : ""].filter(Boolean).join(", ");
 }

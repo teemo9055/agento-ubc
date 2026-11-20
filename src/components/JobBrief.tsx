@@ -321,7 +321,7 @@ export function ReviewTotal({ run, onEdit, focused }: { run: Run; onEdit?: () =>
 }
 
 /** After approval: one line on where the job stands, the steps as a checklist, and what you can do next. */
-export function StatusCard({ run, onNeedsYou, onCancel, steps = true }: { run: Run; onNeedsYou?: () => void; onCancel?: () => void; /** The checklist of steps; off where the graph already shows them. */ steps?: boolean }) {
+export function StatusCard({ run, onNeedsYou, onCancel, steps = true, actionsOnly = false }: { run: Run; onNeedsYou?: () => void; onCancel?: () => void; /** The checklist of steps; off where the graph already shows them. */ steps?: boolean; /** Under a finished job's answer: just the buttons and the hand-off, no second headline. */ actionsOnly?: boolean }) {
   const router = useRouter();
   const out = outcomeOf(run);
   const o = run.order;
@@ -360,13 +360,14 @@ export function StatusCard({ run, onNeedsYou, onCancel, steps = true }: { run: R
   const working = !finished && (run.status === "running" || run.status === "funding");
   const look = working ? (needs ? "border-ink bg-warn/10 shadow-[4px_4px_0_0_var(--color-warn)]" : "border-ink bg-panel shadow-[4px_4px_0_0_var(--agent)]") : TONE[out.tone];
   return (
-    <section className={`rounded-2xl border-[1.5px] ${look}`} aria-label="Status" data-testid="status-card">
-      <div className="px-4 py-3.5">
+    <section className={actionsOnly ? "" : `rounded-2xl border-[1.5px] ${look}`} aria-label="Status" data-testid="status-card">
+      <div className={actionsOnly ? "" : "px-4 py-3.5"}>
         {working && (
           <p className={`mb-1.5 font-pixel text-[11px] uppercase tracking-wide ${needs ? "text-warn-ink" : "text-agent-ink"}`} data-testid="status-label">
             {needs ? "Needs you" : run.status === "funding" ? "Setting up" : "Working on it"}
           </p>
         )}
+        {!actionsOnly && (
         <div className="flex items-start gap-2.5">
           <span className={`mt-[7px] h-2.5 w-2.5 shrink-0 rounded-[3px] ${DOT[out.tone]} ${!finished && !needs ? "animate-pulse motion-reduce:animate-none" : ""}`} aria-hidden />
           <div className="min-w-0 flex-1" aria-live="polite">
@@ -381,8 +382,9 @@ export function StatusCard({ run, onNeedsYou, onCancel, steps = true }: { run: R
             {o?.updatedAt && liveOrder && <p className="num mt-1 text-[12px] text-ink-3">Checked {new Date(o.updatedAt).toLocaleTimeString()} · order #{o.orderId}</p>}
           </div>
         </div>
+        )}
         {working && run.phases.length > 0 && <Progress run={run} />}
-        <div className="mt-3 flex flex-wrap gap-2">
+        <div className={`${actionsOnly ? "" : "mt-3 "}flex flex-wrap gap-2`}>
           {needs > 0 && onNeedsYou && (
             <Button variant="agent" className="h-9" onClick={onNeedsYou}>
               {needs} needs you
@@ -421,7 +423,7 @@ export function StatusCard({ run, onNeedsYou, onCancel, steps = true }: { run: R
         </div>
       </div>
       {run.handoff && (
-        <p className="border-t border-[#f1f0ec] px-4 py-2.5 text-[12.5px] text-ink-2" data-testid="handoff">
+        <p className={actionsOnly ? "mt-2 text-[12.5px] text-ink-2" : "border-t border-[#f1f0ec] px-4 py-2.5 text-[12.5px] text-ink-2"} data-testid="handoff">
           <span className="font-semibold text-ink">Handed over from earlier steps:</span> {run.handoff}
         </p>
       )}
@@ -432,7 +434,7 @@ export function StatusCard({ run, onNeedsYou, onCancel, steps = true }: { run: R
           ))}
         </ol>
       )}
-      {run.deliverable?.notes && run.deliverable.notes.length > 0 && (
+      {!actionsOnly && run.deliverable?.notes && run.deliverable.notes.length > 0 && (
         <div className="border-t border-[#f1f0ec] px-4 py-3">
           <Points as="ul" min={220} data-testid="findings">
             {run.deliverable.notes.slice(0, 4).map((n) => (

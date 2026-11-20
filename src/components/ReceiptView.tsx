@@ -9,6 +9,7 @@ import { motion } from "framer-motion";
 import { Button } from "./ui";
 import { AgentIcon } from "./AgentIcon";
 import { Icon } from "./Icon";
+import { Fold } from "./Fold";
 import { Point, Points } from "./Points";
 import { runOutfit } from "@/lib/summary";
 
@@ -143,23 +144,64 @@ export function ReceiptView({ run }: { run: Run }) {
   // Marketplace lookups are paid from the app's Gateway balance, not your wallet: say whose, with the address.
   const appPaid = r.lines.length > 0 && r.lines.every((l) => l.rail === "gateway") ? r.lines.find((l) => l.payer)?.payer : undefined;
   return (
-    <section id="receipt" className="paper relative rounded-2xl border border-line bg-panel p-5 sm:p-8" aria-label="Receipt">
-      <div className="flex flex-wrap items-start justify-between gap-4 border-b border-line pb-5">
-        <div>
-          <div className="flex items-center gap-2">
-            <AgentIcon agent={run.agent} size={30} outfit={runOutfit(run)} mood={cancelled ? "sad" : "happy"} />
-            <span className="text-[20px] font-semibold tracking-tight">Receipt</span>
-            <span className={`inline-flex h-[22px] items-center gap-1 rounded-md px-2 text-[12px] font-semibold ${cancelled ? "bg-[#f1f0ec] text-ink-2" : r.mode === "demo" ? "bg-warn/20 text-warn-ink" : "bg-good/10 text-good"}`}>
-              {cancelled ? "Job cancelled" : r.mode === "demo" ? (samples ? "Practice · sample services, no money moved" : vendorsPaid ? "Practice vault · vendors paid on testnet" : "Practice · not a real payment") : "Paid"}
-            </span>
-          </div>
-          <div className="mt-3 text-[12px] text-ink-3">Total paid</div>
-          <div className="num text-[40px] font-semibold leading-none tracking-tight" data-testid="receipt-total">
-            {fmt(r.total)}
-            <span className="ml-2 text-lg font-normal text-ink-3">USDC</span>
-          </div>
+    <section id="receipt" className="paper relative rounded-[22px] border-[1.5px] border-ink bg-panel p-5 shadow-[6px_6px_0_0_var(--agent)] sm:p-8" aria-label="Receipt">
+      <div className="flex flex-wrap items-start justify-between gap-3">
+        <div className="flex items-center gap-2">
+          <AgentIcon agent={run.agent} size={30} outfit={runOutfit(run)} mood={cancelled ? "sad" : "happy"} />
+          <span className="font-pixel text-[13px] text-agent-ink">RECEIPT</span>
         </div>
-        <div className="text-right text-[12.5px]">
+        <span className={`inline-flex h-[24px] items-center gap-1 rounded-md px-2 text-[12px] font-bold ${cancelled ? "bg-[#f1f0ec] text-ink-2" : r.mode === "demo" ? "bg-warn/20 text-warn-ink" : "bg-good/10 text-good"}`}>
+          {cancelled ? "Job cancelled" : r.mode === "demo" ? (samples ? "Practice · no money moved" : vendorsPaid ? "Practice vault · vendors paid on testnet" : "Practice · not a real payment") : "PAID"}
+        </span>
+      </div>
+      <div className="mt-4 text-[14px] text-ink-2">“{r.task}”</div>
+      <div className="mt-4 num text-[44px] font-bold leading-none tracking-tight" data-testid="receipt-total">
+        {fmt(r.total)}
+        <span className="ml-2 text-lg font-normal text-ink-3">USDC</span>
+      </div>
+      <div className="mt-1.5 text-[13.5px] text-ink-3">
+        {BigInt(r.budget.returned) > 0n ? `${fmt(r.budget.returned)} USDC came back to you` : "Nothing left to return"}
+      </div>
+
+      {/* Just what was paid for: one line each. The full table is in the details. */}
+      {r.lines.length > 0 && (
+        <ul className="mt-5" aria-label="What was paid for">
+          {r.lines.map((l, i) => (
+            <li key={i} className="flex min-h-11 items-center justify-between gap-3 border-t border-[#ebe8e0] text-[14.5px]">
+              <span className="min-w-0 truncate">{l.step}</span>
+              <span className="num shrink-0 font-semibold">{fmt(l.amount)}</span>
+            </li>
+          ))}
+        </ul>
+      )}
+
+      {(r.budget.fundingTx || r.budget.refundTx) && (
+        <div className="mt-4 grid gap-2 sm:grid-cols-2" data-testid="arc-txs">
+          {r.budget.fundingTx && (
+            <a href={txUrl(r.budget.fundingTx, net)} target="_blank" rel="noreferrer" className="flex min-h-[52px] items-center justify-between gap-3 rounded-xl bg-[#f7f6f2] px-4 hover:bg-agent-soft">
+              <span className="flex flex-col">
+                <span className="text-[14px] font-semibold">You paid · see it on Arc</span>
+                <span className="font-mono text-[12px] text-ink-3">{r.budget.fundingTx.slice(0, 6)}…{r.budget.fundingTx.slice(-4)}</span>
+              </span>
+              <Icon name="external" size={14} />
+            </a>
+          )}
+          {r.budget.refundTx && (
+            <a href={txUrl(r.budget.refundTx, net)} target="_blank" rel="noreferrer" className="flex min-h-[52px] items-center justify-between gap-3 rounded-xl bg-[#f7f6f2] px-4 hover:bg-agent-soft">
+              <span className="flex flex-col">
+                <span className="text-[14px] font-semibold">Came back · see it on Arc</span>
+                <span className="font-mono text-[12px] text-ink-3">{r.budget.refundTx.slice(0, 6)}…{r.budget.refundTx.slice(-4)}</span>
+              </span>
+              <Icon name="external" size={14} />
+            </a>
+          )}
+        </div>
+      )}
+
+      <div className="mt-5">
+      <Fold title="Details for the record" sub="Who paid whom, Circle's proof, the approval trail and downloads" testId="receipt-details">
+      <div className="flex flex-wrap items-start justify-between gap-4">
+        <div className="text-[12.5px]">
           <dl className="grid grid-cols-[auto_auto] justify-end gap-x-3 gap-y-0.5">
             <dt className="text-ink-3">Receipt no.</dt>
             <dd className="font-mono">{r.receiptId}</dd>
@@ -181,7 +223,6 @@ export function ReceiptView({ run }: { run: Run }) {
           </div>
         </div>
       </div>
-
       <div className="mt-5 grid gap-4 text-[12.5px] sm:grid-cols-3">
         <div>
           <div className="text-[11.5px] font-semibold uppercase tracking-wide text-ink-3">{appPaid ? "Paid from" : "Billed to"}</div>
@@ -306,25 +347,6 @@ export function ReceiptView({ run }: { run: Run }) {
           </div>
         ))}
       </div>
-      {(r.budget.fundingTx || r.budget.refundTx) && (
-        <div className="mt-3 grid gap-2 sm:grid-cols-2" data-testid="arc-txs">
-          {r.budget.fundingTx && (
-            <div className="rounded-xl border-[1.5px] border-ink bg-panel p-3 shadow-[2px_2px_0_0_var(--agent)]">
-              <span className="text-[10.5px] font-semibold uppercase tracking-wide text-agent-ink">On Arc · you paid</span>
-              <div className="mt-1 text-[12.5px] text-ink-2">{BigInt(r.budget.cap) > 0n ? `Into this job's vault (cap ${fmt(r.budget.cap)})` : "This job's lookups, from your wallet to the app's agent wallet"}</div>
-              <Hash h={r.budget.fundingTx} />
-            </div>
-          )}
-          {r.budget.refundTx && (
-            <div className="rounded-xl border-[1.5px] border-ink bg-panel p-3 shadow-[2px_2px_0_0_var(--agent)]">
-              <span className="text-[10.5px] font-semibold uppercase tracking-wide text-good">On Arc · came back</span>
-              <div className="mt-1 text-[12.5px] text-ink-2">{fmt(r.budget.returned)} USDC the job didn't use</div>
-              <Hash h={r.budget.refundTx} />
-            </div>
-          )}
-        </div>
-      )}
-
       <h3 className="mt-7 text-[12px] font-semibold uppercase tracking-wide text-ink-3">Approval trail</h3>
       <ol className="mt-2 space-y-1.5 text-[12.5px]">
         {r.decisions.map((d) => (
@@ -376,6 +398,8 @@ export function ReceiptView({ run }: { run: Run }) {
       <p className="mt-5 text-[11.5px] leading-relaxed text-ink-3">
         Amounts are in USDC. Built from this job&apos;s event log{r.mode === "live" ? "; every payment can be checked on the Arc explorer with the transaction hashes above" : ""}. Keep the CSV or JSON for your books.
       </p>
+      </Fold>
+      </div>
     </section>
   );
 }

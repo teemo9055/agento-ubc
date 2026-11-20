@@ -47,6 +47,8 @@ export async function openReceipt(page: Page) {
   await finished(page);
   await page.getByTestId("receipt-summary").click();
   await expect(page.getByRole("region", { name: "Receipt" })).toBeVisible();
+  // The full record (who was paid, the approval trail) is folded under the summary.
+  await page.getByTestId("receipt-details-toggle").click();
 }
 
 /** The graph, cards and cost lines are tucked away until asked for. */
