@@ -208,9 +208,6 @@ export default function NewJob() {
       <section aria-label="Start from a goal">
         <div className="mb-2 flex items-baseline justify-between gap-3">
           <h2 className="text-[13px] font-semibold text-ink-2">Or start from a goal</h2>
-          <Link href="/recipes" className="text-[13px] font-medium underline underline-offset-2" data-testid="to-recipes">
-            Not sure? Browse the recipe book
-          </Link>
         </div>
         <div className="grid gap-2 sm:grid-cols-2" data-testid="goals">
           {GOALS.map((g, i) => (

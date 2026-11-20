@@ -171,6 +171,14 @@ export function spotOfSource(source?: string): string | undefined {
   return `${coin.toLowerCase()}usd`;
 }
 
+/** Every open market whose name matches, up to 50: for finding one market the paged list skipped. */
+export async function namedEvents(query: string, base = BASE): Promise<MarketEvent[]> {
+  const q = new URLSearchParams({ status: "active", limit: "50", search: query });
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const r = await get<{ data: any[] }>(`/v1/prediction-markets/events?${q}`, { data: [] }, base).catch(() => ({ data: [] }));
+  return (r.data ?? []).map(toEvent);
+}
+
 export async function searchEvents(query: string, limit = 5, base = BASE): Promise<MarketEvent[]> {
   // Gemini refuses larger pages on search.
   const q = new URLSearchParams({ status: "active", limit: String(Math.min(Math.max(1, limit), 6)) });
@@ -202,12 +210,22 @@ export async function findEvents(query: string, limit = 6, base = BASE): Promise
 }
 
 const activeCache = new Map<string, { at: number; list: Promise<MarketEvent[]> }>();
-/** Every open event on a venue (up to 200), kept for a minute: the job catalog reads it for each card. */
+/** Every open event on a venue (all pages), kept for a minute: the job catalog reads it for each card. */
 export function activeEvents(base = BASE): Promise<MarketEvent[]> {
   const hit = activeCache.get(base);
   if (hit && Date.now() - hit.at < 60_000) return hit.list;
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  const list = get<{ data: any[] }>(`/v1/prediction-markets/events?status=active&limit=200`, { data: [] }, base).then((r) => r.data.map(toEvent));
+  // Gemini lists about a thousand open markets, 200 a page, college games first: read every page, or
+  // the Fed decision and month-end price lines are never seen.
+  const page = (offset: number) =>
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    get<{ data: any[]; pagination?: { total?: number } }>(`/v1/prediction-markets/events?status=active&limit=200&offset=${offset}`, { data: [] }, base);
+  const list = page(0).then(async (first) => {
+    const total = Math.min(first.pagination?.total ?? 0, 2000);
+    const rest = await Promise.all(Array.from({ length: Math.max(0, Math.ceil(total / 200) - 1) }, (_, i) => page((i + 1) * 200).catch(() => ({ data: [] }))));
+    // Pages can overlap (Gemini's order shifts between calls), so keep each market once.
+    const seen = new Set<string>();
+    return [first, ...rest].flatMap((r) => r.data ?? []).filter((e) => !seen.has(e.ticker) && seen.add(e.ticker)).map(toEvent);
+  });
   activeCache.set(base, { at: Date.now(), list });
   list.catch(() => activeCache.delete(base));
   return list;

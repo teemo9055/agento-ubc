@@ -16,8 +16,10 @@ test("bottom tab bar navigates", async ({ page }) => {
   await page.goto("/home");
   const bar = page.getByRole("navigation", { name: "Main" });
   await expect(bar).toBeVisible();
-  await bar.getByRole("link", { name: "Agents" }).click();
-  await expect(page).toHaveURL(/\/agents$/);
+  await bar.getByRole("link", { name: "Inso" }).click();
+  await expect(page).toHaveURL(/\/inso$/);
+  await bar.getByRole("link", { name: "Worko" }).click();
+  await expect(page).toHaveURL(/\/worko$/);
   await bar.getByRole("link", { name: "New" }).click();
   await expect(page).toHaveURL(/\/new$/);
 });
@@ -71,7 +73,7 @@ test("no page is wider than the phone", async ({ page }) => {
   const job = page.url();
   await page.getByTestId("open-approve").click();
   await expect(page.getByTestId("receipt-total")).toBeVisible({ timeout: 85_000 });
-  for (const path of ["/", "/new", "/agents", "/settings", job, `${job}/receipt`]) {
+  for (const path of ["/", "/new", "/inso", "/worko", "/settings", job, `${job}/receipt`]) {
     await page.goto(path);
     await page.waitForTimeout(800);
     const over = await page.evaluate(() => document.documentElement.scrollWidth - document.documentElement.clientWidth);

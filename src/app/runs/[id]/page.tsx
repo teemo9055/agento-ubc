@@ -32,7 +32,6 @@ import {
 import { ReceiptView } from "@/components/ReceiptView";
 import { NetProvider } from "@/components/NetContext";
 import { NETWORKS } from "@/lib/networks";
-import { NextSteps } from "@/components/NextSteps";
 import { LiveMarket } from "@/components/Live";
 import { PlanBoard, planOf } from "@/components/PlanBoard";
 import { BriefCard, briefOf } from "@/components/BriefCard";
@@ -672,7 +671,6 @@ export default function RunPage({
             </Link>
           </div>
           {run.status === "done" && <WatchThis run={run} />}
-          <NextSteps run={run} />
         </>
       )}
     </div>

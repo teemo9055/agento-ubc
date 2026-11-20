@@ -5,12 +5,13 @@ import type { AgentId } from "./types";
  * people think about them. Shared by the server (which builds each job from live data) and the
  * homes (which show the cards). Kept to what really runs; nothing here books or buys for you.
  */
-export type JobSection = "research" | "plan" | "verify" | "weather" | "sports" | "commodities";
+export type JobSection = "research" | "plan" | "verify" | "news" | "weather" | "sports" | "commodities";
 
 export const SECTIONS: Record<JobSection, { agent: AgentId; title: string; blurb: string }> = {
   research: { agent: "worko", title: "Researching", blurb: "Answers with sources, paid per search." },
   plan: { agent: "worko", title: "Planning", blurb: "Trips laid out day by day." },
   verify: { agent: "worko", title: "Verifying", blurb: "Check before you pay or trust." },
+  news: { agent: "inso", title: "News + markets", blurb: "Read today's headlines, see what the market prices, then act." },
   weather: { agent: "inso", title: "Weather", blurb: "Get paid if the day turns too hot or too cold." },
   sports: { agent: "inso", title: "Sports", blurb: "Cover what you lose if your team does." },
   commodities: { agent: "inso", title: "Commodities", blurb: "Hedge a cost before it jumps." },
@@ -30,8 +31,25 @@ export interface JobCardInfo {
   money: "real" | "any";
 }
 
+/** One thing a person can pick on a card (a city, their team, a price line), with its live numbers. */
+export interface JobChoice {
+  id: string;
+  label: string;
+  market?: string;
+  line?: string;
+  chance?: number;
+  pay?: number;
+  get?: number;
+  closes?: string;
+}
+
 /** What a card shows live: for a cover, the market and its odds; for a check, its price. */
 export interface JobPreview {
+  /** What can be picked on the card, and which is picked by default. */
+  choices?: JobChoice[];
+  choice?: string;
+  /** What the picker is for: "City", "Your team", "Price line". */
+  pick?: string;
   id: string;
   /** "Highest temperature in Chicago on Nov 21" */
   market?: string;
@@ -50,6 +68,8 @@ export interface JobPreview {
   venue?: "paper" | "gemini-sandbox" | "gemini";
   /** Why it can't be started right now, in plain words. */
   unavailable?: string;
+  /** It runs on Arc mainnet, which this server isn't set up for. */
+  needsMainnet?: boolean;
 }
 
 export const JOBS: JobCardInfo[] = [
@@ -63,6 +83,9 @@ export const JOBS: JobCardInfo[] = [
   { id: "seller-check", agent: "worko", section: "verify", title: "Is this seller real?", does: "Phone line check and a reverse image search of the photo", glyph: "shield", money: "real" },
   { id: "business-check", agent: "worko", section: "verify", title: "Can I trust this contractor?", does: "Recent reviews plus any news about the business", glyph: "tool", money: "real" },
   // ---------- Inso ----------
+  { id: "news-crypto", agent: "inso", section: "news", title: "Bitcoin's in the headlines. Is it priced in?", does: "Reads today's Bitcoin news, then bets on a price line", glyph: "chart", money: "real" },
+  { id: "news-oil", agent: "inso", section: "news", title: "Oil supply news could raise my fuel bill", does: "Reads the oil news, then covers a price jump", glyph: "coin", money: "real" },
+  { id: "news-fed", agent: "inso", section: "news", title: "Rate news could raise my mortgage", does: "Reads the Fed news, then covers a bigger hike", glyph: "bank", money: "real" },
   { id: "wedding-cold", agent: "inso", section: "weather", title: "Outdoor wedding, and it might be cold", does: "Pays out if the day stays chilly", glyph: "cold", money: "any" },
   { id: "rides-cold", agent: "inso", section: "weather", title: "Rides cost more when it's freezing", does: "Covers the extra fares on a cold day", glyph: "car", money: "any" },
   { id: "heat-bill", agent: "inso", section: "weather", title: "A heatwave would spike my power bill", does: "Pays out if it's hotter than a line you pick", glyph: "sun", money: "any" },

@@ -5,11 +5,11 @@ import { validateProposal } from "./tools";
 import { withNet } from "./netContext";
 
 describe("the job catalog", () => {
-  it("has 6 to 10 jobs for each agent, in that agent's own sections", () => {
+  it("has at least 6 jobs for each agent, at most 10 a section, in that agent's own sections", () => {
     for (const agent of ["inso", "worko"] as const) {
       const mine = JOBS.filter((j) => j.agent === agent);
       expect(mine.length).toBeGreaterThanOrEqual(6);
-      expect(mine.length).toBeLessThanOrEqual(10);
+      for (const sec of new Set(mine.map((j) => j.section))) expect(mine.filter((j) => j.section === sec).length).toBeLessThanOrEqual(10);
       for (const j of mine) expect(SECTIONS[j.section].agent).toBe(agent);
     }
     expect(new Set(JOBS.map((j) => j.id)).size).toBe(JOBS.length);
@@ -21,6 +21,8 @@ describe("the job catalog", () => {
     expect(venueFor(wedding, "gemini-sandbox")).toBe("paper");
     expect(venueFor(wedding, "gemini")).toBe("gemini");
     expect(venueFor(gold, "gemini-sandbox")).toBe("gemini-sandbox");
+    // The Fed market is only on the real exchange, like weather and sports.
+    expect(venueFor(jobById("news-fed")!, "gemini-sandbox")).toBe("paper");
   });
 });
 

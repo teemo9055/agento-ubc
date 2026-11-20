@@ -254,14 +254,13 @@ The ask screen lists what really executes, grouped by where: on Arc testnet toda
 
 **See it work** on the ask screen builds a ten-step plan from live data without the model, using only the first group: Chainlink prices, gas and Bitcoin network checks, a wallet read, a BotPay receipt, an odds history, a route, a small sale, and a bet that waits for the sale to fill and for two price sources to agree, sized to what the sale brought in. It costs about six cents, paid to three sellers, and takes under half a minute. A step that can't be built at that moment (a vendor is down, no contract is open) is left out and named.
 
-### Recipes: finding out what's possible
+### The job catalog: finding out what's possible
 
-Most people bring a problem, not a plan, and don't know what a few small paid steps can do for it. The **recipe book** (`/recipes`, `src/lib/recipes.ts`) holds tested combinations written as the worry they solve ("Plan my drive so no day is too long", "Is now a cheap time to send?", "A heatwave or a cold snap would ruin my outdoor plan"), grouped by moment (travelling, money, protecting a plan, events, work). Only recipes whose every step runs today are listed.
+Most people bring a problem, not a plan. The Inso and Worko homes show ready-made jobs as cards, grouped the way people think about them (Worko: Researching, Planning, Verifying; Inso: News + markets, Weather, Sports, Commodities). Each card is built by code from live data (`src/lib/jobs.ts`, `src/server/jobs.ts`), with no model, and only jobs that run today are listed.
 
-- **Match first, then tailor.** Typing a problem on an agent's home or in the book shows the closest recipe (plain word matching by code, no model). The agents have a free `find_recipe` tool and start open-ended problems from the closest one, then add, drop or swap steps in the shaping stage. No match: the agent builds a custom plan as before.
-- **Honest steps.** Every step says who does it (Agento pays, free, or another agent) and what it costs.
-- **Each agent's home is its problems.** Inso, Trado and Worko homes show their own recipes as cards with a step chain, the typical cost per run and a Start button; Trado's sit above its trading board.
-- **What next.** A finished job suggests the recipes people usually do next, often from another agent.
+- **Pick on the card.** Inso cards let you choose what the cover is about before starting: your city for weather, your team for sports, the price line for commodities, the outcome for the Fed. The odds, cost and payout on the card follow the pick.
+- **News first, then the market.** News + markets cards buy today's headlines (about $0.002, real USDC on Arc mainnet), then place the cover or bet on Gemini.
+- **Then tailor.** Starting a card opens its chat with the move ready; change any detail there before anything is paid. "Create your own" covers anything else.
 
 ### Trips
 

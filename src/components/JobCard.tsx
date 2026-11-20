@@ -1,5 +1,7 @@
 "use client";
+import { useState } from "react";
 import Link from "next/link";
+import { toast } from "./Toaster";
 import { motion } from "framer-motion";
 import { AgentIcon } from "./AgentIcon";
 import { Icon } from "./Icon";
@@ -90,6 +92,21 @@ export function Preview({ r }: { r: RunSummary }) {
 
 export function Card({ r, opened }: { r: RunSummary; opened?: number }) {
   const nav = useTransitionNav();
+  const [asking, setAsking] = useState(false);
+  const [gone, setGone] = useState(false);
+  const running = r.status === "running" || r.status === "funding";
+  async function remove() {
+    const res = await fetch(`/api/runs/${r.id}`, { method: "DELETE" });
+    const j = (await res.json().catch(() => ({}))) as { error?: string };
+    if (!res.ok) {
+      toast(j.error ?? "Couldn't delete that job", "bad");
+      setAsking(false);
+      return;
+    }
+    setGone(true);
+    toast(r.project ? "Project and its jobs deleted" : "Job deleted", "good");
+  }
+  if (gone) return null;
   const href = r.project ? `/projects/${r.id}` : `/runs/${r.id}`;
   const b = badgeOf(r);
   const title = r.project?.title ?? r.move ?? r.task;
@@ -104,7 +121,7 @@ export function Card({ r, opened }: { r: RunSummary; opened?: number }) {
             ? `Opened ${ago(opened)}`
             : `Started ${ago(Date.parse(r.createdAt))}`;
   return (
-    <motion.li layout initial={{ opacity: 0, y: 6 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0 }} data-agent={r.agent} className={r.project ? "relative pt-2" : ""}>
+    <motion.li layout initial={{ opacity: 0, y: 6 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0 }} data-agent={r.agent} className={`group/card relative ${r.project ? "pt-2" : ""}`}>
       {/* A project is a folder: two sheets behind the card. */}
       {r.project && (
         <>
@@ -148,6 +165,33 @@ export function Card({ r, opened }: { r: RunSummary; opened?: number }) {
           <span className="inline-flex h-7 shrink-0 items-center rounded-full border border-line px-3 text-[12px] font-semibold text-ink-2 transition-colors group-hover:border-ink group-hover:text-ink">Open</span>
         </div>
       </Link>
+      {/* Delete: a quiet button on the card, then a clear yes or no on top of it. */}
+      {!running && !asking && (
+        <button
+          type="button"
+          onClick={() => setAsking(true)}
+          aria-label={`Delete ${title}`}
+          title="Delete"
+          className="pressable absolute left-4 top-4 z-10 inline-flex h-8 w-8 items-center justify-center rounded-full border-[1.5px] border-ink bg-panel text-ink-2 opacity-0 shadow-[2px_2px_0_0_var(--color-ink)] transition-opacity hover:bg-bad hover:text-white focus-visible:opacity-100 group-hover/card:opacity-100 [@media(hover:none)]:opacity-100"
+          data-testid={`delete-${r.id}`}
+        >
+          <Icon name="x" size={14} stroke={2.4} />
+        </button>
+      )}
+      {asking && (
+        <motion.div initial={{ opacity: 0, scale: 0.97 }} animate={{ opacity: 1, scale: 1 }} className="absolute inset-0 z-20 flex flex-col items-center justify-center gap-3 rounded-2xl border-[1.5px] border-ink bg-panel/95 p-4 text-center backdrop-blur-sm" role="alertdialog" aria-label="Delete this job?">
+          <p className="text-[14.5px] font-semibold">{r.project ? "Delete this project and its jobs?" : "Delete this job?"}</p>
+          <p className="text-[12.5px] text-ink-3">Its receipt and history go too. Money already spent stays spent.</p>
+          <div className="flex gap-2">
+            <button type="button" onClick={() => setAsking(false)} className="pressable h-9 rounded-full border-[1.5px] border-ink bg-panel px-4 text-[13px] font-semibold">
+              Keep it
+            </button>
+            <button type="button" onClick={() => void remove()} className="pressable h-9 rounded-full border-[1.5px] border-ink bg-bad px-4 text-[13px] font-semibold text-white shadow-[2px_2px_0_0_var(--color-ink)]" data-testid={`confirm-delete-${r.id}`}>
+              Delete
+            </button>
+          </div>
+        </motion.div>
+      )}
     </motion.li>
   );
 }

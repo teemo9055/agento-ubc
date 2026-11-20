@@ -58,3 +58,11 @@ export function loadAll(): { runId: string; meta: RunMeta; events: SeqEvent[] }[
     events: (q.all(m.run_id) as { body: string }[]).map((r) => JSON.parse(r.body) as SeqEvent),
   }));
 }
+
+/** Forgets a job: its events and its meta. */
+export function deleteRun(runId: string) {
+  const d = open();
+  if (!d) return;
+  d.prepare("DELETE FROM events WHERE run_id = ?").run(runId);
+  d.prepare("DELETE FROM meta WHERE run_id = ?").run(runId);
+}

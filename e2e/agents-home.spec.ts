@@ -35,14 +35,3 @@ test("Trado isn't offered: its old link lands on Inso", async ({ page }) => {
   await page.goto("/trado");
   await expect(page).toHaveURL(/\/inso$/);
 });
-
-test("the recipe book finds the closest recipe for a problem in your own words", async ({ page }) => {
-  await prefs(page);
-  await page.goto("/recipes");
-  await page.getByTestId("recipe-search").fill("a cold snap would ruin our wedding on saturday");
-  const first = page.getByTestId("recipe").first();
-  await expect(first).toHaveAttribute("data-recipe", "event-weather");
-  await page.getByTestId("recipe-search").fill("");
-  await page.getByRole("button", { name: /Worko/ }).click();
-  await expect(page.locator('[data-testid="recipe"]')).toHaveCount(3);
-});

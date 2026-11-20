@@ -14,7 +14,6 @@ import { PRODUCTS } from "./x402";
 import { marketBase, positions as heldPositions, spotFeeBps, tradingVenue, VENUE_NAME } from "./exchange";
 import { FEEDS } from "./chainlink";
 import { checkQuestion, readArc } from "./chain-tools";
-import { KIND_TEXT, matchRecipes } from "@/lib/recipes";
 
 /**
  * Two kinds of tools.
@@ -188,16 +187,6 @@ export const FREE_TOOLS: Record<string, FreeTool> = {
       return { data, summary: `${list.length} marketplace services for “${q}” · ${here} payable now` };
     },
   },
-  find_recipe: {
-    description: "Tested step combos for common problems. Start open-ended ones from the closest; tailor it.",
-    params: z.object({ query: z.string() }),
-    async run(a) {
-      const q = String(a.query ?? "");
-      const found = matchRecipes(q, { limit: 2 });
-      const data = found.map(({ recipe: r }) => ({ id: r.id, agent: r.agent, worry: r.worry, gets: r.gets, steps: r.steps.map((s) => `${s.label} · ${s.by}${s.cost ? ` · $${s.cost}` : ""} · ${KIND_TEXT[s.kind]}`) }));
-      return { data: data.length ? data : { none: "No recipe fits; build it from the tools." }, summary: found.length ? `Recipe: ${found[0].recipe.worry}` : "No recipe for that yet" };
-    },
-  },
   read_arc: {
     description: "Read Arc testnet, free: what=balance (address), tx (hash: status, USDC moved), vault (address: funded, left, closed), payment (from+nonce: collected?). Only addresses/hashes you were given.",
     params: z.object({ what: z.enum(["balance", "tx", "vault", "payment"]), address: z.string().optional(), hash: z.string().optional(), from: z.string().optional(), nonce: z.string().optional() }),
@@ -352,10 +341,10 @@ export const MAX_SERVICE = BigInt(process.env.MARKETPLACE_MAX_PER_REQUEST ?? 10_
 
 /** Each agent's own harness: what it can look up for free, what it can buy, and what it can do. */
 export const TOOLKIT: Record<AgentId, { free: string[]; research: string[] }> = {
-  inso: { free: ["search_markets", "get_market", "browse_markets", "combo_quote", "my_positions", "spot_price", "search_services", "find_recipe", "read_arc"], research: ["odds_history", "trade_tape", "oracle_price", "service"] },
-  trado: { free: ["spot_price", "search_markets", "get_market", "browse_markets", "my_positions", "search_services", "find_recipe", "read_arc"], research: ["spot_candles", "oracle_price", "odds_history", "gas_price", "btc_network", "wallet_balance", "service"] },
+  inso: { free: ["search_markets", "get_market", "browse_markets", "combo_quote", "my_positions", "spot_price", "search_services", "read_arc"], research: ["odds_history", "trade_tape", "oracle_price", "news_search", "web_search", "service"] },
+  trado: { free: ["spot_price", "search_markets", "get_market", "browse_markets", "my_positions", "search_services", "read_arc"], research: ["spot_candles", "oracle_price", "odds_history", "gas_price", "btc_network", "wallet_balance", "service"] },
   // The trip agent can look at markets too, so a brief about a trip can name the fuel cover Inso would build.
-  worko: { free: ["find_place", "find_nearby", "search_markets", "my_positions", "search_services", "find_recipe", "read_arc"], research: ["drive_route", "oracle_price", "web_search", "news_search", "place_reviews", "shopping_prices", "image_check", "phone_check", "service"] },
+  worko: { free: ["find_place", "find_nearby", "search_markets", "my_positions", "search_services", "read_arc"], research: ["drive_route", "oracle_price", "web_search", "news_search", "place_reviews", "shopping_prices", "image_check", "phone_check", "service"] },
 };
 
 export const researchMenu = (agent?: AgentId) =>

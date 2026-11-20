@@ -4,7 +4,7 @@ import type { RunEvent, SeqEvent } from "@/lib/events";
 import { fmt, fmtFee, sum } from "@/lib/money";
 import { checkSpend } from "@/lib/policy";
 import { reduce, reduceAll } from "@/lib/reducer";
-import { appendEvent, loadAll } from "./store";
+import { appendEvent, deleteRun as deleteStored, loadAll } from "./store";
 import type {
   AgentId,
   Card,
@@ -155,7 +155,7 @@ export function subscribe(runId: string, fn: (e: SeqEvent) => void, from = 0) {
 
 export const getRun = (runId: string) => runs.get(runId)?.run ?? null;
 /** Every job, newest first. A request that turned out impossible here isn't a job, so it isn't listed. */
-export const listRuns = () => [...runs.values()].map((c) => c.run).filter((r) => !r.impossible).sort((a, b) => b.createdAt.localeCompare(a.createdAt));
+export const listRuns = () => [...runs.values()].map((c) => c.run).filter((r) => !r.impossible && !r.deleted).sort((a, b) => b.createdAt.localeCompare(a.createdAt));
 
 // ---------- planning ----------
 
@@ -1400,6 +1400,26 @@ export async function createProject(title: string, mode?: "demo" | "live") {
 }
 
 /** Puts a ready-made plan in front of the user as an agent message (used by outside AIs and tests). */
+/**
+ * Deletes a job for good. A job that is spending (funding or running) has to be stopped first, so
+ * its vault is closed and unspent money returned before it's forgotten. A project takes its jobs with it.
+ */
+export function removeRun(runId: string): { ok: true } | { error: string } {
+  const ctl = runs.get(runId);
+  if (!ctl) return { error: "That job isn't here" };
+  const kids = (ctl.run.plan?.steps ?? []).map((s) => s.runId).filter((x): x is string => Boolean(x && runs.has(x)));
+  const busy = [ctl.run, ...kids.map((k) => runs.get(k)!.run)].find((r) => r.status === "funding" || r.status === "running" || r.plan?.status === "running");
+  if (busy) return { error: "Stop the job first: it's still running, and stopping returns its unspent money" };
+  for (const id of [...kids, runId]) {
+    const c = runs.get(id)!;
+    // Tell open pages and the Jobs list first, then forget it.
+    emit(c, { type: "workorder.updated", run: { ...c.run, deleted: true } });
+    runs.delete(id);
+    deleteStored(id);
+  }
+  return { ok: true };
+}
+
 /** Drops a job that never got going (its ready-made move couldn't be built): it leaves the Jobs list. */
 export function discard(runId: string) {
   const ctl = ctlOf(runId);

@@ -3,7 +3,7 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import { AnimatePresence, motion } from "framer-motion";
 import { Icon } from "./Icon";
 import { Spinner } from "./ui";
-import { Glyph } from "./Recipes";
+import { Glyph } from "./Glyph";
 import type { JobCardInfo, JobPreview, JobSection } from "@/lib/jobs";
 import { JOBS, SECTIONS } from "@/lib/jobs";
 import type { AgentId } from "@/lib/types";
@@ -48,7 +48,7 @@ export function useCatalog(agent: AgentId, venue?: string) {
 }
 
 /** One section: a title, its one-line promise, and a row of cards that scrolls sideways. */
-export function JobRow({ section, jobs, previews, onStart, busy, loading }: { section: JobSection; jobs: JobCardInfo[]; previews: Map<string, JobPreview>; onStart: (id: string) => void; busy: string; loading: boolean }) {
+export function JobRow({ section, jobs, previews, onStart, busy, loading }: { section: JobSection; jobs: JobCardInfo[]; previews: Map<string, JobPreview>; onStart: (id: string, choice?: string) => void; busy: string; loading: boolean }) {
   const row = useRef<HTMLDivElement>(null);
   const [edge, setEdge] = useState({ left: false, right: true });
   const s = SECTIONS[section];
@@ -99,9 +99,13 @@ export function JobRow({ section, jobs, previews, onStart, busy, loading }: { se
  * A job as a card, the way a market is on a prediction exchange: what it's about, the live number
  * that matters (the market's odds, or what the checks cost), and one button to start.
  */
-function JobTile({ job, p, i, onStart, busy, disabled, loading }: { job: JobCardInfo; p?: JobPreview; i: number; onStart: (id: string) => void; busy: boolean; disabled: boolean; loading: boolean }) {
+function JobTile({ job, p, i, onStart, busy, disabled, loading }: { job: JobCardInfo; p?: JobPreview; i: number; onStart: (id: string, choice?: string) => void; busy: boolean; disabled: boolean; loading: boolean }) {
   const cover = job.agent === "inso" || job.id === "trip-gas";
   const off = Boolean(p?.unavailable);
+  // What the person picked on the card (their city, team or price line); the card's numbers follow it.
+  const [picked, setPicked] = useState<string>();
+  const choice = p?.choices?.find((c) => c.id === picked) ?? p?.choices?.find((c) => c.id === p?.choice);
+  const shown = p && choice ? { ...p, market: choice.market, line: choice.line, chance: choice.chance, pay: choice.pay, get: choice.get, closes: choice.closes } : p;
   const venue = p?.venue ?? "paper";
   const chip = job.money === "real" ? { text: "Real USDC", cls: "border-bad/40 bg-bad/10 text-bad" } : cover && job.agent === "inso" ? VENUE_CHIP[venue] : { text: "Test money", cls: "border-line bg-[#f4f3ef] text-ink-2" };
   return (
@@ -124,10 +128,22 @@ function JobTile({ job, p, i, onStart, busy, disabled, loading }: { job: JobCard
       <p className="mt-1 text-[13px] leading-snug text-ink-2">{job.does}</p>
 
       <div className="mt-auto pt-4">
-        {job.agent === "inso" ? <Odds p={p} loading={loading} /> : <Cost job={job} p={p} loading={loading} />}
+        {p?.choices && p.choices.length > 1 && !off && (
+          <label className="mb-2.5 flex items-center gap-2 rounded-full border-[1.5px] border-ink bg-panel py-1 pl-3 pr-1 shadow-[2px_2px_0_0_var(--agent)] focus-within:ring-2 focus-within:ring-agent/40">
+            <span className="shrink-0 text-[11px] font-semibold uppercase tracking-wide text-agent-ink">{p.pick ?? "Pick"}</span>
+            <select value={choice?.id} onChange={(e) => setPicked(e.target.value)} disabled={disabled} className="h-8 min-w-0 flex-1 cursor-pointer truncate rounded-full bg-transparent pr-1 text-[13px] font-semibold outline-none" data-testid="job-pick">
+              {p.choices.map((c) => (
+                <option key={c.id} value={c.id}>
+                  {c.label}
+                </option>
+              ))}
+            </select>
+          </label>
+        )}
+        {job.agent === "inso" ? <Odds p={shown} loading={loading} /> : <Cost job={job} p={p} loading={loading} />}
         <button
           type="button"
-          onClick={() => onStart(job.id)}
+          onClick={() => onStart(job.id, choice?.id)}
           disabled={disabled || off || (loading && !p)}
           className="pressable mt-3 inline-flex h-11 w-full items-center justify-center gap-2 rounded-full border-[1.5px] border-ink bg-ink text-[14px] font-semibold text-white transition-colors hover:bg-agent hover:text-agent-on disabled:cursor-not-allowed disabled:opacity-50"
           data-testid="job-start"
@@ -137,7 +153,7 @@ function JobTile({ job, p, i, onStart, busy, disabled, loading }: { job: JobCard
               <Spinner /> Setting it up
             </>
           ) : off ? (
-            "Not open right now"
+            p?.needsMainnet ? "Needs Arc mainnet" : "Not open right now"
           ) : (
             <>
               Start <Icon name="arrow" size={15} className="transition-transform group-hover:translate-x-0.5" />
@@ -173,6 +189,14 @@ function Odds({ p, loading }: { p?: JobPreview; loading: boolean }) {
         </span>
         <span className="num whitespace-nowrap text-[12px] text-ink-3">{closesIn(p.closes)}</span>
       </div>
+      {p.cost != null && (
+        <div className="mt-2.5 flex items-center justify-between gap-2 border-t border-dashed border-line pt-2 text-[12px] text-ink-2" data-testid="job-news-cost">
+          <span className="inline-flex items-center gap-1.5">
+            <Icon name="search" size={12} /> Today's headlines first
+          </span>
+          <span className="num font-semibold">{money(p.cost)}</span>
+        </div>
+      )}
     </div>
   );
 }
@@ -180,6 +204,7 @@ function Odds({ p, loading }: { p?: JobPreview; loading: boolean }) {
 /** Worko: how many paid steps and the most they cost. */
 function Cost({ job, p, loading }: { job: JobCardInfo; p?: JobPreview; loading: boolean }) {
   if (!p) return <Shimmer lines={2} on={loading} />;
+  if (p.unavailable) return <p className="rounded-2xl bg-[#f6f5f1] p-3 text-[12.5px] leading-snug text-ink-2">{p.unavailable}</p>;
   return (
     <div className="flex items-center justify-between rounded-2xl bg-[#f6f5f1] px-3 py-2.5" data-testid="job-cost">
       <span className="text-[12.5px] text-ink-2">
@@ -202,7 +227,7 @@ function Shimmer({ lines, on }: { lines: number; on: boolean }) {
 }
 
 /** Every section of one agent, in order, from the live catalog. */
-export function Catalog({ agent, venue, onStart, busy }: { agent: AgentId; venue?: string; onStart: (id: string) => void; busy: string }) {
+export function Catalog({ agent, venue, onStart, busy }: { agent: AgentId; venue?: string; onStart: (id: string, choice?: string) => void; busy: string }) {
   const { data, failed } = useCatalog(agent, venue);
   const previews = useMemo(() => new Map((data?.previews ?? []).map((p) => [p.id, p])), [data]);
   const jobs = data?.jobs ?? JOBS.filter((j) => j.agent === agent);

@@ -410,6 +410,8 @@ export interface Run {
   /** The recipe this job taught the book, if it was composed and worked. */
   /** Where this job's orders go, chosen when it was made: practice, Gemini's test exchange, or Gemini with real money. */
   venue?: Venue;
+  /** Deleted by the person: about to be forgotten. */
+  deleted?: boolean;
   /** The request is something no service here can do: kept for its link, left off the Jobs list. */
   impossible?: boolean;
   learned?: { id: string; title: string; status: "draft" | "promoted" | "retired"; runs: number; successes: number; network: "testnet" | "mainnet" };

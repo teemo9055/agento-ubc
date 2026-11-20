@@ -51,7 +51,7 @@ export function useStartJob() {
     }
   }
   /** Opens a catalog job: built from live data, then shown in its chat to change or set up. */
-  async function startJob(id: string) {
+  async function startJob(id: string, choice?: string) {
     if (busy) return;
     setBusy(id);
     setErr("");
@@ -59,6 +59,7 @@ export function useStartJob() {
     try {
       const run = await post<Run>("/api/jobs/start", {
         id,
+        choice,
         mode,
         network: mode === "live" ? jobNetwork(prefs, cfg) : undefined,
         venue: prefs.venue,

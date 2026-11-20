@@ -11,6 +11,8 @@ import { WalletPanel } from "@/components/passkey/WalletPanel";
 import { usePasskeyWallet } from "@/components/passkey/usePasskey";
 import { jobNetwork, usePrefs } from "@/lib/prefs";
 import type { FailureCode } from "@/lib/types";
+import { Marketplace } from "@/components/Marketplace";
+import { Selling } from "@/components/Selling";
 
 const FAULTS: { code: FailureCode; label: string }[] = [
   { code: "price_increase", label: "Seller raises price" },
@@ -299,6 +301,9 @@ export default function Settings() {
           )}
         </Block>
       )}
+      {/* The other side of the marketplace: services the agents buy from, and what this app sells to other agents. */}
+      <Selling />
+      <Marketplace />
     </div>
   );
 }

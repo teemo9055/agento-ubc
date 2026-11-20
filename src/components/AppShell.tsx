@@ -96,8 +96,8 @@ export function MainNav() {
   const path = usePathname();
   const items: { href: string; label: string; icon: IconName; active: boolean }[] = [
     { href: "/home", label: "Jobs", icon: "jobs", active: path === "/home" || path.startsWith("/runs") || path.startsWith("/projects") },
-    { href: "/agents", label: "Agents", icon: "agents", active: path.startsWith("/agents") },
-    { href: "/recipes", label: "Recipes", icon: "receipt", active: path.startsWith("/recipes") },
+    { href: "/inso", label: "Inso", icon: "agents", active: path.startsWith("/inso") },
+    { href: "/worko", label: "Worko", icon: "agents", active: path.startsWith("/worko") },
     { href: "/wallet", label: "Add money", icon: "wallet", active: path.startsWith("/wallet") },
     { href: "/settings", label: "Settings", icon: "shield", active: path.startsWith("/settings") },
   ];
@@ -127,7 +127,8 @@ function TabBar() {
   const tabs: { href: string; label: string; icon: IconName; active: boolean; primary?: boolean }[] = [
     { href: "/home", label: "Jobs", icon: "jobs", active: path === "/home" || path.startsWith("/runs") || path.startsWith("/projects") },
     { href: "/new", label: "New job", icon: "plus", active: path === "/new", primary: true },
-    { href: "/agents", label: "Agents", icon: "agents", active: path.startsWith("/agents") },
+    { href: "/inso", label: "Inso", icon: "agents", active: path.startsWith("/inso") },
+    { href: "/worko", label: "Worko", icon: "agents", active: path.startsWith("/worko") },
     { href: "/settings", label: "Settings", icon: "shield", active: path.startsWith("/settings") },
   ];
   return (

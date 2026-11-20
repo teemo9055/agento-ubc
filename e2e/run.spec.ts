@@ -343,9 +343,9 @@ test("the showcase builds a long plan that can be changed before anything is pai
   await expect(board.getByTestId("plan-status")).toContainText(`${n - 1} jobs`);
 });
 
-test("the agents page shows what Agento sells to other agents and what it earned", async ({ page }) => {
+test("settings shows what Agento sells to other agents and what it earned", async ({ page }) => {
   await prefs(page);
-  await page.goto("/agents");
+  await page.goto("/settings");
   const selling = page.getByTestId("selling");
   await expect(selling).toBeVisible();
   await expect(page.getByTestId("earned-outside")).toHaveText(/^\$/);

@@ -14,6 +14,8 @@ export const dynamic = "force-dynamic";
 
 const Body = z.object({
   id: z.string().max(40),
+  /** What was picked on the card: a city, a team, a price line. */
+  choice: z.string().max(80).optional(),
   mode: z.enum(["demo", "live"]).default("demo"),
   network: z.enum(["testnet", "mainnet"]).default("testnet"),
   venue: z.enum(["paper", "gemini-sandbox", "gemini"]).optional(),
@@ -39,9 +41,9 @@ export async function POST(req: NextRequest) {
   const venue = venueFor(card, want);
   try {
     // The request reads with the market it's built on ("I have tickets for Portland vs New York…").
-    const ask = (await withVenue(venue, () => askOf(card.id, venue)).catch(() => undefined)) ?? card.title;
+    const ask = (await withVenue(venue, () => askOf(card.id, venue, b.data.choice)).catch(() => undefined)) ?? card.title;
     const run = await createRun({ agent: card.id === "trip-gas" ? "inso" : card.agent, task: ask, mode, network, venue }, { quiet: true });
-    const built = await withNet(run.network, () => withVenue(run.venue, () => buildChecked(card.id, want, (input) => validateProposal(card.agent, input, `${run.id}-m`))));
+    const built = await withNet(run.network, () => withVenue(run.venue, () => buildChecked(card.id, want, (input) => validateProposal(card.agent, input, `${run.id}-m`), b.data.choice)));
     if ("error" in built) {
       discard(run.id);
       return NextResponse.json({ error: built.error }, { status: 503 });

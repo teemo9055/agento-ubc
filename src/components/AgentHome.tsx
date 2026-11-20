@@ -106,7 +106,7 @@ export function AgentHome({ agent }: { agent: AgentId }) {
         </p>
       )}
 
-      <Catalog agent={agent} venue={prefs.venue} onStart={(id) => void startJob(id)} busy={busy} />
+      <Catalog agent={agent} venue={prefs.venue} onStart={(id, choice) => void startJob(id, choice)} busy={busy} />
 
       {mine.length > 0 && (
         <section aria-labelledby="yours" className="min-w-0">
