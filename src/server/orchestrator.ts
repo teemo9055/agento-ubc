@@ -36,7 +36,7 @@ import { anchorOrder, canAnchor } from "./anchor";
 import { suggestionsFor } from "./suggest";
 import { recordOrder, recordSettlement } from "./knowledge";
 import { aiEditMove } from "./edit-move";
-import { offVault, paidInUsdc, type ChatMsg, type Plan, type PlanStep, type Proposal, type Venue } from "@/lib/types";
+import { offVault, paidInUsdc, type ChatMsg, type Plan, type PlanStep, type Proposal, type ResearchStep, type Venue } from "@/lib/types";
 import { PhaseFailure, SkipPhase, type AgentCtx, type PlanDraft } from "./agents/types";
 import { MAINNET_MAX_JOB_USD, chainOf, factoryAbi, liveReady, setupProblems, vaultAbi } from "./chain";
 import type { Net } from "@/lib/networks";
@@ -49,6 +49,9 @@ import { recordOutcome } from "./catalog/store";
 import { tally } from "./verdict";
 import { isDemoResource } from "./catalog/demo";
 import { buildReport } from "./report";
+import { followUp } from "./follow-up";
+import { VENDOR_TOOLS } from "./vendor-tools";
+import { checkNext, doneThinking, RESERVE_ID, researchSettled, reserveFor, think, thinks, thoughtOf } from "./think";
 
 /** Who planned a recipe sold to an outside agent: such runs don't teach the book again. */
 /** Who planned a watch's check: also doesn't teach the book. */
@@ -216,6 +219,14 @@ function materialize(ctl: Ctl, raw: PlanDraft) {
     actual: "0",
     bigSpend: BigInt(l.approved) >= threshold,
   }));
+  // Spare money for follow-up lookups the agent may decide on once it reads the first answers.
+  // Only spent through lines carved out of it mid-job; whatever isn't used goes back at the end.
+  const lookups = sum(lines.filter((l) => l.rail === "gateway").map((l) => l.approved));
+  const proposal = ctl.options.proposal as Proposal | undefined;
+  if (ctl.run.mode === "live" && aiEnabled() && lookups > 0n && proposal?.reserveUsd !== 0) {
+    const approved = proposal?.reserveUsd ? BigInt(Math.round(proposal.reserveUsd * 1e6)) : reserveFor(lookups);
+    lines.push({ id: RESERVE_ID, index: -1, phaseId: RESERVE_ID, purpose: "Spare for follow-up lookups", service: "Only spent if the first answers call for more", payeeName: "kept unless needed", payee: "0x0000000000000000000000000000000000000000", rail: "gateway", approved: approved.toString(), actual: "0", bigSpend: false });
+  }
   const total = sum(lines.filter((l) => !offVault(l.rail)).map((l) => l.approved));
   const cap = total + (total * BUFFER_PCT) / 100n;
   const txs = lines.reduce((a, l) => a + (l.rail === "x402" ? (l.calls?.max ?? 1) : 0), 0) + 3; // + approve, open, close
@@ -345,6 +356,8 @@ const chatBusy = new Set<string>();
 /** One explore turn: the user's message, the agent's free lookups, its reply and maybe a move. */
 export function sendChat(runId: string, text: string): Promise<Run> {
   const ctl = ctlOf(runId);
+  // A finished job answers questions about what it found, from the data it already bought: free.
+  if (ctl.run.status === "done") return askAfter(ctl, text);
   if (!["exploring", "draft"].includes(ctl.run.status)) throw new Error("this job is already running");
   if (chatBusy.has(runId)) throw new Error("the agent is still answering");
   const msg: ChatMsg = { id: id(), role: "user", text: text.trim().slice(0, 1000), at: now() };
@@ -353,6 +366,28 @@ export function sendChat(runId: string, text: string): Promise<Run> {
   emit(ctl, { type: "chat.message", message: msg });
   emit(ctl, { type: "chat.thinking", note: "Thinking" });
   return agentReply(ctl);
+}
+
+async function askAfter(ctl: Ctl, text: string): Promise<Run> {
+  const runId = ctl.run.id;
+  if (chatBusy.has(runId)) throw new Error("the agent is still answering");
+  const msg: ChatMsg = { id: id(), role: "user", text: text.trim().slice(0, 1000), at: now() };
+  if (!msg.text) throw new Error("empty message");
+  chatBusy.add(runId);
+  emit(ctl, { type: "chat.message", message: msg });
+  emit(ctl, { type: "chat.thinking", note: "Reading what was bought" });
+  try {
+    const r = await followUp(ctl.run, msg.text);
+    if (r.usage) trackAi(ctl, "follow-up", r.usage);
+    emit(ctl, { type: "chat.message", message: { id: id(), role: "agent", text: r.text, at: now() } });
+  } catch (e) {
+    console.warn("follow-up failed", e);
+    emit(ctl, { type: "chat.message", message: { id: id(), role: "agent", text: "Something went wrong on my side. Nothing was spent.", at: now() } });
+  } finally {
+    emit(ctl, { type: "chat.thinking" });
+    chatBusy.delete(runId);
+  }
+  return ctl.run;
 }
 
 const YES = /^(yes|yep|yeah|yup|ok|okay|sure|do it|set it up|go|go ahead|sounds good|let'?s do it)\b[\s.!]*$/i;
@@ -660,11 +695,23 @@ function executeNow(ctl: Ctl) {
 async function executeNowInNet(ctl: Ctl) {
   const running = new Map<string, Promise<void>>();
   const terminal = (p: Phase) => p.status === "done" || p.status === "skipped";
+  const isResearch = (p: Phase) => Boolean(ctl.run.proposal?.research.some((r) => r.id === p.id));
   try {
     for (;;) {
       if (ctl.cancelled) return;
+      // Once every lookup has answered, the agent reads them and decides what to buy next, before the
+      // write-up or the move. Lookups it adds run, then it thinks again, up to three rounds.
+      if (running.size === 0 && thinks(ctl.run) && !doneThinking(ctl.run) && researchSettled(ctl.run)) {
+        await thinkRound(ctl);
+        continue;
+      }
+      const waitForThinking = thinks(ctl.run) && !doneThinking(ctl.run);
       const ready = ctl.run.phases.filter(
-        (p) => p.status === "planned" && !running.has(p.id) && p.dependsOn.every((d) => terminal(ctl.run.phases.find((x) => x.id === d)!)),
+        (p) =>
+          p.status === "planned" &&
+          !running.has(p.id) &&
+          (!waitForThinking || isResearch(p)) &&
+          p.dependsOn.every((d) => terminal(ctl.run.phases.find((x) => x.id === d)!)),
       );
       for (const p of ready) running.set(p.id, runPhase(ctl, p.id).finally(() => running.delete(p.id)));
       if (running.size === 0) break;
@@ -677,10 +724,81 @@ async function executeNowInNet(ctl: Ctl) {
   }
 }
 
+/**
+ * One round of thinking between paid steps: what the answers so far say, what's still open, and the
+ * lookups bought next because of it (paid from the spare money approved with the job). On the last
+ * round of a job with a move, the agent can hold the move back with its reason; it never changes it.
+ */
+async function thinkRound(ctl: Ctl) {
+  const round = (ctl.run.thoughts?.length ?? 0) + 1;
+  const move = Boolean(ctl.run.proposal?.action && ctl.run.proposal.action.kind !== "itinerary");
+  emit(ctl, { type: "chat.thinking", note: "Reading what came back" });
+  const got = await think(ctl.run);
+  emit(ctl, { type: "chat.thinking" });
+  if (!got) {
+    // No model answered: go on as planned rather than stall.
+    emit(ctl, { type: "run.thought", thought: { round, learned: "Went on as planned: the answers couldn't be read in between this time.", open: [], added: [], final: true, at: now() } });
+    return;
+  }
+  trackAi(ctl, "think", got.usage);
+  const already = ctl.run.proposal?.research.filter((r) => /^f\d+$/.test(r.id)).length ?? 0;
+  const { keep, dropped } = checkNext(ctl.run, got.reply.next, already);
+  if (dropped.length) console.warn(`think round ${round}: dropped ${dropped.join(" | ")}`);
+  const questions = !ctl.run.proposal?.questions?.length && !ctl.run.lanes?.length && got.reply.questions?.length ? got.reply.questions.slice(0, 5).map((ask, i) => ({ id: `q${i + 1}`, ask: ask.slice(0, 140) })) : undefined;
+  // Each added lookup gets its own approved line, carved out of the spare money, so every payment
+  // still matches a line with its seller and price.
+  const reserve = ctl.run.lines.find((l) => l.id === RESERVE_ID);
+  let carved = 0n;
+  for (const k of keep) {
+    const v = VENDOR_TOOLS[k.tool];
+    carved += k.price;
+    emit(ctl, {
+      type: "line.updated",
+      line: { id: k.id, index: -1, phaseId: k.id, purpose: k.label, service: v.service(k.args), payeeName: v.payeeName(k.args), payee: v.payee(k.args), rail: "gateway", approved: k.price.toString(), actual: "0", bigSpend: false, calls: { max: 1, unitPrice: k.price.toString() } },
+    });
+  }
+  if (reserve && carved > 0n) emit(ctl, { type: "line.updated", line: { ...reserve, approved: (BigInt(reserve.approved) - carved).toString() } });
+  if (keep.length || questions) {
+    const steps: ResearchStep[] = keep.map(({ price: _p, ...st }) => st);
+    const phases: Phase[] = keep.map((k) => ({ id: k.id, label: k.label, sub: k.why, status: "planned", dependsOn: [], optional: true, lineId: k.id, payments: [] }));
+    // The agent reads its steps from the proposal it was given: keep that in step.
+    const proposal = ctl.options.proposal as Proposal | undefined;
+    if (proposal) ctl.options = { ...ctl.options, proposal: { ...proposal, research: [...proposal.research, ...steps], ...(questions ? { questions } : {}) } };
+    emit(ctl, { type: "research.added", steps, phases, ...(questions ? { questions } : {}) });
+  }
+  const thought = thoughtOf(round, got.reply, keep, move);
+  emit(ctl, { type: "run.thought", thought });
+  log(ctl, {
+    kind: "card_edit",
+    what: keep.length ? `Bought next: ${keep.map((k) => k.label).join("; ")}` : thought.decision ? (thought.decision.go ? "Go ahead with the move" : "Hold the move") : "Done looking",
+    why: thought.decision?.why ?? thought.learned.slice(0, 300),
+    amount: carved ? carved.toString() : undefined,
+    outcome: "approved",
+    by: "system",
+  });
+  // Held: the move doesn't happen, and its money stays put. Nothing about the order itself changes.
+  if (thought.decision && !thought.decision.go) {
+    for (const id of ["check", "act", "watch"]) {
+      const ph = ctl.run.phases.find((p) => p.id === id && p.status === "planned");
+      if (!ph) continue;
+      releaseLine(ctl, ph);
+      emit(ctl, { type: "phase.skipped", phaseId: id, note: `Held back: ${thought.decision.why}`, at: now() });
+    }
+  }
+}
+
 async function finish(ctl: Ctl) {
   const agent = AGENTS[ctl.run.agent];
   const deliverable = agent.deliver(agentCtx(ctl, "deliver"));
-  if (aiEnabled()) {
+  // The write-up: claims tied to the paid steps behind them; conflicts, gaps and spend by code.
+  const built = await buildReport(ctl.run).catch((e) => {
+    console.warn("report:", (e as Error).message);
+    return null;
+  });
+  if (built?.usage) trackAi(ctl, "report", built.usage);
+  const report = built?.report;
+  // A job with a written report doesn't need a second, separate summary of the same data.
+  if (aiEnabled() && report?.by !== "ai") {
     const r = await aiSummary(ctl.run.agent, ctl.run.proposal ? `${ctl.run.proposal.ask} (user first asked: ${ctl.run.task})` : ctl.run.task, compact(deliverable.data));
     if (r) {
       trackAi(ctl, "summary", r.usage);
@@ -701,13 +819,6 @@ async function finish(ctl: Ctl) {
       txHash = sent.txHash;
     }
   }
-  // The write-up: claims tied to the paid steps behind them; conflicts, gaps and spend by code.
-  const built = await buildReport(ctl.run).catch((e) => {
-    console.warn("report:", (e as Error).message);
-    return null;
-  });
-  if (built?.usage) trackAi(ctl, "report", built.usage);
-  const report = built?.report;
   if (report?.headline && report.by === "ai") deliverable.summary = report.headline;
   emit(ctl, { type: "run.done", deliverable, refunded: refunded.toString(), refundTx: txHash, at: now(), report });
   // The last stage: keep watching, as approved with the job.

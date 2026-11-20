@@ -36,7 +36,7 @@ export interface JobCardInfo {
 /** One thing a card asks for, typed so the server can check it before building anything. */
 export interface JobInput {
   name: string;
-  type: "listing_url" | "company_name" | "place" | "phone" | "product_name";
+  type: "listing_url" | "company_name" | "place" | "phone" | "product_name" | "domain";
   label: string;
   example: string;
 }
@@ -86,6 +86,7 @@ export interface JobPreview {
 
 export const JOBS: JobCardInfo[] = [
   // ---------- Worko ----------
+  { id: "company-brief", agent: "worko", section: "research", title: "Is this company healthy? Staff, money, news", does: "Its staff count over 3 years, every funding round, what changed since, then reads the stories that matter", glyph: "case", money: "real", inputs: [{ name: "company", type: "company_name", label: "Company", example: "Ramp" }, { name: "website", type: "domain", label: "Its website", example: "ramp.com" }] },
   { id: "company-deep", agent: "worko", section: "research", title: "Before I invest in or work with a company", does: "Finds its real site, reads it, checks who's behind it, then news and complaints", glyph: "case", money: "real", inputs: [{ name: "company", type: "company_name", label: "Company", example: "Rivian" }] },
   { id: "place-reviews", agent: "worko", section: "research", title: "Is this place any good?", does: "Its Google reviews, then its own site and any news", glyph: "food", money: "real", inputs: [{ name: "place", type: "place", label: "Place and city", example: "Blue Bottle Coffee, Oakland" }] },
   { id: "road-trip", agent: "worko", section: "plan", title: "Plan my drive so no day is too long", does: "The route split into days, with places to sleep", glyph: "map", money: "any" },

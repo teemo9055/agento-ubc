@@ -5,6 +5,7 @@ import { QUICKNODE_PAYEE, bitcoinNetwork, gasPrice, walletBalance, type BitcoinN
 import { callService, findService, type ServiceResult } from "./marketplace";
 import type { Net } from "@/lib/networks";
 import { BLOCKRUN_PAYEE, companyRecord, imageCheck, MRSCRAPER_PAYEE, newsSearch, otherOdds, phoneCheck, placeReviews, readListing, readPage, SERPER_PAYEE, shoppingPrices, TOMBA_PAYEE, WEB_PRICES, webSearch, type CompanyRecord, type ImageCheck, type ListingRead, type OtherOdds, type PageRead, type PhoneCheck, type PlaceReviews, type ShoppingPrices, type WebResults } from "./web-tools";
+import { companyEvents, CORESIGNAL_PAYEE, DATA_PRICES, deepSearch, EXA_PAYEE, fundingHistory, headcountHistory, PREDICTLEADS_PAYEE, readArticle, type ArticleRead, type CompanyEvents, type DeepSearch, type FundingHistory, type HeadcountHistory } from "./web-tools";
 
 /**
  * Paid lookups bought from vendors on Circle's Agent Marketplace with Gateway nanopayments.
@@ -139,6 +140,95 @@ export const VENDOR_TOOLS: Record<string, VendorTool> = {
       return rest;
     },
   },
+  headcount_history: {
+    service: (a) => `Staff history: ${a.site ?? "the website found earlier"}`.slice(0, 80),
+    payeeName: () => "Coresignal via Orthogonal (Agent Marketplace)",
+    payee: () => CORESIGNAL_PAYEE,
+    price: () => DATA_PRICES.headcount,
+    nets: ["mainnet"],
+    run: (a) => headcountHistory(a.site),
+    note: (d) => {
+      const h = d as HeadcountHistory;
+      if (!h.found) return `No staff record for ${h.domain}`;
+      const pct = (x?: number) => (x == null ? "" : `${x >= 0 ? "+" : ""}${Math.round(x * 100)}%`);
+      return `${h.name ?? h.domain}${h.employees != null ? ` · ${h.employees.toLocaleString()} staff` : ""}${h.change12m != null ? ` · ${pct(h.change12m)} in 12 months` : h.change6m != null ? ` · ${pct(h.change6m)} in 6 months` : ""}${h.openJobs != null ? ` · ${h.openJobs} open jobs` : ""}`;
+    },
+    stat: (d) => {
+      const { paid: _p, byMonth, ...rest } = d as HeadcountHistory;
+      // The whole curve in short: every third month, plus the latest.
+      const curve = byMonth.filter((_, i) => i % 3 === 0 || i === byMonth.length - 1);
+      return { ...rest, staffByMonth: curve };
+    },
+  },
+  funding_events: {
+    service: (a) => `Funding rounds: ${a.site ?? "the website found earlier"}`.slice(0, 80),
+    payeeName: () => "PredictLeads via Orthogonal (Agent Marketplace)",
+    payee: () => PREDICTLEADS_PAYEE,
+    price: () => DATA_PRICES.funding,
+    nets: ["mainnet"],
+    run: (a) => fundingHistory(a.site),
+    note: (d) => {
+      const f = d as FundingHistory;
+      const last = f.rounds[0];
+      if (!last) return `No funding rounds on record for ${f.domain}`;
+      const amt = last.amountUsd ? ` $${last.amountUsd >= 1e6 ? `${Math.round(last.amountUsd / 1e5) / 10}M` : last.amountUsd.toLocaleString()}` : "";
+      return `${f.rounds.length} round${f.rounds.length === 1 ? "" : "s"} · last:${amt} ${last.type ?? "round"}${last.date ? ` (${last.date})` : ""}`;
+    },
+    stat: (d) => {
+      const { paid: _p, ...rest } = d as FundingHistory;
+      return rest;
+    },
+  },
+  company_events: {
+    service: (a) => `Company events: ${a.site ?? "the website found earlier"}`.slice(0, 80),
+    payeeName: () => "PredictLeads via Orthogonal (Agent Marketplace)",
+    payee: () => PREDICTLEADS_PAYEE,
+    price: () => DATA_PRICES.events,
+    nets: ["mainnet"],
+    run: (a) => companyEvents(a.site, a.since),
+    note: (d) => {
+      const e = d as CompanyEvents;
+      if (!e.events.length) return `No events on record since ${e.since}`;
+      const top = Object.entries(e.counts).sort((a, b) => b[1] - a[1]).slice(0, 2).map(([k, n]) => `${n} ${k.replace(/_/g, " ")}`);
+      return `${e.events.length} events since ${e.since}${top.length ? ` · ${top.join(", ")}` : ""}`;
+    },
+    stat: (d) => {
+      const { paid: _p, ...rest } = d as CompanyEvents;
+      return rest;
+    },
+  },
+  deep_search: {
+    service: (a) => `Deep search: ${a.query ?? "from an earlier step"}`.slice(0, 80),
+    payeeName: () => "Exa (Agent Marketplace)",
+    payee: () => EXA_PAYEE,
+    price: () => DATA_PRICES.deepSearch,
+    nets: ["mainnet"],
+    run: (a) => deepSearch(a.query, a.since, a.exclude),
+    note: (d) => {
+      const r = d as DeepSearch;
+      return r.results.length ? `${r.results.length} pages · top: “${(r.results[0].title ?? r.results[0].url).slice(0, 60)}”${r.results[0].date ? ` (${r.results[0].date})` : ""}` : "Nothing found";
+    },
+    stat: (d) => {
+      const { paid: _p, ...rest } = d as DeepSearch;
+      return rest;
+    },
+  },
+  read_article: {
+    service: (a) => `Read article: ${a.url ?? "the link found earlier"}`.slice(0, 80),
+    payeeName: () => "Exa (Agent Marketplace)",
+    payee: () => EXA_PAYEE,
+    price: () => DATA_PRICES.article,
+    nets: ["mainnet"],
+    run: (a) => readArticle(a.url),
+    note: (d) => {
+      const r = d as ArticleRead;
+      return r.text ? `${r.title ? `“${r.title.slice(0, 60)}” · ` : ""}${r.text.split(/\s+/).length.toLocaleString()} words read` : "The article came back empty";
+    },
+    stat: (d) => {
+      const r = d as ArticleRead;
+      return { url: r.url, title: r.title, date: r.date, text: r.text.slice(0, 3000) };
+    },
+  },
   read_page: {
     service: (a) => `Read page: ${a.url ?? "the page found earlier"}`.slice(0, 80),
     payeeName: () => "MrScraper (Agent Marketplace)",
@@ -152,7 +242,7 @@ export const VENDOR_TOOLS: Record<string, VendorTool> = {
     },
     stat: (d) => {
       const r = d as PageRead;
-      return { url: r.url, title: r.title, headings: r.headings, text: r.text.slice(0, 1600) };
+      return { url: r.url, title: r.title, headings: r.headings, text: r.text.slice(0, 2400) };
     },
   },
   market_odds: {
@@ -181,7 +271,10 @@ export const VENDOR_TOOLS: Record<string, VendorTool> = {
       const r = d as WebResults;
       return r.results.length ? `${r.results.length} results · top: ${firstTitles(r, 1)}` : "No results";
     },
-    stat: (d) => ({ query: (d as WebResults).query, results: (d as WebResults).results.slice(0, 5) }),
+    stat: (d) => {
+      const r = d as WebResults;
+      return { query: r.query, ...(r.facts ? { googleFacts: r.facts } : {}), ...(r.answer ? { googleAnswer: r.answer } : {}), results: r.results.slice(0, 8) };
+    },
   },
   news_search: {
     service: (a) => `News: ${a.query}`.slice(0, 80),
@@ -194,7 +287,7 @@ export const VENDOR_TOOLS: Record<string, VendorTool> = {
       const r = d as WebResults;
       return r.results.length ? `${r.results.length} stories · latest: ${firstTitles(r, 1)}${r.results[0]?.date ? ` (${r.results[0].date})` : ""}` : "No recent news";
     },
-    stat: (d) => ({ query: (d as WebResults).query, stories: (d as WebResults).results.slice(0, 5) }),
+    stat: (d) => ({ query: (d as WebResults).query, stories: (d as WebResults).results.slice(0, 8) }),
   },
   place_reviews: {
     service: (a) => `Google reviews: ${a.place ?? "the place found earlier"}`.slice(0, 80),
@@ -207,11 +300,12 @@ export const VENDOR_TOOLS: Record<string, VendorTool> = {
     note: (d) => {
       const r = d as PlaceReviews;
       if (!r.found) return `Couldn't find “${r.place}” on Google`;
-      return `${r.found.name}${r.found.address ? `, ${r.found.address}` : ""} · ${r.reviews.length} recent reviews${r.average ? ` · ${r.average}★ on average` : ""}`;
+      const all = r.rating != null ? ` · ${r.rating}★ from ${r.ratingCount?.toLocaleString() ?? "?"} reviews` : "";
+      return `${r.found.name}${all}${r.average ? ` · recent ${r.average}★` : ""}`;
     },
     stat: (d) => {
       const r = d as PlaceReviews;
-      return { business: r.found, averageOfRecent: r.average, recentReviews: r.reviews.slice(0, 6) };
+      return { business: r.found, googleRating: r.rating, googleReviewCount: r.ratingCount, averageOfRecent: r.average, recentReviews: r.reviews.slice(0, 10) };
     },
   },
   shopping_prices: {
@@ -227,7 +321,7 @@ export const VENDOR_TOOLS: Record<string, VendorTool> = {
     },
     stat: (d) => {
       const r = d as ShoppingPrices;
-      return { product: r.product, lowest: r.lowest, typical: r.median, highest: r.highest, offers: r.offers.slice(0, 6) };
+      return { product: r.product, lowest: r.lowest, typical: r.median, highest: r.highest, ...(r.leftOut ? { bundlesAndOtherModelsLeftOut: r.leftOut } : {}), offers: r.offers.slice(0, 10) };
     },
   },
   image_check: {

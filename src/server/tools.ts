@@ -14,6 +14,7 @@ import { PRODUCTS } from "./x402";
 import { marketBase, positions as heldPositions, spotFeeBps, tradingVenue, VENUE_NAME } from "./exchange";
 import { FEEDS } from "./chainlink";
 import { checkQuestion, readArc } from "./chain-tools";
+import { isTemplate } from "./dataflow";
 
 /**
  * Two kinds of tools.
@@ -220,6 +221,8 @@ export interface ResearchTool {
   product: string;
   description: string;
   args: string[];
+  /** Inputs it takes when given, but doesn't need. */
+  optional?: string[];
   /** Feed key; widgets read data by it. */
   key(args: Record<string, string>): string;
   params(args: Record<string, string>): Record<string, string>;
@@ -324,6 +327,43 @@ export const RESEARCH: Record<string, ResearchTool> = {
     key: (a) => `web:company:${a.site?.toLowerCase()}`,
     params: (a) => ({ site: a.site }),
   },
+  headcount_history: {
+    product: "data.headcount",
+    description: "A company's staff count month by month for up to 3 years, with the change over 6 and 12 months, senior people who joined, open jobs and how fast they're changing, and its last funding round (Coresignal; args: site, the company's website). History a web search can't show. Real USDC on Arc mainnet only",
+    args: ["site"],
+    key: (a) => `data:headcount:${a.site?.toLowerCase()}`,
+    params: (a) => ({ site: a.site }),
+  },
+  funding_events: {
+    product: "data.funding",
+    description: "A company's funding rounds with dates, round types, amounts in USD and investors, newest first, plus months since the last one (PredictLeads; args: site, the company's website). Real USDC on Arc mainnet only",
+    args: ["site"],
+    key: (a) => `data:funding:${a.site?.toLowerCase()}`,
+    params: (a) => ({ site: a.site }),
+  },
+  company_events: {
+    product: "data.events",
+    description: "What a company did, as dated, labelled events with the article behind each: hires, layoffs, launches, acquisitions, new offices, partnerships (PredictLeads; args: site, the company's website; optional since, YYYY-MM-DD, default 18 months back). Real USDC on Arc mainnet only",
+    args: ["site"],
+    optional: ["since"],
+    key: (a) => `data:events:${a.site?.toLowerCase()}:${a.since ?? ""}`,
+    params: (a) => ({ site: a.site, ...(a.since ? { since: a.since } : {}) }),
+  },
+  deep_search: {
+    product: "web.deep",
+    description: "A search that finds pages by meaning, not keywords, with the key sentences from each (Exa; args: query, a full question or description; optional since, YYYY-MM-DD, to only see pages published after it; optional exclude, a domain to leave out, like the company's own site). Best for independent coverage of something specific. Real USDC on Arc mainnet only",
+    args: ["query"],
+    optional: ["since", "exclude"],
+    key: (a) => `web:deep:${a.query}:${a.since ?? ""}:${a.exclude ?? ""}`,
+    params: (a) => ({ query: a.query, ...(a.since ? { since: a.since } : {}), ...(a.exclude ? { exclude: a.exclude } : {}) }),
+  },
+  read_article: {
+    product: "web.article",
+    description: "The clean full text of an article or page found earlier (Exa; args: url, a link that appeared in an earlier answer). Use it to read what a headline actually says. Real USDC on Arc mainnet only",
+    args: ["url"],
+    key: (a) => `web:article:${a.url}`,
+    params: (a) => ({ url: a.url }),
+  },
   read_listing: {
     product: "web.listing",
     description: "Read a marketplace listing (eBay, Facebook, Craigslist, a shop page) as fields: title, price, condition, seller, seller feedback and photo (args: url, the full listing link). Later steps can use its title, price and photo. Real USDC on Arc mainnet only",
@@ -369,10 +409,10 @@ export const MAX_SERVICE = BigInt(process.env.MARKETPLACE_MAX_PER_REQUEST ?? 10_
 
 /** Each agent's own harness: what it can look up for free, what it can buy, and what it can do. */
 export const TOOLKIT: Record<AgentId, { free: string[]; research: string[] }> = {
-  inso: { free: ["search_markets", "get_market", "browse_markets", "combo_quote", "my_positions", "spot_price", "search_services", "read_arc"], research: ["odds_history", "trade_tape", "oracle_price", "news_search", "web_search", "market_odds", "read_page", "read_listing", "service"] },
+  inso: { free: ["search_markets", "get_market", "browse_markets", "combo_quote", "my_positions", "spot_price", "search_services", "read_arc"], research: ["odds_history", "trade_tape", "oracle_price", "news_search", "web_search", "market_odds", "read_page", "read_listing", "deep_search", "read_article", "service"] },
   trado: { free: ["spot_price", "search_markets", "get_market", "browse_markets", "my_positions", "search_services", "read_arc"], research: ["spot_candles", "oracle_price", "odds_history", "gas_price", "btc_network", "wallet_balance", "service"] },
   // The trip agent can look at markets too, so a brief about a trip can name the fuel cover Inso would build.
-  worko: { free: ["find_place", "find_nearby", "search_markets", "my_positions", "search_services", "read_arc"], research: ["drive_route", "oracle_price", "web_search", "news_search", "place_reviews", "shopping_prices", "image_check", "phone_check", "company_record", "read_page", "read_listing", "market_odds", "service"] },
+  worko: { free: ["find_place", "find_nearby", "search_markets", "my_positions", "search_services", "read_arc"], research: ["drive_route", "oracle_price", "web_search", "news_search", "place_reviews", "shopping_prices", "image_check", "phone_check", "company_record", "read_page", "read_listing", "market_odds", "headcount_history", "funding_events", "company_events", "deep_search", "read_article", "service"] },
 };
 
 export const researchMenu = (agent?: AgentId) =>
@@ -398,6 +438,12 @@ export const ProposalInput = z.object({
     .array(z.object({ tool: z.enum(Object.keys(RESEARCH) as [string, ...string[]]), args: z.record(z.string(), z.string()), label: z.string().max(50), why: z.string().max(100) }))
     .max(8)
     .describe("Paid lookups to run before acting (up to 8; the job's spending cap still applies). Empty if the free data already settles it."),
+  questions: z
+    .array(z.string().max(140))
+    .max(5)
+    .nullable()
+    .optional()
+    .describe("The 2-5 questions this job must answer to be useful to the person, most important first (e.g. 'Is it still operating?', 'When did it last raise money?'). The lookups should be chosen to answer them; the report answers each one."),
   action: z
     .discriminatedUnion("kind", [
       z.object({
@@ -417,6 +463,11 @@ export const ProposalInput = z.object({
         maxPrice: z.number().min(0.01).max(0.99).describe("Buy: highest price per contract (0-1). Sell: lowest price accepted."),
         stopPrice: z.number().min(0.01).max(0.99).nullable().describe("stop-limit only: trigger price, at or above the last trade and at or below maxPrice"),
         quantity: z.number().int().min(1).max(500),
+        fill: z
+          .enum(["now", "wait"])
+          .nullable()
+          .optional()
+          .describe("now: buy from whoever is selling right now at up to maxPrice and cancel what doesn't fill at once ('buy now', 'at market'). wait: rest on the book until a seller comes down to maxPrice. Leave empty for the usual (now on the test exchange, wait otherwise)."),
         combo: z
           .array(z.object({ eventTicker: z.string(), symbol: z.string(), side: z.enum(["yes", "no"]) }))
           .min(2)
@@ -454,6 +505,8 @@ export type ProposalInput = z.infer<typeof ProposalInput>;
  * steps. Never offered to the model as a schema; the model's own moves use ProposalInput.
  */
 const Ref = z.string().regex(/^\$(given\.[A-Za-z0-9_]+|[A-Za-z][A-Za-z0-9_-]*(\..*)?)$/);
+/** A bind: one ref, or a short text built from several ("{$r1.found.name} contractor license"). */
+const BindRef = z.union([Ref, z.string().max(200).regex(/\{\$[^{}\s]+\}/)]);
 export const ComposedInput = ProposalInput.extend({
   research: z
     .array(
@@ -463,7 +516,7 @@ export const ComposedInput = ProposalInput.extend({
         args: z.record(z.string(), z.string()),
         label: z.string().max(60),
         why: z.string().max(140),
-        bind: z.record(z.string().regex(/^[A-Za-z0-9_.-]+$/), Ref).optional(),
+        bind: z.record(z.string().regex(/^[A-Za-z0-9_.-]+$/), BindRef).optional(),
         when: z.object({ ref: Ref, op: z.enum(["exists", "missing", "==", "!=", ">=", "<=", "contains"]), value: z.union([z.string(), z.number(), z.boolean()]).optional() }).optional(),
         verify: z.object({ group: z.string().max(40), path: z.string().max(120), kind: z.enum(["same", "close"]), tolerance: z.number().min(0).max(1).optional() }).optional(),
         onConflict: z.string().max(40).optional(),
@@ -476,6 +529,8 @@ export const ComposedInput = ProposalInput.extend({
   compose: z.any().optional(),
   tier: z.enum(["quick", "thorough", "certain"]).optional(),
   gaps: z.array(z.object({ fact: z.string(), why: z.string() })).optional(),
+  /** Spare money (USD) for lookups the agent picks mid-job from what it found; 0 turns it off. */
+  reserveUsd: z.number().min(0).max(0.2).optional(),
   then: z
     .object({ watch: z.object({ ref: Ref, op: z.enum(["<=", ">=", "==", "!=", "changed"]), value: z.union([z.string(), z.number()]).optional(), every: z.enum(["15m", "1h", "6h", "1d"]), days: z.number().int().min(1).max(30), title: z.string().max(80), says: z.string().max(160) }) })
     .optional(),
@@ -563,10 +618,20 @@ export async function validateProposal(agent: AgentId, input: unknown, id: strin
     }
     if (maxPrice * quantity > limits().maxOrderUsd) return { error: `Order over the user's $${limits().maxOrderUsd} per-order limit (set in Settings). Make it smaller.` };
     if (maxPrice !== raw.maxPrice) adjustments.push(`Price rounded to ${Math.round(maxPrice * 100)}¢`);
-    action = { kind: "prediction_order", eventTicker: raw.eventTicker, symbol: raw.symbol, label: raw.label, event: ev.title, side: raw.side, orderType: raw.orderType, maxPrice, stopPrice, quantity };
+    // Buy now or wait: on the test exchange, where a waiting order rarely fills, it buys now unless told otherwise.
+    const fill: "now" | "wait" | undefined = raw.orderType !== "limit" || restAt != null ? undefined : (raw.fill ?? (venue === "gemini-sandbox" ? "now" : undefined)) || undefined;
+    action = { kind: "prediction_order", eventTicker: raw.eventTicker, symbol: raw.symbol, label: raw.label, event: ev.title, side: raw.side, orderType: raw.orderType, maxPrice, stopPrice, quantity, ...(fill ? { fill } : {}) };
     // Tell the user whether this buys now or waits: the cheapest seller right now is the ask.
     const askNow = raw.side === "yes" ? c.ask : c.bid != null ? round2(1 - c.bid) : null;
-    if (raw.orderType === "limit" && askNow != null)
+    if (fill === "now")
+      adjustments.push(
+        askNow != null && maxPrice >= askNow
+          ? `Buys now from the cheapest seller, at ${Math.round(askNow * 100)}¢; anything not filled at once is cancelled, not left waiting`
+          : askNow != null
+            ? `Buy now: nobody is selling at ${Math.round(maxPrice * 100)}¢ or less right now (cheapest is ${Math.round(askNow * 100)}¢), so it would buy nothing. Raise the price to buy, or let it wait`
+            : "Buy now: nobody is selling right now, so it would buy nothing. Let it wait instead",
+      );
+    else if (raw.orderType === "limit" && askNow != null)
       adjustments.push(
         maxPrice >= askNow
           ? `Fills now: cheapest ${raw.side.toUpperCase()} seller is at ${Math.round(askNow * 100)}¢${venue === "paper" ? "" : "; Gemini's taker fee applies"}`
@@ -717,7 +782,16 @@ export async function validateProposal(agent: AgentId, input: unknown, id: strin
       step.bind = {};
       for (const [field, ref] of Object.entries(r.bind)) {
         if (cap?.inputs.length && !cap.inputs.some((x) => x.field === field)) return { error: `${cap.provider} doesn't take a field called ${field}` };
-        const to = reref(ref, i);
+        let to: string | { error: string };
+        if (isTemplate(ref)) {
+          let err: { error: string } | undefined;
+          to = ref.replace(/\{(\$[^{}\s]+)\}/g, (_, one: string) => {
+            const x = reref(one, i);
+            if (typeof x !== "string") err ??= x;
+            return typeof x === "string" ? `{${x}}` : "";
+          });
+          if (err) return err;
+        } else to = reref(ref, i);
         if (typeof to !== "string") return to;
         step.bind[field] = to;
       }
@@ -761,6 +835,7 @@ export async function validateProposal(agent: AgentId, input: unknown, id: strin
       hedge: hedgeOf(p.hedge, action),
       market,
       adjustments: adjustments.length ? adjustments : undefined,
+      ...(p.questions?.length ? { questions: p.questions.slice(0, 5).map((ask, i) => ({ id: `q${i + 1}`, ask })) } : {}),
       ...(opts.composed
         ? {
             givens: Object.keys(givens).length ? givens : undefined,
@@ -768,6 +843,7 @@ export async function validateProposal(agent: AgentId, input: unknown, id: strin
             tier: p.tier,
             gaps: p.gaps?.length ? p.gaps : undefined,
             then,
+            ...(p.reserveUsd != null ? { reserveUsd: p.reserveUsd } : {}),
           }
         : {}),
     },
@@ -860,6 +936,7 @@ export function toComposedInput(p: Proposal): z.infer<typeof ComposedInput> {
     compose: p.compose,
     tier: p.tier,
     gaps: p.gaps,
+    reserveUsd: p.reserveUsd,
   } as z.infer<typeof ComposedInput>;
 }
 
@@ -870,7 +947,8 @@ export function toProposalInput(p: Proposal): ProposalInput {
     why: p.why,
     ask: p.ask,
     research: p.research.map((r) => ({ tool: r.tool, args: r.args, label: r.label, why: r.why })),
-    action: !a ? null : a.kind === "prediction_order" ? { ...a, trade: a.trade ?? null, stopPrice: a.stopPrice ?? null, combo: a.combo ? a.combo.legs.map((l) => ({ eventTicker: l.eventTicker, symbol: l.symbol, side: l.side })) : null } : a,
+    questions: p.questions?.length ? p.questions.map((q) => q.ask) : null,
+    action: !a ? null : a.kind === "prediction_order" ? { ...a, trade: a.trade ?? null, stopPrice: a.stopPrice ?? null, fill: a.fill ?? null, combo: a.combo ? a.combo.legs.map((l) => ({ eventTicker: l.eventTicker, symbol: l.symbol, side: l.side })) : null } : a,
     condition: p.condition ?? null,
     alsoRequire: p.also?.length ? p.also : null,
     budgetUsd: p.budgetUsd ?? null,

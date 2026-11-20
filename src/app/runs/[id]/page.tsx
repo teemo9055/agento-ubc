@@ -31,6 +31,7 @@ import {
 } from "@/components/JobBrief";
 import { Fold } from "@/components/Fold";
 import { DoneHero } from "@/components/DoneHero";
+import { Thinking, thinkingSub } from "@/components/Thinking";
 import { buildReceipt } from "@/lib/receipt";
 import { NetProvider } from "@/components/NetContext";
 import { NETWORKS } from "@/lib/networks";
@@ -319,8 +320,10 @@ export default function RunPage({
     run.proposal?.action?.kind === "itinerary" ||
     !run.proposal;
   // A job that never had a conversation (a plan step, a repeat) doesn't need an empty chat beside it.
+  // A finished job that bought data takes questions about it, answered from that data for free.
+  const askable = run.status === "done" && Object.keys(run.results ?? {}).length > 0;
   const hasChat =
-    (run.chat?.length ?? 0) > 0 || exploring || run.status === "draft";
+    (run.chat?.length ?? 0) > 0 || exploring || run.status === "draft" || askable;
   const showPopup = head && dismissed !== head.id && !approving && !cancelling;
   const reapproval =
     head?.kind === "re"
@@ -430,7 +433,7 @@ export default function RunPage({
       </div>
       <div className="flex items-center gap-4">
         {wide && <Stages run={run} />}
-        {wide && !exploring && !draft && (run.chat?.length ?? 0) > 0 && (
+        {wide && !exploring && !draft && ((run.chat?.length ?? 0) > 0 || askable) && (
           <Button
             variant="quiet"
             className="h-9 text-[13px]"
@@ -439,7 +442,7 @@ export default function RunPage({
             data-testid="toggle-chat"
           >
             <Icon name="chat" size={15} />{" "}
-            {showChat ? "Hide conversation" : "Conversation"}
+            {showChat ? "Hide conversation" : askable ? "Ask about it (free)" : "Conversation"}
           </Button>
         )}
       </div>
@@ -579,6 +582,8 @@ export default function RunPage({
               onCancel={() => setCancelling(true)}
             />
           </Assemble>
+          {/* Between paid steps: what it learned, and what it's buying next because of it. */}
+          <Thinking run={run} live />
           <Fold title="All stages" sub={stagesSub(run)} testId="fold-running-stages" open={pending.length > 0}>
             <PhaseGraph phases={run.phases} lines={run.lines} simulated={run.mode === "demo"} run={run} />
           </Fold>
@@ -658,6 +663,11 @@ export default function RunPage({
               <Link href={`/runs/${run.id}/report`} className="inline-flex items-center gap-1 text-[13px] text-ink-2 underline decoration-line underline-offset-2 hover:text-ink" data-testid="report-page">
                 Report on its own page <Icon name="external" size={12} />
               </Link>
+            </Fold>
+          )}
+          {(run.thoughts?.length ?? 0) > 0 && (
+            <Fold title="How it worked it out" sub={thinkingSub(run)} testId="fold-thinking">
+              <Thinking run={run} />
             </Fold>
           )}
           {run.phases.length > 1 && (

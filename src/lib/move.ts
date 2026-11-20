@@ -21,6 +21,11 @@ export const RESEARCH_PRICE: Record<string, number> = {
   read_page: 0.001,
   read_listing: 0.001,
   market_odds: 0.002,
+  headcount_history: 0.084,
+  funding_events: 0.04,
+  company_events: 0.04,
+  deep_search: 0.007,
+  read_article: 0.001,
 };
 /** What a paid lookup costs; a marketplace service carries the price its seller quoted. */
 export const lookupCost = (r: Proposal["research"][number]) => (r.tool === "service" ? Number(r.args.price ?? 0) / 1e6 : (RESEARCH_PRICE[r.tool] ?? 0));

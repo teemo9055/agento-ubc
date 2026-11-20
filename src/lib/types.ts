@@ -176,6 +176,47 @@ export interface Report {
   recommendation?: string;
   /** Concrete things to do next. */
   nextSteps?: string[];
+  /** The job's questions, each answered from the evidence, or marked not found. */
+  answers?: QuestionAnswer[];
+  /** What the paid data added that a plain web search wouldn't have shown. */
+  beyondSearch?: string;
+}
+
+/** A question the job sets out to answer, decided before anything is bought. */
+export interface JobQuestion {
+  id: string;
+  ask: string;
+  weight?: "must" | "should" | "nice";
+}
+
+export interface QuestionAnswer {
+  id: string;
+  ask: string;
+  status: "answered" | "partly" | "not_found";
+  /** The answer, in a sentence, with the numbers and dates that matter. */
+  text: string;
+  confidence?: "high" | "medium" | "low";
+  /** Paid steps behind it. */
+  evidence: string[];
+  /** What it means for the person. */
+  soWhat?: string;
+}
+
+/**
+ * What the agent made of the answers between paid steps: what it learned, what's still open, and
+ * what it bought next because of it (or why it stopped). For a job with an order, whether to go ahead.
+ */
+export interface Thought {
+  round: number;
+  learned: string;
+  open: string[];
+  /** Steps added because of what was learned. */
+  added: { id: string; label: string; why: string; price: string }[];
+  /** The last round: done looking. */
+  final?: boolean;
+  /** For a job with a move: go ahead, or hold and why. */
+  decision?: { go: boolean; why: string };
+  at: string;
 }
 
 export interface AiStats {
@@ -317,6 +358,8 @@ export type MoveAction =
       maxPrice: number;
       stopPrice?: number;
       quantity: number;
+      /** now: buy from whoever is selling at up to maxPrice, and cancel whatever isn't filled at once. wait (default): rest on the book until it fills. */
+      fill?: "now" | "wait";
       /** Set when the order is for a combination: one contract that pays only if every leg resolves as named. */
       combo?: Combo;
     }
@@ -378,6 +421,10 @@ export interface Proposal {
   adjustments?: string[];
   /** What the user gave, extracted once by the composer: name -> value with its type. */
   givens?: Record<string, { type: string; value: string }>;
+  /** What the job sets out to answer; the report answers each one. */
+  questions?: JobQuestion[];
+  /** Spare money (USD) for lookups the agent decides on mid-job; 0 turns it off. Defaults to about what the planned lookups cost. */
+  reserveUsd?: number;
   /** How this proposal was found, for the funnel and the report. */
   compose?: ComposeTrace;
   tier?: "quick" | "thorough" | "certain";
@@ -402,6 +449,8 @@ export interface OrderResult {
   filledQuantity?: number;
   avgPrice?: number;
   updatedAt?: string;
+  /** A "buy now" order the exchange let rest: cancel what isn't filled at this time. */
+  cancelAfter?: string;
   /** Fingerprint of the order written to Arc: digest of the order record and the transaction. */
   anchor?: { digest: string; tx: string };
 }
@@ -419,6 +468,8 @@ export interface Run {
   lanes?: { id: string; question: string; importance: "must" | "should" | "nice" }[];
   /** The write-up once the job is done. */
   report?: Report;
+  /** The agent's notes between paid steps: what it learned and what it bought next because of it. */
+  thoughts?: Thought[];
   /** The recipe this job taught the book, if it was composed and worked. */
   /** Where this job's orders go, chosen when it was made: practice, Gemini's test exchange, or Gemini with real money. */
   venue?: Venue;

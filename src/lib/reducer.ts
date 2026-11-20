@@ -48,6 +48,19 @@ export function reduce(run: Run | null, e: SeqEvent): Run | null {
       return mapPhase(run, e.phaseId, (p) => ({ ...p, ...e.patch }));
     case "run.learned":
       return { ...run, learned: e.recipe };
+    case "run.thought":
+      return { ...run, thoughts: [...(run.thoughts ?? []).filter((t) => t.round !== e.thought.round), e.thought] };
+    case "research.added": {
+      const have = new Set(run.phases.map((p) => p.id));
+      const fresh = e.phases.filter((p) => !have.has(p.id));
+      // New steps go before the move and the write-up, so the graph reads in order.
+      const at = run.phases.findIndex((p) => ["check", "act", "watch"].includes(p.id));
+      const phases = at < 0 ? [...run.phases, ...fresh] : [...run.phases.slice(0, at), ...fresh, ...run.phases.slice(at)];
+      const proposal = run.proposal
+        ? { ...run.proposal, research: [...run.proposal.research, ...e.steps.filter((s) => !run.proposal!.research.some((r) => r.id === s.id))], ...(e.questions?.length && !run.proposal.questions?.length ? { questions: e.questions } : {}) }
+        : run.proposal;
+      return { ...run, phases, proposal };
+    }
     case "run.tallied":
       return { ...run, verdict: e.verdict };
     case "payment.updated":

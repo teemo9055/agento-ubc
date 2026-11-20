@@ -6,7 +6,7 @@ import { lookupCost } from "./move";
  * instead of waiting for the agent: a bit more, a bit less, a better or worse price, fewer
  * paid lookups, longer or shorter driving days. Anything else is said to the agent in words.
  */
-export type AdjustKind = "more" | "less" | "pay-more" | "pay-less" | "drop-lookups" | "drop-check";
+export type AdjustKind = "more" | "less" | "pay-more" | "pay-less" | "drop-lookups" | "drop-check" | "fill-now" | "fill-wait";
 
 export interface Adjustment {
   kind: AdjustKind;
@@ -76,6 +76,13 @@ export function adjustmentsFor(p: Proposal): Adjustment[] {
     } else if (ask != null && a.maxPrice < ask && ask <= 0.99) out.push({ kind: "pay-more", label: `Buy now at ${cents(ask)}` });
     else if (a.maxPrice > 0.03) out.push({ kind: "pay-less", label: `Wait for a lower price (${cents(a.maxPrice - 0.02)})` });
   }
+  // Buy from whoever is selling now (cancel what doesn't fill), or rest on the book until the price comes.
+  // Only on a real exchange, and only when the price already reaches a seller ("Buy now at X" covers the rest).
+  if (a?.kind === "prediction_order" && !a.combo && a.trade !== "sell" && a.orderType === "limit" && p.venue !== "paper") {
+    const ask = p.market?.ask;
+    if (a.fill === "now") out.push({ kind: "fill-wait", label: "Let it wait for my price instead" });
+    else if (ask == null || a.maxPrice >= ask) out.push({ kind: "fill-now", label: "Buy now, nothing left waiting" });
+  }
   if (a?.kind === "prediction_order" && a.combo && a.maxPrice > 0.03) out.push({ kind: "pay-less", label: `Pay at most ${cents(a.maxPrice - 0.02)}` });
   if (a && p.research.length) out.push({ kind: "drop-lookups", label: `${p.research.length === 1 ? "Skip the paid lookup" : `Skip the ${p.research.length} paid lookups`} (save $${p.research.reduce((x, r) => x + lookupCost(r), 0) < 0.01 ? p.research.reduce((x, r) => x + lookupCost(r), 0).toFixed(4) : p.research.reduce((x, r) => x + lookupCost(r), 0).toFixed(2)})` });
   if (p.condition) out.push({ kind: "drop-check", label: "Go ahead without the check" });
@@ -108,6 +115,8 @@ export function applyAdjust<T extends Adjustable>(input: T, p: Proposal, kind: A
     if (!act.combo && act.trade !== "sell" && kind === "pay-more" && ask != null && act.maxPrice < ask) price = ask;
     if (!act.combo && act.trade === "sell" && kind === "pay-less" && bid != null && act.maxPrice > bid) price = bid;
     a.maxPrice = Math.min(0.99, Math.max(0.01, round2(price)));
+    // "Buy now at the ask" on a real exchange: take the seller now rather than rest.
+    if (!act.combo && act.trade !== "sell" && kind === "pay-more" && ask != null && act.maxPrice < ask && p.venue !== "paper" && a.orderType === "limit") a.fill = "now";
     if (a.orderType === "stop-limit" && typeof a.stopPrice === "number" && a.stopPrice > (a.maxPrice as number)) a.stopPrice = a.maxPrice;
   }
   if (kind === "drop-lookups") {
@@ -117,6 +126,7 @@ export function applyAdjust<T extends Adjustable>(input: T, p: Proposal, kind: A
     if (usesOracle(out.condition)) out.condition = null;
     if (Array.isArray(out.alsoRequire)) out.alsoRequire = out.alsoRequire.filter((c) => !usesOracle(c));
   }
+  if ((kind === "fill-now" || kind === "fill-wait") && a && p.action?.kind === "prediction_order") a.fill = kind === "fill-now" ? "now" : "wait";
   if (kind === "drop-check") {
     out.condition = null;
     out.alsoRequire = null;

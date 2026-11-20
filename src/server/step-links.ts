@@ -1,6 +1,6 @@
 import type { Proposal } from "@/lib/types";
 import { getCapability } from "./catalog/store";
-import { parseRef } from "./dataflow";
+import { bindRefs, parseRef } from "./dataflow";
 
 /**
  * After a step is changed, every step that uses its answer must still find what it reads. A link
@@ -36,7 +36,7 @@ function returns(url: string, path: string): boolean | undefined {
 export function brokenLinks(p: Proposal): BrokenLink[] {
   const out: BrokenLink[] = [];
   for (const r of p.research) {
-    const refs = [...Object.values(r.bind ?? {}), ...(r.when ? [r.when.ref] : [])];
+    const refs = [...Object.values(r.bind ?? {}).flatMap(bindRefs), ...(r.when ? [r.when.ref] : [])];
     for (const ref of refs) {
       const x = parseRef(ref);
       if (x?.kind !== "step") continue;

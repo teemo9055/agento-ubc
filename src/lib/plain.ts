@@ -64,7 +64,7 @@ export function doesLine(a: MoveAction): { label: string; detail: string } {
   if (a.kind === "spot_order") return a.side === "buy" ? { label: `Buy ${money(a.amountUsd)} of ${coin(a.symbol)}`, detail: `only at $${a.limitPrice.toLocaleString()} or lower` } : { label: `Sell ${money(a.amountUsd)} of ${coin(a.symbol)}`, detail: `only at $${a.limitPrice.toLocaleString()} or higher` };
   const total = Math.round(a.maxPrice * a.quantity * 100) / 100;
   if (a.trade === "sell") return { label: `Sell ${a.quantity}`, detail: `for ${Math.round(a.maxPrice * 100)}¢ each or more` };
-  const wait = a.orderType === "stop-limit" ? `, once the price reaches ${Math.round((a.stopPrice ?? a.maxPrice) * 100)}¢` : "";
+  const wait = a.orderType === "stop-limit" ? `, once the price reaches ${Math.round((a.stopPrice ?? a.maxPrice) * 100)}¢` : a.fill === "now" ? ", bought now from whoever is selling (nothing left waiting)" : "";
   return { label: `Pay up to ${money(total)}`, detail: `${Math.round(a.maxPrice * 100)}¢ or less for each $1 it can pay${wait}` };
 }
 

@@ -335,7 +335,9 @@ export function Chat({
   const input = useRef<HTMLTextAreaElement>(null);
   const chat = run.chat ?? [];
   const last = chat[chat.length - 1];
-  const open = run.status === "exploring" || run.status === "draft";
+  // A finished job still takes questions: they're answered from what it bought, at no cost.
+  const after = run.status === "done";
+  const open = run.status === "exploring" || run.status === "draft" || after;
   const editing = Boolean(focus) && run.status === "draft";
   const busy = Boolean(run.thinking) || sending || edits.some((e) => e.state === "checking" || e.state === "applying");
 
@@ -448,7 +450,7 @@ export function Chat({
 
   const proposedPlan = plan?.status === "proposed" && run.status === "exploring" ? plan : undefined;
   const quick = quickFor(run, plan);
-  const placeholder = editing && focus ? (focus.kind === "card" ? CARD_HINT[focus.card] : focus.hint) : run.status === "draft" ? "Ask for something different" : proposedPlan ? "Say what to change, or “Add a step: …”" : last?.options?.length ? "Or type your own answer" : chat.length > 1 ? "Reply or ask something else" : `Ask ${THEMES[run.agent].name} anything`;
+  const placeholder = after ? "Ask about what it found (free: uses what was bought)" : editing && focus ? (focus.kind === "card" ? CARD_HINT[focus.card] : focus.hint) : run.status === "draft" ? "Ask for something different" : proposedPlan ? "Say what to change, or “Add a step: …”" : last?.options?.length ? "Or type your own answer" : chat.length > 1 ? "Reply or ask something else" : `Ask ${THEMES[run.agent].name} anything`;
 
   return (
     <section className="flex h-full min-h-0 flex-col" aria-label="Chat with the agent">

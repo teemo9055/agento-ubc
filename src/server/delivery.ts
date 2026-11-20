@@ -100,4 +100,9 @@ export const VENDOR_PROMISES: Record<string, DeliveryPromise> = {
   read_page: { fields: ["text"] },
   read_listing: { fields: ["url"] },
   market_odds: { fields: ["markets"] },
+  headcount_history: { fields: ["domain"] },
+  funding_events: { fields: ["rounds"] },
+  company_events: { fields: ["events"] },
+  deep_search: { fields: ["results"] },
+  read_article: { fields: ["text"] },
 };

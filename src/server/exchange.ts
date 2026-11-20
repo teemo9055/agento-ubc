@@ -210,7 +210,7 @@ export function describeAction(a: MoveAction) {
       ? a.trade === "sell"
         ? `Sell ${a.quantity} × ${a.side.toUpperCase()} “${a.label}” at ≥ ${cents(a.maxPrice)}`
         : `${a.quantity} × ${a.side.toUpperCase()} “${a.label}” once it rises to ${cents(a.stopPrice ?? a.maxPrice)}, paying ≤ ${cents(a.maxPrice)}`
-      : `${a.quantity} × ${a.side.toUpperCase()} “${a.label}” at ≤ ${cents(a.maxPrice)}`;
+      : `${a.quantity} × ${a.side.toUpperCase()} “${a.label}” at ≤ ${cents(a.maxPrice)}${a.fill === "now" ? ", buy now" : ""}`;
   if (a.kind === "spot_order") return `${a.side === "buy" ? "Buy" : "Sell"} $${a.amountUsd} of ${a.symbol.replace(/usd$/, "").toUpperCase()} at ${a.side === "buy" ? "≤" : "≥"} $${a.limitPrice}`;
   return `Itinerary: ${a.stops.join(" → ")}`;
 }
@@ -275,20 +275,37 @@ export async function placeOrder(action: MoveAction, since = Date.now()): Promis
     }
     if (dup)
       return { venue, status: dup.status === "filled" ? "filled" : "open", detail, orderId: String(dup.orderId), notional, symbol: action.symbol, quantity: action.quantity, filledQuantity: Number(dup.filledQuantity ?? 0), updatedAt: now() };
-    const r = await priv<{ orderId: number; status: string; filledQuantity?: string; avgExecutionPrice?: string | null }>("/v1/prediction-markets/order", {
-      symbol: action.symbol,
-      orderType: action.orderType,
-      side: action.trade ?? "buy",
-      outcome: action.side,
-      quantity: String(action.quantity),
-      price: action.maxPrice.toFixed(2),
-      ...(action.orderType === "stop-limit" ? { stopPrice: (action.stopPrice ?? action.maxPrice).toFixed(2) } : {}),
-      timeInForce: "good-til-cancel",
-    });
+    type Placed = { orderId: number; status: string; filledQuantity?: string; avgExecutionPrice?: string | null };
+    const send = (timeInForce: string) =>
+      priv<Placed>("/v1/prediction-markets/order", {
+        symbol: action.symbol,
+        orderType: action.orderType,
+        side: action.trade ?? "buy",
+        outcome: action.side,
+        quantity: String(action.quantity),
+        price: action.maxPrice.toFixed(2),
+        ...(action.orderType === "stop-limit" ? { stopPrice: (action.stopPrice ?? action.maxPrice).toFixed(2) } : {}),
+        timeInForce,
+      });
+    // Buy now: take what sellers offer at up to the approved price, and cancel the rest straight away.
+    // If the exchange won't take that kind of order, it rests normally and the job cancels it shortly after.
+    const atOnce = action.fill === "now" && action.orderType === "limit";
+    let r: Placed;
+    let cancelSoon = false;
+    try {
+      r = await send(atOnce ? "immediate-or-cancel" : "good-til-cancel");
+    } catch (e) {
+      if (!atOnce || !/time.?in.?force|immediate|not supported|invalid/i.test((e as Error).message)) throw e;
+      r = await send("good-til-cancel");
+      cancelSoon = true;
+    }
+    const filled = Number(r.filledQuantity ?? 0);
+    const nothing = atOnce && !cancelSoon && r.status !== "filled" && filled === 0;
     return {
       venue,
-      status: r.status === "filled" ? "filled" : r.status === "cancelled" ? "cancelled" : "open",
-      detail,
+      status: r.status === "filled" ? "filled" : r.status === "cancelled" || (atOnce && !cancelSoon) ? (filled > 0 ? "filled" : "cancelled") : "open",
+      detail: nothing ? `No one was selling at ${Math.round(action.maxPrice * 100)}¢ or less, so nothing was bought` : atOnce && !cancelSoon && filled > 0 && filled < action.quantity ? `${detail} · bought ${filled} of ${action.quantity} at once, the rest cancelled` : detail,
+      ...(cancelSoon ? { cancelAfter: new Date(Date.now() + 30_000).toISOString() } : {}),
       orderId: String(r.orderId),
       notional,
       symbol: action.symbol,

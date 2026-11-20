@@ -1,4 +1,4 @@
-import { BadInput, checkWhen, compareGroup, fillInput, parseRef, refsOf, resolveRef, UnresolvedRef, whenText, type Results } from "../dataflow";
+import { BadInput, bindRefs, checkWhen, compareGroup, fillInput, parseRef, refsOf, resolveBind, UnresolvedRef, whenText, type Results } from "../dataflow";
 import { getCapability } from "../catalog/store";
 import { noteFor } from "../catalog/notes";
 import { toneFor } from "../catalog/tone";
@@ -10,7 +10,7 @@ import { SELLERS } from "../sellers";
 import { PRODUCTS } from "../x402";
 import * as gemini from "../gemini";
 import * as geo from "../geo";
-import { describeAction, ExchangeError, marketBase, notionalOf, placeOrder, refreshOrder, VENUE_NAME, VENUE_NOTE } from "../exchange";
+import { cancelOrder, describeAction, ExchangeError, marketBase, notionalOf, placeOrder, refreshOrder, VENUE_NAME, VENUE_NOTE } from "../exchange";
 import { templateOf, watchesOrder } from "@/lib/templates";
 import { doesLine } from "@/lib/plain";
 
@@ -162,10 +162,12 @@ export const conditionText = (c: MoveCondition) =>
 function flowOf(r: ResearchStep, all: ResearchStep[]): Pick<PhaseDraft, "dependsOn" | "binds" | "conditional" | "tieBreaker" | "lane"> {
   const deps = new Set(refsOf(r));
   if (r.onConflict) for (const m of all) if (m.verify?.group === r.onConflict) deps.add(m.id);
-  const binds = Object.entries(r.bind ?? {}).flatMap(([field, ref]) => {
-    const x = parseRef(ref);
-    return x?.kind === "step" ? [{ from: x.id, field }] : [];
-  });
+  const binds = Object.entries(r.bind ?? {}).flatMap(([field, ref]) =>
+    bindRefs(ref).flatMap((one) => {
+      const x = parseRef(one);
+      return x?.kind === "step" ? [{ from: x.id, field }] : [];
+    }),
+  );
   return {
     dependsOn: [...deps].filter((d) => all.some((x) => x.id === d)),
     ...(binds.length ? { binds } : {}),
@@ -441,17 +443,21 @@ export function toolboxAgent(id: AgentId): AgentDef {
           const filled: Record<string, string> = { ...step.args };
           const flowed: { from: string; field: string; preview: string }[] = [];
           for (const [field, ref] of Object.entries(step.bind)) {
+            // An input the lookup can do without (a date to start from) is simply left out when not found.
+            const optional = t.optional?.includes(field);
             let v: unknown;
             try {
-              v = resolveRef(ref, known, givens);
+              v = resolveBind(ref, known, givens);
             } catch (e) {
+              if (e instanceof UnresolvedRef && optional) continue;
               if (e instanceof UnresolvedRef) ctx.skip!(`Nothing to check: ${e.message.replace(/^Step (\w+)/, "step $1")}`);
               throw e;
             }
             const one = Array.isArray(v) ? v[0] : v;
+            if ((one == null || typeof one === "object") && optional) continue;
             if (one == null || typeof one === "object") ctx.skip!(`Nothing to check: no ${field} was found earlier`);
             filled[field] = String(one).replace(/\s+/g, " ").trim().slice(0, 300);
-            const r = parseRef(ref);
+            const r = parseRef(bindRefs(ref)[0]);
             flowed.push({ from: r?.kind === "step" ? r.id : "you", field, preview: filled[field].slice(0, 40) });
           }
           args = filled;
@@ -490,7 +496,7 @@ export function toolboxAgent(id: AgentId): AgentDef {
             })
           : await buy();
         mem.data[step.id] = got;
-        const text = step.tool === "service" ? noteFor(cap, got) : v.note(got).slice(0, 48);
+        const text = step.tool === "service" ? noteFor(cap, got) : v.note(got).slice(0, 200);
         const tone = step.tool === "service" ? await toneFor(cap, got, p.compose?.facts.find((f) => f.id === step.lane)?.question) : "neutral";
         ctx.update?.(step.id, { finding: { text, tone } });
         (mem.tones ??= {})[step.id] = tone;
@@ -575,7 +581,22 @@ export function toolboxAgent(id: AgentId): AgentDef {
           throw new PhaseFailure("exchange_rejected", `${VENUE_NAME[p.venue]}: ${err.message}`);
         }
         ctx.order?.(mem.order);
-        ctx.progress(1, mem.order.status === "filled" ? "Filled" : mem.order.status === "simulated" ? "Simulated, not sent" : "Order resting on the exchange");
+        // Buy now, on an exchange that let the order rest: give it a moment, then cancel what didn't fill.
+        if (mem.order.cancelAfter && mem.order.status === "open") {
+          ctx.progress(0.6, "Buying from whoever is selling now");
+          const until = Date.parse(mem.order.cancelAfter);
+          while (Date.now() < until && mem.order.status === "open") {
+            await new Promise((r) => setTimeout(r, 3_000));
+            mem.order = await refreshOrder(mem.order, a.kind).catch(() => mem.order!);
+          }
+          if (mem.order.status === "open") {
+            const got = mem.order.filledQuantity ?? 0;
+            mem.order = await cancelOrder(mem.order, a.kind).catch(() => mem.order!);
+            mem.order = { ...mem.order, detail: got > 0 ? `Bought ${got} at once; the rest was cancelled` : "No one was selling at that price, so nothing was bought" };
+          }
+          ctx.order?.(mem.order);
+        }
+        ctx.progress(1, mem.order.status === "filled" ? "Filled" : mem.order.status === "simulated" ? "Simulated, not sent" : mem.order.status === "cancelled" ? "Nothing bought: no seller at that price" : "Order resting on the exchange");
         return;
       }
       ctx.progress(1);

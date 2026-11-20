@@ -9,7 +9,21 @@ type Step = { id?: string; tool: string; args: Record<string, string>; label: st
 const FEEDS: Record<string, Record<string, Record<string, string>>> = {
   read_listing: { shopping_prices: { product: "searchTitle" }, image_check: { imageUrl: "photo" }, web_search: { query: "seller" } },
   place_reviews: { phone_check: { phone: "found.phone" }, read_page: { url: "found.website" }, company_record: { site: "found.website" } },
-  web_search: { read_page: { url: "results[0].link" }, company_record: { site: "results[0].link" } },
+  web_search: {
+    read_page: { url: "results[0].link" },
+    company_record: { site: "results[0].link" },
+    headcount_history: { site: "results[0].link" },
+    funding_events: { site: "results[0].link" },
+    company_events: { site: "results[0].link" },
+  },
+  // The staff history pins the company to one domain: every later company lookup uses that domain.
+  headcount_history: { funding_events: { site: "domain" }, company_events: { site: "domain" }, company_record: { site: "domain" } },
+  // Events after the last round: what changed since the money came in.
+  funding_events: { company_events: { since: "lastRoundDate" }, deep_search: { since: "lastRoundDate" } },
+  // Read the article behind the newest event or the top result.
+  company_events: { read_article: { url: "events[0].source" } },
+  deep_search: { read_article: { url: "results[0].url" } },
+  news_search: { read_article: { url: "results[0].link" } },
 };
 
 export function autoChain<T extends { research?: unknown }>(move: T): { move: T; chained: boolean } {

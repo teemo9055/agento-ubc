@@ -1,4 +1,4 @@
-import type { Plan, AiStats, ChatMsg, OrderResult, CostLine, Decision, Deliverable, Failure, FailureAction, Hex, Payment, Phase, ReapprovalRequest, Report, Run, Settlement } from "./types";
+import type { Plan, AiStats, ChatMsg, OrderResult, CostLine, Decision, Deliverable, Failure, FailureAction, Hex, Payment, Phase, JobQuestion, ReapprovalRequest, Report, ResearchStep, Run, Settlement, Thought } from "./types";
 
 export type RunEvent =
   | { type: "workorder.updated"; run: Run }
@@ -30,6 +30,10 @@ export type RunEvent =
   | { type: "decision.logged"; decision: Decision }
   | { type: "run.done"; deliverable: Deliverable; refunded: string; refundTx?: Hex; at: string; report?: Report }
   | { type: "run.learned"; recipe: NonNullable<Run["learned"]> }
+  /** The agent read what it bought so far and decided what to do next. */
+  | { type: "run.thought"; thought: Thought }
+  /** Steps the agent added mid-job because of what it learned, paid from the approved reserve. */
+  | { type: "research.added"; steps: ResearchStep[]; phases: Phase[]; questions?: JobQuestion[] }
   | { type: "run.cancelled"; refunded: string; refundTx?: Hex; at: string };
 
 export type SeqEvent = RunEvent & { seq: number };

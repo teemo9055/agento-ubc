@@ -1,6 +1,6 @@
 import type { Run } from "@/lib/types";
 import { answerOf } from "./dataflow";
-import type { CompanyRecord, ImageCheck, ListingRead, OtherOdds, PageRead, PhoneCheck, PlaceReviews, ShoppingPrices, WebResults } from "./web-tools";
+import type { CompanyEvents, CompanyRecord, FundingHistory, HeadcountHistory, ImageCheck, ListingRead, OtherOdds, PageRead, PhoneCheck, PlaceReviews, ShoppingPrices, WebResults } from "./web-tools";
 import type { OraclePrice } from "./onchain";
 
 /**
@@ -22,6 +22,15 @@ function askedPrice(text: string): number | undefined {
   return Number.isFinite(n) && n > 0 ? n : undefined;
 }
 
+const norm = (s: string) => ` ${s.toLowerCase().replace(/[^a-z0-9]+/g, " ").trim()} `;
+/** The names the job is about: what the person typed in, and the name Google or the record found. */
+function subjectNames(run: Run, found: string[]): string[] {
+  const given = Object.entries(run.proposal?.givens ?? {})
+    .filter(([k]) => /business|company|place|seller|name|brand/i.test(k))
+    .map(([, g]) => g.value);
+  return [...given, ...found].map((n) => norm(n).trim()).filter((n) => n.length >= 3);
+}
+
 export function signalsOf(run: Run): Signal[] {
   const steps = run.proposal?.research ?? [];
   const got = (id: string) => answerOf(run.results?.[id]);
@@ -40,8 +49,10 @@ export function signalsOf(run: Run): Signal[] {
 
   // The company behind a website: does it exist, and how long has the site been around?
   const companies = of<CompanyRecord>("company_record");
+  // A small local business often has no company record; that only counts against it when Google can't find it either.
+  const onGoogle = of<PlaceReviews>("place_reviews").some((r) => r.data.found);
   for (const c of companies) {
-    if (!c.data.found) out.push({ level: "warn", text: `No company record exists for ${c.data.domain}.`, evidence: [c.id] });
+    if (!c.data.found && !onGoogle) out.push({ level: "warn", text: `No company record exists for ${c.data.domain}.`, evidence: [c.id] });
     if (c.data.domainAgeYears != null && c.data.domainAgeYears < 1) out.push({ level: "bad", text: `${c.data.domain} was registered less than a year ago (${c.data.domainSince}). Scam sites are usually brand new.`, evidence: [c.id] });
     else if (c.data.domainAgeYears != null && c.data.domainAgeYears >= 3) out.push({ level: "good", text: `${c.data.domain} has been registered since ${c.data.domainSince?.slice(0, 4)}, ${c.data.domainAgeYears} years ago.`, evidence: [c.id] });
   }
@@ -65,6 +76,9 @@ export function signalsOf(run: Run): Signal[] {
       continue;
     }
     const low = r.data.reviews.filter((x) => x.rating > 0 && x.rating <= 2).length;
+    // Recent reviews well below the all-time rating: something changed lately.
+    if (r.data.rating != null && r.data.average != null && (r.data.ratingCount ?? 0) >= 20 && r.data.rating - r.data.average >= 0.8)
+      out.push({ level: "warn", text: `Recent reviews average ${r.data.average}★, well below its ${r.data.rating}★ from ${r.data.ratingCount!.toLocaleString()} reviews overall: something may have changed lately.`, evidence: [r.id] });
     if (r.data.average != null && r.data.average < 3.5) out.push({ level: "warn", text: `${r.data.found.name} averages ${r.data.average}★ across its recent reviews.`, evidence: [r.id] });
     else if (r.data.average != null && r.data.average >= 4.3) out.push({ level: "good", text: `${r.data.found.name} averages ${r.data.average}★ across its recent reviews.`, evidence: [r.id] });
     if (low >= 2) out.push({ level: "warn", text: `${low} of its ${r.data.reviews.length} most recent reviews are 1 or 2 stars.`, evidence: [r.id] });
@@ -103,11 +117,18 @@ export function signalsOf(run: Run): Signal[] {
     else if (i.data.matches.length) out.push({ level: "good", text: `The photo isn't reused on other marketplace listings${i.data.matches.length ? ` (it matches ${i.data.matches.length} product pages, which is normal)` : ""}.`, evidence: [i.id] });
   }
 
-  // News: stories about lawsuits, recalls, layoffs or fraud.
+  // News: stories about lawsuits, recalls, layoffs or fraud, and only ones that name who this job is about.
+  // A headline about "a Bay Area plumbing contractor" isn't a story about this one.
+  const names = subjectNames(run, [
+    ...of<PlaceReviews>("place_reviews").flatMap((r) => (r.data.found ? [r.data.found.name] : [])),
+    ...companies.flatMap((c) => (c.data.name ? [c.data.name] : [])),
+  ]);
+  const aboutThem = (text: string) => !names.length || names.some((n) => norm(text).includes(` ${n} `));
   for (const n of of<WebResults>("news_search")) {
-    const hits = n.data.results.filter((x) => RED_WORDS.test(`${x.title} ${x.snippet ?? ""}`));
-    if (hits.length) out.push({ level: "warn", text: `${hits.length} recent ${hits.length === 1 ? "story mentions" : "stories mention"} trouble, e.g. “${hits[0].title.slice(0, 90)}”.`, evidence: [n.id] });
-    else if (n.data.results.length) out.push({ level: "good", text: `None of the ${n.data.results.length} recent stories mention lawsuits, recalls, layoffs or fraud.`, evidence: [n.id] });
+    const trouble = n.data.results.filter((x) => RED_WORDS.test(`${x.title} ${x.snippet ?? ""}`));
+    const hits = trouble.filter((x) => aboutThem(`${x.title} ${x.snippet ?? ""}`));
+    if (hits.length) out.push({ level: "warn", text: `${hits.length} recent ${hits.length === 1 ? "story names them and mentions" : "stories name them and mention"} trouble, e.g. “${hits[0].title.slice(0, 90)}”.`, evidence: [n.id] });
+    else if (n.data.results.length) out.push({ level: "good", text: `None of the ${n.data.results.length} recent stories link them to lawsuits, recalls, layoffs or fraud${trouble.length ? ` (${trouble.length} ${trouble.length === 1 ? "story is" : "stories are"} about other firms)` : ""}.`, evidence: [n.id] });
   }
 
   // Before an order: is the same outcome cheaper elsewhere, and how far is the price from the line?
@@ -142,6 +163,45 @@ export function signalsOf(run: Run): Signal[] {
       else if (away > 0) out.push({ level: "good", text: `${where}, ${(away * 100).toFixed(1)}% short of the $${strike.toLocaleString()} line.`, evidence: [p.id] });
       else out.push({ level: "good", text: `${where}, already above the $${strike.toLocaleString()} line.`, evidence: [p.id] });
     }
+  }
+
+  // A company's staff over time, its money, and what changed since: the numbers worked out across sources.
+  const pct = (x: number) => `${x >= 0 ? "+" : ""}${Math.round(x * 100)}%`;
+  const money = (x?: number) => (x == null ? "" : x >= 1e9 ? `$${(x / 1e9).toFixed(1)}B` : x >= 1e6 ? `$${Math.round(x / 1e5) / 10}M` : `$${Math.round(x).toLocaleString()}`);
+  const heads = of<HeadcountHistory>("headcount_history");
+  const funds = of<FundingHistory>("funding_events");
+  for (const h of heads) {
+    if (!h.data.found) continue;
+    const c = h.data.change12m ?? h.data.change6m;
+    const span = h.data.change12m != null ? "12" : "6";
+    if (c != null && c <= -0.15) out.push({ level: "warn", text: `${h.data.name ?? h.data.domain}'s staff is down ${pct(c)} over ${span} months (now about ${h.data.employees?.toLocaleString() ?? "?"}).`, evidence: [h.id] });
+    else if (c != null && c >= 0.1) out.push({ level: "good", text: `${h.data.name ?? h.data.domain}'s staff grew ${pct(c)} over ${span} months (now about ${h.data.employees?.toLocaleString() ?? "?"}).`, evidence: [h.id] });
+  }
+  for (const f of funds) {
+    const last = f.data.rounds[0];
+    if (!last) continue;
+    const m = f.data.monthsSinceLast;
+    if (m != null && m <= 12) out.push({ level: "good", text: `Raised ${money(last.amountUsd) || "money"}${last.type ? ` (${last.type})` : ""} in ${last.date?.slice(0, 7)}, ${m} months ago.`, evidence: [f.id] });
+    // Across sources: how staff moved since the money came in.
+    for (const h of heads) {
+      const at = last.date?.slice(0, 7);
+      const then = at ? h.data.byMonth.find((r) => r.month >= at) : undefined;
+      const now = h.data.byMonth.at(-1);
+      if (!then || !now || then.month === now.month || !then.employees) continue;
+      const since = (now.employees - then.employees) / then.employees;
+      const text = `Since its ${at} round, staff went from ${then.employees.toLocaleString()} to ${now.employees.toLocaleString()} (${pct(since)}).`;
+      if (since <= -0.1) out.push({ level: m != null && m >= 18 ? "bad" : "warn", text: `${text} Shrinking after raising${m != null && m >= 18 ? `, ${m} months on,` : ""} can mean money is getting tight.`, evidence: [f.id, h.id] });
+      else if (since >= 0.1) out.push({ level: "good", text: `${text} The money is going into hiring.`, evidence: [f.id, h.id] });
+      else out.push({ level: "good", text, evidence: [f.id, h.id] });
+    }
+    if (m != null && m >= 30 && heads.some((h) => (h.data.change12m ?? 0) < 0)) out.push({ level: "warn", text: `No new money in ${m} months while staff is shrinking.`, evidence: [f.id, ...heads.map((h) => h.id)] });
+  }
+  // Dated events: layoffs, closures and lawsuits are flagged with when they happened.
+  for (const e of of<CompanyEvents>("company_events")) {
+    const trouble = e.data.events.filter((x) => /decreas|layoff|clos|lawsuit|sued|files_suit|bankrupt/i.test(`${x.category ?? ""} ${x.summary ?? ""}`));
+    if (trouble.length) out.push({ level: "warn", text: `${trouble.length} event${trouble.length === 1 ? "" : "s"} since ${e.data.since} point to trouble, e.g. ${trouble[0].date ?? ""}: ${(trouble[0].summary ?? trouble[0].category ?? "").slice(0, 110)}.`, evidence: [e.id] });
+    const grow = e.data.events.filter((x) => /hires|launch|expand|acquires|partners|increases_headcount|receives_award/i.test(x.category ?? ""));
+    if (!trouble.length && grow.length >= 2) out.push({ level: "good", text: `${grow.length} signs of growth since ${e.data.since} (hires, launches, deals), and no layoffs or lawsuits on record.`, evidence: [e.id] });
   }
 
   // A website with almost nothing on it.

@@ -42,9 +42,42 @@ export function parseRef(ref: string): { kind: "given"; name: string } | { kind:
   return null;
 }
 
+const TPL = /\{(\$[^{}\s]+)\}/g;
+/** A bind value that builds a string from several answers: "{$s1.found.name} {$s1.found.address} license". */
+export const isTemplate = (v: string) => !parseRef(v) && /\{\$[^{}\s]+\}/.test(v);
+/** The refs inside a bind value: itself, or each `{$ref}` in a template. */
+export const bindRefs = (v: string): string[] => (isTemplate(v) ? [...v.matchAll(TPL)].map((m) => m[1]) : [v]);
+
+/**
+ * Fills a bind value. A plain ref gives the value itself; a template gives a string with each part
+ * filled in. A part an earlier step didn't find is left out; only when none is found does it fail.
+ */
+export function resolveBind(v: string, results: Results, givens: Givens = {}): unknown {
+  if (!isTemplate(v)) return resolveRef(v, results, givens);
+  let found = 0;
+  let miss: UnresolvedRef | undefined;
+  const out = v.replace(TPL, (_, ref: string) => {
+    try {
+      const x = resolveRef(ref, results, givens);
+      const one = Array.isArray(x) ? x[0] : x;
+      if (one == null || typeof one === "object") return "";
+      found++;
+      return String(one);
+    } catch (e) {
+      if (e instanceof UnresolvedRef) {
+        miss ??= e;
+        return "";
+      }
+      throw e;
+    }
+  });
+  if (!found) throw miss ?? new UnresolvedRef(v, null, "Nothing was found to fill this in");
+  return out.replace(/\s+/g, " ").trim();
+}
+
 /** The step ids a ref, a bind map or a condition reads from. */
 export function refsOf(step: Pick<ResearchStep, "bind" | "when">): string[] {
-  const refs = [...Object.values(step.bind ?? {}), ...(step.when ? [step.when.ref] : [])];
+  const refs = [...Object.values(step.bind ?? {}).flatMap(bindRefs), ...(step.when ? [step.when.ref] : [])];
   return [...new Set(refs.map(parseRef).flatMap((r) => (r?.kind === "step" ? [r.id] : [])))];
 }
 

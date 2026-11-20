@@ -227,6 +227,13 @@ const coverCard = (title: string, loss: { protects: string; usd: number }, optio
     if ("error" in c) return c;
     const input = coverInput(c, loss, title);
     input.research = [...beforeSteps(before), ...input.research];
+    // What the paid checks must settle before any money goes on the market.
+    input.questions = [
+      before.oracle ? "How far is the price from the line right now, and which way is it moving?" : null,
+      before.odds ? "Do Polymarket and Kalshi price the same outcome higher or lower than Gemini?" : null,
+      before.news ? "Does today's news make it more or less likely?" : null,
+      "Is this order worth placing at this price, or should it wait?",
+    ].filter((q): q is string => Boolean(q));
     // Don't pay for a long shot: the price must be within 10% of the line when the order goes in.
     const gate = before.oracle && c.contract.strike ? Math.round(c.contract.strike * 0.9) : undefined;
     if (gate) input.condition = { metric: "oracle_price", symbol: before.oracle!, op: ">=", value: gate };
@@ -259,7 +266,7 @@ const watchCost = (steps: Stage[], w?: Then) => {
  * argument becomes their business, and later stages read earlier answers through `bind`. Its price is
  * worked out from its stages.
  */
-const chainCard = (c: { id: string; ask: string; title: string; why: string; question: string; intro: string; steps: Stage[]; then?: Then }): CardDef => {
+const chainCard = (c: { id: string; ask: string; title: string; why: string; question: string; intro: string; steps: Stage[]; then?: Then; questions?: string[]; reserveUsd?: number }): CardDef => {
   const fields = () => jobById(c.id)?.inputs ?? [];
   const valuesOf = (g?: Inputs): Inputs => Object.fromEntries(fields().map((f) => [f.name, g?.[f.name]?.trim() || f.example]));
   return {
@@ -272,7 +279,8 @@ const chainCard = (c: { id: string; ask: string; title: string; why: string; que
       // What the person gave travels with the job, so it's shown as theirs and a watch reuses it.
       const givens = Object.fromEntries(fields().map((f) => [f.name, { type: f.type, value: v[f.name] }]));
       const then = c.then ? { watch: { ...c.then, title: fill(c.then.title, v) } } : undefined;
-      return { input: { ...input, ...(fields().length ? { givens } : {}), ...(then ? { then } : {}) } as ProposalInput, intro: fill(c.intro, v), venue: "paper" };
+      const questions = c.questions?.map((q) => fill(q, v));
+      return { input: { ...input, ...(fields().length ? { givens } : {}), ...(then ? { then } : {}), ...(questions ? { questions } : {}), ...(c.reserveUsd != null ? { reserveUsd: c.reserveUsd } : {}) } as ProposalInput, intro: fill(c.intro, v), venue: "paper" };
     },
   };
 };
@@ -339,6 +347,7 @@ const CARDS: Record<string, CardDef> = {
       { id: "s4", tool: "web_search", bind: { query: "$s1.seller" }, label: "Who the seller is", why: "An official store, a known reseller, or nobody" },
     ],
     then: { ref: "$s2.lowest", op: "changed", every: "1d", days: 14, title: "Watch: lowest store price for your listing's item", says: "Tells you when the lowest store price moves." },
+    questions: ["Is the asking price fair next to what stores charge for the same item?", "Is the photo the seller's own, or copied from elsewhere?", "Who is the seller, and do buyers trust them?", "What should I offer, and what should I ask before paying?"],
   }),
   "seller-check": chainCard({
     id: "seller-check",
@@ -353,6 +362,7 @@ const CARDS: Record<string, CardDef> = {
       { id: "s3", tool: "image_check", bind: { imageUrl: "$s1.photo" }, label: "Is the photo copied?", why: "A reused photo is a classic scam sign" },
       { id: "s4", tool: "shopping_prices", bind: { product: "$s1.searchTitle" }, label: "Store prices for that item", why: "Far below stores is too good to be true" },
     ],
+    questions: ["Is the seller's phone a real line, or an internet number anyone can get?", "Is the listing's photo copied from elsewhere?", "Is the price too good to be true next to stores?", "What should I ask them before paying?"],
   }),
   "business-check": chainCard({
     id: "business-check",
@@ -366,10 +376,28 @@ const CARDS: Record<string, CardDef> = {
       { id: "s2", tool: "phone_check", bind: { phone: "$s1.found.phone" }, label: "Check their phone", why: "A real business line, or an internet number" },
       { id: "s3", tool: "read_page", bind: { url: "$s1.found.website" }, label: "Read their website", why: "Licence, services and address they claim" },
       { id: "s4", tool: "company_record", bind: { site: "$s1.found.website" }, label: "Company behind the site", why: "How old the site is and its official contacts" },
-      { id: "s5", tool: "news_search", args: { query: "{business}" }, label: "In the news", why: "Complaints, lawsuits or closures" },
-      { id: "s6", tool: "web_search", args: { query: "{business} complaints license" }, label: "Complaints and licence", why: "Licence status and complaint records" },
+      // Built from what Google found: their exact name and town, not just what was typed.
+      { id: "s5", tool: "news_search", bind: { query: "\"{$s1.found.name}\"" }, label: "In the news", why: "Complaints, lawsuits or closures that name them" },
+      { id: "s6", tool: "web_search", bind: { query: "{$s1.found.name} {$s1.found.address} license number complaints" }, label: "Licence and complaints", why: "Their licence and any complaint records, by exact name and address" },
     ],
     then: { ref: "$s5.results[0].title", op: "changed", every: "1d", days: 14, title: "Watch: news about {business}", says: "Tells you if a new top news story about them appears." },
+    questions: ["Is {business} a real, established business?", "What do recent customers say about them?", "Are they licensed, and are there complaints or lawsuits that name them?", "Do the phone and website they list check out?"],
+  }),
+  "company-brief": chainCard({
+    id: "company-brief",
+    ask: "Is {company} ({website}) healthy? Staff, money and what's changed.",
+    title: "Health check: {company}",
+    why: "Pin the company by its website, then its staff over time, its funding, what changed since the last round, and outside coverage.",
+    question: "Check {company} in 4 linked stages, then read what matters",
+    intro: "Each stage uses what the one before found. Find: Coresignal pins {company} to {website} and gives its staff count month by month. Verify: PredictLeads lists every funding round, then the dated events since the last one (hires, layoffs, launches); Exa finds independent coverage since then. Then I read what came back and buy the one or two things that would settle what's still open, like the article behind a layoff, from a small spare amount you approve. Act: each question answered, with the numbers worked out across sources.",
+    steps: [
+      { id: "s1", tool: "headcount_history", args: { site: "{website}" }, label: "Staff over 3 years", why: "Pins the company and shows whether it's growing or shrinking" },
+      { id: "s2", tool: "funding_events", bind: { site: "$s1.domain" }, label: "Every funding round", why: "How it's funded and how long since the money came in" },
+      { id: "s3", tool: "company_events", bind: { site: "$s1.domain", since: "$s2.lastRoundDate" }, label: "What changed since the last round", why: "Layoffs, hires, launches and deals, dated, each with its article" },
+      { id: "s4", tool: "deep_search", args: { query: "{company} news: layoffs, lawsuits, acquisitions, leadership changes, revenue or new funding", exclude: "{website}" }, bind: { since: "$s2.lastRoundDate" }, label: "Independent coverage", why: "What outside sources say since then, not the company itself" },
+    ],
+    questions: ["Is {company} still operating, and how big is it?", "Is it growing or shrinking: staff over the last year, and hiring now?", "How is it funded, and how long since its last round?", "What has changed since then: layoffs, leadership, deals, launches?", "Any red flags before working with or investing in it?"],
+    reserveUsd: 0.06,
   }),
   "company-deep": chainCard({
     id: "company-deep",
@@ -386,6 +414,7 @@ const CARDS: Record<string, CardDef> = {
       { id: "s5", tool: "web_search", args: { query: "{company} complaints lawsuit recall" }, label: "Complaints and lawsuits", why: "What goes wrong, from outside the company" },
       { id: "s6", tool: "web_search", args: { query: "{company} earnings cash layoffs" }, label: "Money health", why: "Earnings, cash and layoffs" },
     ],
+    questions: ["Is {company} real and still operating?", "What has changed at {company} recently?", "Are there lawsuits, recalls or complaints that name it?", "How healthy is it financially?"],
   }),
   "place-reviews": chainCard({
     id: "place-reviews",
@@ -399,6 +428,7 @@ const CARDS: Record<string, CardDef> = {
       { id: "s2", tool: "read_page", bind: { url: "$s1.found.website" }, label: "Read its website", why: "What it offers, hours, prices" },
       { id: "s3", tool: "news_search", args: { query: "{place}" }, label: "In the news", why: "Openings, closures, changes" },
     ],
+    questions: ["Do people rate {place} well lately, compared with its all-time rating?", "Has anything changed recently, like new owners or a closure?", "What does it offer, and when is it open?"],
   }),
   // Inso: news + markets (headlines bought in real USDC on Arc mainnet, then the market)
   "news-crypto": coverCard("Bet: Bitcoin moves up", { protects: "missing a Bitcoin rally", usd: 15 }, () => lineOptions(["BTC2"], "BTC price"), (c) => `Bitcoin's in the news. Read the headlines, then bet on “${c.contract.label}” by ${day(c.event)}.`, { oracle: "btcusd", news: "Bitcoin price", odds: "bitcoin" }),

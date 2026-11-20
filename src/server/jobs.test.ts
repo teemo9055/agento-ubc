@@ -87,10 +87,26 @@ describe("jobs built from what the person typed", () => {
     if ("error" in r) throw new Error(r.error);
     expect(r.proposal.title).toBe("Check: Acme Plumbing, Denver");
     expect(r.proposal.research[0].args.place).toBe("Acme Plumbing, Denver");
-    expect(r.proposal.research[5].args.query).toBe("Acme Plumbing, Denver complaints license");
+    // Later searches are built from what Google found: its exact name and address.
+    expect(r.proposal.research[5].bind?.query).toBe("{$r1.found.name} {$r1.found.address} license number complaints");
+    expect(r.proposal.questions?.[0].ask).toBe("Is Acme Plumbing, Denver a real, established business?");
     expect(r.proposal.givens?.business).toEqual({ type: "company_name", value: "Acme Plumbing, Denver" });
     expect(r.proposal.then?.watch.title).toBe("Watch: news about Acme Plumbing, Denver");
     expect(JSON.stringify(r.proposal)).not.toMatch(/Bay Area/);
+  });
+
+  it("the company check pins the company by its website, and each stage reads the one before", async () => {
+    const b = await buildJob("company-brief", "paper", undefined, undefined, { company: "Acme", website: "acme.io" });
+    if ("error" in b || !("input" in b)) throw new Error("not a single move");
+    const r = await withNet("mainnet", () => validateProposal("worko", b.input, "t-co", { composed: true }));
+    if ("error" in r) throw new Error(r.error);
+    const [s1, s2, s3, s4] = r.proposal.research;
+    expect(s1.args.site).toBe("acme.io");
+    expect(s2.bind?.site).toBe("$r1.domain");
+    expect(s3.bind).toEqual({ site: "$r1.domain", since: "$r2.lastRoundDate" });
+    expect(s4.args.exclude).toBe("acme.io");
+    expect(r.proposal.questions).toHaveLength(5);
+    expect(r.proposal.reserveUsd).toBe(0.06);
   });
 
   it("a pasted listing is read first, and later stages price and check what it sells", async () => {

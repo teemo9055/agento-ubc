@@ -46,6 +46,7 @@ function actionChanges(a: MoveAction, b: MoveAction): string[] {
     if (a.quantity !== b.quantity) out.push(`pays $${a.quantity} → $${b.quantity}`);
     if (a.maxPrice !== b.maxPrice) out.push(`${b.trade === "sell" ? "min" : "max"} price ${cents(a.maxPrice)} → ${cents(b.maxPrice)}`);
     if (a.orderType !== b.orderType) out.push(`${a.orderType} → ${b.orderType}`);
+    if ((a.fill ?? "wait") !== (b.fill ?? "wait")) out.push(b.fill === "now" ? "buys now (nothing left waiting)" : "waits for your price");
     if ((a.stopPrice ?? null) !== (b.stopPrice ?? null) && b.stopPrice != null) out.push(`trigger ${cents(b.stopPrice)}`);
   } else if (a.kind === "spot_order" && b.kind === "spot_order") {
     if (a.symbol !== b.symbol) out.push(`coin: ${a.symbol.toUpperCase()} → ${b.symbol.toUpperCase()}`);

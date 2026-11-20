@@ -3,6 +3,12 @@ import type { Run } from "@/lib/types";
 import { VERDICT } from "./Report";
 import { outcomeOf } from "@/lib/outcome";
 
+const ANSWER = {
+  answered: { text: "Answered", cls: "bg-good/10 text-good" },
+  partly: { text: "Partly", cls: "bg-warn/15 text-warn-ink" },
+  not_found: { text: "Not found", cls: "bg-ink/5 text-ink-3" },
+} as const;
+
 /**
  * A finished job's answer, first and alone: the verdict, one sentence, and what to do. Everything
  * that backs it up (stages, sources, payments) is folded below it.
@@ -28,6 +34,31 @@ export function DoneHero({ run }: { run: Run }) {
         <p className="mt-2 text-[14.5px] font-medium text-ink-2" data-testid="status-headline">
           {outcomeOf(run).headline}
         </p>
+      )}
+      {/* The questions the job set out to answer, each answered or plainly marked not found. */}
+      {r.answers && r.answers.length > 0 && (
+        <div className="mt-5 grid gap-2.5 sm:grid-cols-2" data-testid="answers">
+          {r.answers.map((a, i) => (
+            <div key={a.id} className={`rounded-xl border-[1.5px] bg-surface px-3.5 py-3 ${a.status === "not_found" ? "border-dashed border-line" : "border-ink/80"}`} data-testid={`answer-${a.id}`} data-status={a.status}>
+              <div className="flex items-center justify-between gap-2">
+                <span className="text-[11.5px] font-semibold tracking-wide text-ink-3">QUESTION {i + 1}</span>
+                <span className={`rounded-full px-2 py-[1px] text-[11.5px] font-semibold ${ANSWER[a.status].cls}`}>
+                  {ANSWER[a.status].text}
+                  {a.confidence && a.status !== "not_found" ? ` · ${a.confidence}` : ""}
+                </span>
+              </div>
+              <div className="mt-1 text-[14px] font-semibold leading-snug">{a.ask}</div>
+              <p className="mt-1 text-[14px] leading-snug text-ink-2">{a.text}</p>
+              {a.soWhat && <p className="mt-1.5 text-[13px] font-medium text-agent-ink">{a.soWhat}</p>}
+            </div>
+          ))}
+        </div>
+      )}
+      {r.beyondSearch && (
+        <div className="mt-3 flex items-start gap-2.5 rounded-xl bg-agent-soft px-3.5 py-2.5 text-[14px] leading-snug" data-testid="beyond-search">
+          <span className="shrink-0 font-pixel text-[10px] leading-5 text-agent-ink">PAID DATA</span>
+          <span>{r.beyondSearch}</span>
+        </div>
       )}
       {warnings.length > 0 && (
         <div className="mt-4 grid gap-2">

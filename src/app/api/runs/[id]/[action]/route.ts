@@ -44,7 +44,7 @@ export async function POST(req: NextRequest, ctx: Ctx) {
         return NextResponse.json(await skipGap(id, b.data.fact));
       }
       case "adjust": {
-        const b = z.object({ kind: z.enum(["more", "less", "pay-more", "pay-less", "drop-lookups", "drop-check"]) }).parse(await req.json());
+        const b = z.object({ kind: z.enum(["more", "less", "pay-more", "pay-less", "drop-lookups", "drop-check", "fill-now", "fill-wait"]) }).parse(await req.json());
         return NextResponse.json(await adjustMove(id, b.kind));
       }
       case "plan-start": {
