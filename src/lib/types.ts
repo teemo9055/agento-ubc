@@ -513,4 +513,6 @@ export interface Plan {
   /** Parts of the request no agent can do here, said plainly. */
   unavailable: { what: string; why: string }[];
   status: "proposed" | "running" | "done" | "stopped";
+  /** What the last hand edit did to the other steps, in plain words. */
+  editNotes?: string[];
 }

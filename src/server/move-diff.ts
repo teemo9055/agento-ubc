@@ -16,6 +16,11 @@ export function diffMoves(prev: Proposal, next: Proposal): string[] {
   const after = new Map(next.research.map((r) => [key(r), r]));
   for (const [k, r] of after) if (!before.has(k)) out.push(`+ ${r.label}`);
   for (const [k, r] of before) if (!after.has(k)) out.push(`− ${r.label}`);
+  // Same lookup, but it now takes its input from somewhere else (a step it reads from was changed).
+  for (const [k, r] of after) {
+    const was = before.get(k);
+    if (was && JSON.stringify(was.bind ?? {}) !== JSON.stringify(r.bind ?? {})) out.push(`${r.label}: uses the new answer`);
+  }
 
   const pc = checksText(prev) || null;
   const nc = checksText(next) || null;
@@ -53,6 +58,20 @@ function actionChanges(a: MoveAction, b: MoveAction): string[] {
   return out;
 }
 
+const stepRef = (ref: string) => /^\$([A-Za-z][A-Za-z0-9_-]*)(?:\.|$)/.exec(ref)?.[1];
+const readsFrom = (r: Proposal["research"][number]) => [...Object.values(r.bind ?? {}), ...(r.when ? [r.when.ref] : [])].map(stepRef).filter((x): x is string => Boolean(x));
+
+/** The lookups that use what `id` finds, directly or through another lookup, in plan order. */
+export function readersOf(research: Proposal["research"], id: string): string[] {
+  const found = new Set<string>();
+  let grew = true;
+  while (grew) {
+    grew = false;
+    for (const r of research) if (!found.has(r.id) && readsFrom(r).some((x) => x === id || found.has(x))) (found.add(r.id), (grew = true));
+  }
+  return research.filter((r) => found.has(r.id)).map((r) => r.id);
+}
+
 /**
  * Keeps an edit inside its scope. Editing the order can't swap the market or the lookups;
  * editing a lookup can't change the order; editing the check only touches the check.
@@ -68,14 +87,43 @@ export function guardEdit(prev: Proposal, next: Proposal, step?: string): { move
     move.budgetUsd = prev.budgetUsd;
   };
   const keepResearch = (except?: string) => {
-    const want = except ? move.research : prev.research;
-    if (!except && key3(prev.research) !== key3(move.research)) undone.push("the lookups");
-    if (except) {
-      // Only the edited lookup may change; every other lookup stays as it was.
-      const others = prev.research.filter((r) => r.id !== except);
-      const kept = want.filter((r) => !others.some((o) => key(o) === key(r)));
-      move.research = [...others, ...kept.slice(0, 1)];
-    } else move.research = prev.research;
+    if (!except) {
+      if (key3(prev.research) !== key3(move.research)) undone.push("the lookups");
+      move.research = prev.research;
+      return;
+    }
+    // The edited lookup may change, and so may the lookups that use its answer (they may need to
+    // read a different field of it). Every other lookup stays exactly as it was, and each keeps its
+    // place, so a step never ends up reading from one that runs after it. Steps are matched by what
+    // they look up, since a checked move numbers its steps afresh.
+    const free = new Set([except, ...readersOf(prev.research, except)]);
+    const used = new Set<string>();
+    const toPrev = new Map<string, string>();
+    const take = (want: (n: Proposal["research"][number]) => boolean) => {
+      const n = move.research.find((x) => !used.has(x.id) && want(x));
+      if (n) used.add(n.id);
+      return n;
+    };
+    const prevKeys = new Set(prev.research.map(key));
+    const picked = prev.research.map((r) => {
+      const n = take((x) => key(x) === key(r)) ?? (r.id === except ? take((x) => !prevKeys.has(key(x))) : undefined);
+      if (n) toPrev.set(n.id, r.id);
+      return { r, n };
+    });
+    let otherTouched = move.research.some((x) => !used.has(x.id));
+    const relink = (ref: string) => ref.replace(/^\$([A-Za-z][A-Za-z0-9_-]*)/, (all, id: string) => (toPrev.has(id) ? `$${toPrev.get(id)}` : all));
+    const out: Proposal["research"] = [];
+    for (const { r, n } of picked) {
+      if (!free.has(r.id)) {
+        if (!n || JSON.stringify(Object.values(n.bind ?? {}).map(relink)) !== JSON.stringify(Object.values(r.bind ?? {}))) otherTouched = true;
+        out.push(r);
+      } else if (n) {
+        const bind = n.bind ? Object.fromEntries(Object.entries(n.bind).map(([f, ref]) => [f, relink(ref)])) : undefined;
+        out.push({ ...n, id: r.id, bind, when: n.when ? { ...n.when, ref: relink(n.when.ref) } : undefined });
+      }
+    }
+    if (otherTouched) undone.push("the other lookups");
+    move.research = out;
   };
   const keepCondition = () => {
     if (JSON.stringify([prev.condition ?? null, prev.also ?? []]) !== JSON.stringify([move.condition ?? null, move.also ?? []])) undone.push("the check");

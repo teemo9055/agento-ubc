@@ -71,7 +71,7 @@ const STATUS: Record<PlanStep["status"], { text: string; cls: string; ring: stri
   skipped: { text: "Skipped", cls: "text-ink-3", ring: "border-line opacity-60" },
 };
 
-const money = (x: number) => (x <= 0 ? "free" : `≤ $${x < 0.01 ? usdc(x) : x.toFixed(2)}`);
+const money = (x: number) => (x <= 0 ? "free" : `up to $${x < 0.01 ? usdc(x) : x.toFixed(2)}`);
 const n = (id: string) => id.replace(/^s/, "");
 const placesOrder = (s: PlanStep) => Boolean(s.proposal.action && s.proposal.action.kind !== "itinerary");
 const sells = (s: PlanStep) => (s.proposal.action?.kind === "prediction_order" && s.proposal.action.trade === "sell") || (s.proposal.action?.kind === "spot_order" && s.proposal.action.side === "sell");
@@ -180,7 +180,7 @@ export function PlanBoard({ plan, run }: { plan: Plan; run: Run }) {
   const canSpend = canFill && deps.filter(sells).length === 1 && picked?.proposal.action?.kind !== "itinerary";
 
   return (
-    <section className="rounded-2xl border border-line bg-panel" aria-label="Plan" data-testid="plan-card">
+    <section className={`rounded-2xl bg-panel ${plan.status === "running" ? "border-[1.5px] border-ink shadow-[4px_4px_0_0_var(--agent)]" : "border border-line"}`} aria-label="Plan" data-testid="plan-card">
       <div className="flex flex-wrap items-start justify-between gap-3 border-b border-[#f1f0ec] px-4 py-3.5 sm:px-5">
         <div className="min-w-0">
           <div className="font-pixel text-[12px] text-agent-ink">The jobs</div>
@@ -189,6 +189,18 @@ export function PlanBoard({ plan, run }: { plan: Plan; run: Run }) {
         <span className={`shrink-0 text-[12.5px] font-semibold ${plan.status === "done" ? "text-good" : plan.status === "running" ? "text-agent-ink" : "text-ink-3"}`} data-testid="plan-status">
           {plan.status === "proposed" ? (steps.length ? `${steps.length} ${steps.length === 1 ? "job" : "jobs"} · ${stages.length} ${stages.length === 1 ? "stage" : "stages"}` : "No jobs yet") : plan.status === "running" ? `Running · ${doneCount} of ${steps.length} done` : plan.status === "done" ? "Finished" : "Stopped"}
         </span>
+        {plan.status !== "proposed" && steps.length > 0 && (
+          // One bar part per job, colored by where it stands, so progress reads at a glance.
+          <ol className="flex w-full gap-1.5" aria-label={`${doneCount} of ${steps.length} jobs done`} data-testid="plan-progress">
+            {steps.map((s) => (
+              <li
+                key={s.id}
+                title={s.proposal.title}
+                className={`h-2.5 flex-1 rounded-full ${s.status === "done" ? "bg-agent" : s.status === "running" ? "animate-pulse bg-agent/40 motion-reduce:animate-none" : s.status === "failed" ? "bg-bad" : s.status === "blocked" ? "bg-warn" : s.status === "skipped" ? "bg-ink-3/30" : "bg-line"}`}
+              />
+            ))}
+          </ol>
+        )}
       </div>
 
       <Assemble play={plan.id} className="overflow-x-auto">
@@ -232,7 +244,7 @@ export function PlanBoard({ plan, run }: { plan: Plan; run: Run }) {
                         </div>
                         <div className="num mt-0.5 text-[12px] text-ink-3">
                           {THEMES[s.agent].name} · {money(cost)}
-                          {` · ${partsOf(s.proposal).length} sub-task${partsOf(s.proposal).length === 1 ? "" : "s"}`}
+                          {` · ${partsOf(s.proposal).length} part${partsOf(s.proposal).length === 1 ? "" : "s"}`}
                         </div>
                       </div>
                     </div>
@@ -414,6 +426,18 @@ export function PlanBoard({ plan, run }: { plan: Plan; run: Run }) {
             {busy === "add" ? <Spinner /> : <Icon name="plus" size={15} />} Add job
           </Button>
         </form>
+      )}
+
+      {editable && plan.editNotes && plan.editNotes.length > 0 && (
+        <div className="border-t border-[#f1f0ec] px-4 py-3 sm:px-5">
+          <Points as="ul" min={240} data-testid="plan-edit-notes">
+            {plan.editNotes.map((n) => (
+              <Point key={n} as="li" size="sm" tone="agent" soft label="Also changed">
+                {n}
+              </Point>
+            ))}
+          </Points>
+        </div>
       )}
 
       {plan.unavailable.length > 0 && (

@@ -375,7 +375,7 @@ export async function exploreTurn(agent: AgentId, chat: ChatMsg[], onTool: (note
         seen.push(out.data);
         content = out.data;
       }
-      messages.push({ role: "tool", tool_call_id: c.id, name: c.name, content: JSON.stringify(compact(content)).slice(0, 7000) });
+      messages.push({ role: "tool", tool_call_id: c.id, name: c.name, content: (JSON.stringify(compact(content)) ?? JSON.stringify("Nothing found")).slice(0, 7000) });
     }
   }
   if (usage.length === 0) {

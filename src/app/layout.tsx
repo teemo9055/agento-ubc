@@ -41,7 +41,7 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
         </header>
         <main className="mx-auto max-w-6xl px-4 py-6 sm:px-6 sm:py-8">{children}</main>
         <footer className="mx-auto max-w-6xl px-4 sm:px-6 pb-[calc(var(--tabbar-h)+24px)] pt-4 text-[12px] text-ink-3 sm:pb-10">
-          Runs on Arc testnet · pays per request in USDC · spending rules enforced on-chain
+          Runs on Arc · pays per request in USDC · spending rules enforced on-chain
         </footer>
         <AppShell />
       </body>

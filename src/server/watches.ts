@@ -2,6 +2,7 @@ import { randomUUID } from "node:crypto";
 import { openDb, type Db } from "./sqlite";
 import { answerOf, getPath, parseRef } from "./dataflow";
 import type { Proposal, ResearchStep, Run } from "@/lib/types";
+import { perCheckUsd, watchStepIds } from "@/lib/watchCost";
 
 /**
  * Watches: a finished job's check, run again on a schedule until a condition is met. You approve
@@ -67,22 +68,9 @@ export const resetWatches = () => memory.clear();
 
 /** Only the steps a condition needs: the one it reads, and every step that one reads from. */
 export function stepsFor(research: ResearchStep[], ref: string): ResearchStep[] {
-  const want = new Set<string>();
-  const add = (id: string) => {
-    if (want.has(id)) return;
-    want.add(id);
-    const s = research.find((r) => r.id === id);
-    for (const v of Object.values(s?.bind ?? {})) {
-      const r = parseRef(v);
-      if (r?.kind === "step") add(r.id);
-    }
-  };
-  const r = parseRef(ref);
-  if (r?.kind === "step") add(r.id);
+  const want = new Set(watchStepIds(research, ref));
   return research.filter((s) => want.has(s.id)).map((s) => ({ ...s, when: undefined, verify: undefined, onConflict: undefined }));
 }
-
-const stepCost = (s: ResearchStep) => Number(s.args.price ?? 0) / 1e6;
 
 /** A watch on a finished job: checked, priced and capped before anything runs. */
 export function createWatch(run: Run, input: { condition: WatchCondition; every: Every; days: number; title?: string }): Watch | { error: string } {
@@ -92,7 +80,7 @@ export function createWatch(run: Run, input: { condition: WatchCondition; every:
   const days = Math.min(30, Math.max(1, input.days));
   const until = new Date(Date.now() + days * 86_400_000).toISOString();
   const maxChecks = Math.min(500, Math.ceil((days * 86_400_000) / EVERY_MS[input.every]));
-  const perCheckCapUsd = steps.reduce((a, s) => a + stepCost(s), 0);
+  const perCheckCapUsd = perCheckUsd(run, input.condition.ref);
   const totalCapUsd = Math.round(perCheckCapUsd * maxChecks * 1e6) / 1e6;
   const proposal: Proposal = { ...run.proposal, id: `${run.proposal.id}-watch`, research: steps, gaps: undefined, tier: undefined, compose: run.proposal.compose ? { ...run.proposal.compose, facts: [] } : undefined };
   const now = new Date().toISOString();

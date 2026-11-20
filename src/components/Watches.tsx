@@ -2,6 +2,7 @@
 import { useEffect, useMemo, useState } from "react";
 import Link from "next/link";
 import type { Run } from "@/lib/types";
+import { perCheckUsd } from "@/lib/watchCost";
 import { Button, Spinner } from "./ui";
 import { post } from "./useRun";
 import { toast } from "./Toaster";
@@ -59,7 +60,8 @@ export function WatchThis({ run }: { run: Run }) {
   const [busy, setBusy] = useState(false);
   const [made, setMade] = useState<WatchView | null>(null);
   if (!options.length) return null;
-  const perCheck = run.phases.filter((p) => p.lineId).reduce((a, p) => a + Number(run.lines.find((l) => l.id === p.lineId)?.actual ?? 0), 0) / 1e6;
+  // Same sum the server caps each check at: only the steps this condition needs.
+  const perCheck = perCheckUsd(run, ref);
   const checks = Math.min(500, Math.ceil((days * 86_400_000) / EVERY[every].ms));
   return (
     <section className="rounded-2xl border border-line bg-panel px-4 py-3" aria-label="Watch this" data-testid="watch-this">

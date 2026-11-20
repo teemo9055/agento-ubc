@@ -297,7 +297,7 @@ test("the work is drawn beside the chat, and the likeliest next step is one tap"
   await expect(space.locator("[data-ghost]")).toHaveCount(0);
   await expect(page.getByTestId("workspace-cost")).toContainText("Up to $");
   // The move's market is followed live: what it costs to buy right now.
-  await expect(page.getByTestId("live-price")).toContainText(/Costs|Nobody is selling|happen/, { timeout: 15_000 });
+  await expect(page.getByTestId("live-price")).toContainText(/Costs now|Nobody is selling|happen/, { timeout: 15_000 });
   await expect(page.getByTestId("stages").locator("[aria-current=step]")).toHaveText(/Shape it/);
   // Right: ways to change it, one tap each.
   await expect(page.getByTestId("quick").getByRole("button").first()).toBeVisible();

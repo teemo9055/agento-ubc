@@ -366,9 +366,17 @@ export function StatusCard({ run, onNeedsYou, onCancel, steps = true }: { run: R
     }
   }
 
+  // While it works, the card is the page's main thing: ink outline, the agent's color, a progress bar.
+  const working = !finished && (run.status === "running" || run.status === "funding");
+  const look = working ? (needs ? "border-ink bg-warn/10 shadow-[4px_4px_0_0_var(--color-warn)]" : "border-ink bg-panel shadow-[4px_4px_0_0_var(--agent)]") : TONE[out.tone];
   return (
-    <section className={`rounded-2xl border-[1.5px] ${TONE[out.tone]}`} aria-label="Status" data-testid="status-card">
+    <section className={`rounded-2xl border-[1.5px] ${look}`} aria-label="Status" data-testid="status-card">
       <div className="px-4 py-3.5">
+        {working && (
+          <p className={`mb-1.5 font-pixel text-[11px] uppercase tracking-wide ${needs ? "text-warn-ink" : "text-agent-ink"}`} data-testid="status-label">
+            {needs ? "Needs you" : run.status === "funding" ? "Setting up" : "Working on it"}
+          </p>
+        )}
         <div className="flex items-start gap-2.5">
           <span className={`mt-[7px] h-2.5 w-2.5 shrink-0 rounded-[3px] ${DOT[out.tone]} ${!finished && !needs ? "animate-pulse motion-reduce:animate-none" : ""}`} aria-hidden />
           <div className="min-w-0 flex-1" aria-live="polite">
@@ -383,6 +391,7 @@ export function StatusCard({ run, onNeedsYou, onCancel, steps = true }: { run: R
             {o?.updatedAt && liveOrder && <p className="num mt-1 text-[12px] text-ink-3">Checked {new Date(o.updatedAt).toLocaleTimeString()} · order #{o.orderId}</p>}
           </div>
         </div>
+        {working && run.phases.length > 0 && <Progress run={run} />}
         <div className="mt-3 flex flex-wrap gap-2">
           {needs > 0 && onNeedsYou && (
             <Button variant="agent" className="h-9" onClick={onNeedsYou}>
@@ -415,8 +424,8 @@ export function StatusCard({ run, onNeedsYou, onCancel, steps = true }: { run: R
             </>
           )}
           {!finished && onCancel && (
-            <Button variant="quiet" className="h-9" onClick={onCancel}>
-              Cancel job
+            <Button variant="ghost" className="h-9" onClick={onCancel}>
+              <Icon name="x" size={14} /> Stop the job
             </Button>
           )}
         </div>
@@ -460,5 +469,44 @@ export function Details({ label, children, open, onToggle }: { label: string; ch
       </button>
       {open && <div className="space-y-5 border-t border-[#f1f0ec] p-4">{children}</div>}
     </section>
+  );
+}
+
+const SEGMENT: Record<Phase["status"], string> = {
+  done: "bg-agent",
+  skipped: "bg-ink-3/30",
+  active: "bg-agent/40 animate-pulse motion-reduce:animate-none",
+  failed: "bg-bad",
+  failed_waiting: "bg-bad animate-pulse motion-reduce:animate-none",
+  awaiting_reapproval: "bg-warn animate-pulse motion-reduce:animate-none",
+  planned: "bg-line",
+};
+
+/** How far the job is, at a glance: one bar part per step, and what it has spent of what was set aside. */
+function Progress({ run }: { run: Run }) {
+  const n = run.phases.length;
+  const done = run.phases.filter((p) => p.status === "done" || p.status === "skipped").length;
+  const paid = run.lines.filter((l) => l.rail !== "exchange");
+  const spent = sum(paid.map((l) => l.actual));
+  // The same "up to" the job map shows: what the approved steps can cost, not the vault's small buffer.
+  const most = sum(paid.map((l) => l.approved));
+  const practice = run.mode === "demo";
+  return (
+    <div className="mt-3" data-testid="status-progress">
+      <ol className="flex gap-1.5" aria-label={`${done} of ${n} steps done`}>
+        {run.phases.map((p, i) => (
+          <li key={p.id} className={`h-2.5 flex-1 rounded-full ${SEGMENT[p.status] ?? "bg-line"}`} title={`${i + 1}. ${p.label}`} />
+        ))}
+      </ol>
+      <div className="mt-2.5 flex flex-wrap gap-1.5 text-[12.5px]">
+        <span className="rounded-lg border border-line bg-surface px-2.5 py-1">
+          <span className="font-semibold">{done}</span> of {n} steps done
+        </span>
+        <span className="num rounded-lg border border-line bg-surface px-2.5 py-1">
+          Spent <span className="font-semibold">${fmt(spent)}</span> of up to ${fmt(most)}
+        </span>
+        <span className="rounded-lg border border-agent/30 bg-agent-soft/60 px-2.5 py-1 text-agent-ink">{practice ? "Practice: no real money moves" : "Anything unused comes back to you"}</span>
+      </div>
+    </div>
   );
 }

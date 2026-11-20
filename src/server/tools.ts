@@ -593,7 +593,8 @@ export async function validateProposal(agent: AgentId, input: unknown, id: strin
       const listing = await findService(r.args.url).catch(() => undefined);
       if (!listing) return { error: `${r.args.url} isn't a marketplace service payable on this network. Use a url from search_services with payableHere=true, or tell the user it needs mainnet.` };
       // Only services that read: one that sends, buys, books or changes something is never planned.
-      if (getCapability(listing.resource)?.readOnly === false) return { error: `${listing.provider} ${listing.name} does something (sends, buys or changes) rather than read; Agento only buys answers. Tell the user it exists and that they'd do that part themselves.` };
+      const who = listing.name.toLowerCase().startsWith(listing.provider.toLowerCase()) ? listing.name : `${listing.provider} ${listing.name}`;
+      if (getCapability(listing.resource)?.readOnly === false) return { error: `${who} sends, buys or changes something instead of looking it up, and Agento only pays for answers. Tell the user it exists and that they'd do that part themselves.` };
       let input: Record<string, unknown>;
       try {
         input = JSON.parse(r.args.input || "{}");
@@ -807,6 +808,24 @@ async function checkSell(raw: RawPrediction, c: gemini.MarketContract, price: nu
   const pnl = Math.round((price - held.avgPrice) * quantity * 100) / 100;
   notes.push(`You paid ${Math.round(held.avgPrice * 100)}¢ avg, so this ${pnl >= 0 ? "locks in" : "takes a loss of"} about $${Math.abs(pnl).toFixed(2)}`);
   return { action: { kind: "prediction_order", eventTicker: raw.eventTicker, symbol: raw.symbol, label: raw.label, side: raw.side, trade: "sell", orderType: "limit", maxPrice: price, quantity }, notes, bidNow };
+}
+
+/** A move built from several services, whose steps pass answers to each other. */
+export const isComposed = (p: Proposal) => Boolean(p.compose || p.givens || p.research.some((r) => r.bind || r.when || r.verify || r.onConflict));
+
+/** What an editor may change in a composed move: its steps with their links; the rest is put back after. */
+export const ComposedEditInput = ComposedInput.omit({ givens: true, compose: true, tier: true, gaps: true });
+
+/** A composed move as input again, keeping each step's id and what it reads from. */
+export function toComposedInput(p: Proposal): z.infer<typeof ComposedInput> {
+  return {
+    ...toProposalInput(p),
+    research: p.research.map((r) => ({ id: r.id, tool: r.tool, args: r.args, label: r.label, why: r.why, bind: r.bind, when: r.when, verify: r.verify, onConflict: r.onConflict, resource: r.resource, lane: r.lane })),
+    givens: p.givens,
+    compose: p.compose,
+    tier: p.tier,
+    gaps: p.gaps,
+  } as z.infer<typeof ComposedInput>;
 }
 
 export function toProposalInput(p: Proposal): ProposalInput {

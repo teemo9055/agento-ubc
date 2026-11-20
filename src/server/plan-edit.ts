@@ -49,8 +49,33 @@ function settle(steps: PlanStep[]): PlanStep[] {
   });
 }
 
+const nameOf = (s: PlanStep) => `“${(s.proposal.title || s.brief || s.id).slice(0, 50)}”`;
+
+/**
+ * What an edit did to the other steps, in plain words: who now waits differently, who uses the
+ * changed step's new result. `before` and `after` are matched by the id each step had before.
+ */
+function effects(before: PlanStep[], after: (PlanStep & { was: string })[], op: PlanOp): string[] {
+  const out: string[] = [];
+  const target = "step" in op ? before.find((s) => s.id === op.step) : undefined;
+  // A changed step is named by what it does now.
+  const now = "step" in op ? after.find((s) => s.was === op.step) : undefined;
+  for (const s of after) {
+    const old = before.find((b) => b.id === s.was);
+    if (!old || ("step" in op && s.was === op.step)) continue;
+    if (target && old.after.includes(target.id)) {
+      if (op.op === "remove") out.push(`${nameOf(s)} no longer waits for ${nameOf(target)}.`);
+      else if (op.op === "change") out.push(s.usesFindings ? `${nameOf(s)} will use the new result of ${nameOf(now ?? target)} when it starts.` : `${nameOf(s)} still starts after ${nameOf(now ?? target)}.`);
+    }
+    if (old.gate === "filled" && s.gate === "done") out.push(`${nameOf(s)} now starts when the steps before it finish, since none of them places an order anymore.`);
+    if (old.useProceeds && !s.useProceeds) out.push(`${nameOf(s)} now uses its own budget, not money from a sale.`);
+  }
+  return [...new Set(out)].slice(0, 6);
+}
+
 export async function editPlan(plan: Plan, op: PlanOp, build: BuildStep): Promise<{ plan: Plan } | { error: string }> {
-  let steps = plan.steps.map((s) => ({ ...s, after: [...(s.after ?? [])] }));
+  const before = plan.steps.map((s) => ({ ...s, after: [...(s.after ?? [])] }));
+  let steps = plan.steps.map((s) => ({ ...s, after: [...(s.after ?? [])], was: s.id }));
   const find = (id: string) => steps.find((s) => s.id === id);
   const stamp = Math.random().toString(36).slice(2, 7);
 
@@ -58,7 +83,7 @@ export async function editPlan(plan: Plan, op: PlanOp, build: BuildStep): Promis
     if (steps.length >= MAX_STEPS) return { error: `A plan can have up to ${MAX_STEPS} steps` };
     const built = await build(op.agent, op.brief, `${plan.id}-n${stamp}`);
     if ("error" in built) return built;
-    steps.push({ id: `new-${stamp}`, agent: op.agent, proposal: built.proposal, after: (op.after ?? []).filter((a) => find(a)), gate: "done", brief: op.brief, status: "waiting" });
+    steps.push({ id: `new-${stamp}`, was: `new-${stamp}`, agent: op.agent, proposal: built.proposal, after: (op.after ?? []).filter((a) => find(a)), gate: "done", brief: op.brief, status: "waiting" });
   } else if (op.op === "change") {
     const s = find(op.step);
     if (!s) return { error: "That step isn't in the plan" };
@@ -86,8 +111,16 @@ export async function editPlan(plan: Plan, op: PlanOp, build: BuildStep): Promis
     const wrong = checkPlanShape(ordered);
     if (wrong) return { error: wrong };
   }
-  const settled = settle(ordered);
+  const settled = settle(ordered) as (PlanStep & { was: string })[];
   const wrong = checkPlanShape(settled);
   if (wrong) return { error: wrong };
-  return { plan: { ...plan, steps: settled.map((s) => ({ ...s, status: "waiting", runId: undefined, note: undefined })), status: "proposed" } };
+  const notes = effects(before, settled, op);
+  return {
+    plan: {
+      ...plan,
+      steps: settled.map(({ was, ...s }) => (void was, { ...s, status: "waiting", runId: undefined, note: undefined })),
+      status: "proposed",
+      editNotes: notes.length ? notes : undefined,
+    },
+  };
 }

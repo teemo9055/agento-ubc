@@ -1,6 +1,7 @@
 import { beforeEach, describe, expect, it } from "vitest";
 import { afterCheck, conditionMet, createWatch, dueWatches, expireOverdue, resetWatches, saveWatch, stepsFor, stopWatch, watchById, type Watch } from "./watches";
 import type { ResearchStep, Run } from "@/lib/types";
+import { perCheckUsd } from "@/lib/watchCost";
 
 const step = (id: string, extra: Partial<ResearchStep> = {}): ResearchStep => ({ id, tool: "service", args: { url: `https://${id}.test`, input: "{}", price: "1000", payTo: "0x1" }, label: id, why: "", ...extra });
 const research = [step("r1"), step("r2", { bind: { phone: "$r1.seller.phone" } }), step("r3"), step("r4", { onConflict: "g" })];
@@ -60,5 +61,30 @@ describe("watches", () => {
     const v = createWatch(run, { condition: { ref: "$r1.x", op: "changed" }, every: "1h", days: 1 }) as Watch;
     expect(stopWatch(v.id)!.status).toBe("stopped");
     expect(dueWatches().map((x) => x.id)).not.toContain(v.id);
+  });
+});
+
+describe("what a watch's check costs", () => {
+  // The app's own data steps carry no price in their arguments: the price is on the job's line.
+  const own = (id: string, extra: Partial<ResearchStep> = {}): ResearchStep => ({ id, tool: "odds_history", args: { symbol: "X" }, label: id, why: "", ...extra });
+  const job = {
+    ...run,
+    proposal: { ...run.proposal!, research: [own("r1"), own("r2", { bind: { symbol: "$r1.symbol" } }), own("r3")] },
+    lines: [
+      { id: "r1", phaseId: "r1", approved: "20000", calls: { max: 1, unitPrice: "20000" }, actual: "20000" },
+      { id: "r2", phaseId: "r2", approved: "10000", actual: "10000" },
+      { id: "r3", phaseId: "r3", approved: "100000", actual: "100000" },
+    ],
+  } as unknown as Run;
+
+  it("counts only the steps the condition needs, at the price the job approved", () => {
+    expect(perCheckUsd(job, "$r2.p")).toBe(0.03);
+    expect(perCheckUsd(job, "$r3.p")).toBe(0.1);
+  });
+
+  it("is the same number the server caps each check at, for the app's own data too", () => {
+    const w = createWatch(job, { condition: { ref: "$r2.p", op: "changed" }, every: "1d", days: 3 }) as Watch;
+    expect(w.perCheckCapUsd).toBe(perCheckUsd(job, "$r2.p"));
+    expect(w.totalCapUsd).toBe(0.09);
   });
 });

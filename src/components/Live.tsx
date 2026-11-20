@@ -168,16 +168,40 @@ export function LiveMarket({ action, hedge, venue, settlement, held }: { action:
         </div>
         <LiveDot t={first} />
       </div>
-      <p className="num mt-1 text-[13px] text-ink-2" data-testid="live-price">
-        {!first ? "Reading the market…" : first.resolved ? (first.resolved === a.side ? "It happened: this paid out" : "It didn't happen: this paid nothing") : `${buy != null ? `Costs ${cents(buy)} now for each $1 it can pay (${chance(buy)})` : "Nobody is selling right now"}${sell != null ? ` · sells for ${cents(sell)}` : ""}${closesIn(first.closesAt) ? ` · ${closesIn(first.closesAt)}` : ""}`}
-        {buy != null && !first?.resolved ? (buy <= a.maxPrice ? " · within the price you set" : " · above the price you set, so it waits") : ""}
-      </p>
+      {!first || first.resolved ? (
+        <p className="num mt-1 text-[13px] text-ink-2" data-testid="live-price">
+          {!first ? "Reading the market…" : first.resolved === a.side ? "It happened: this paid out" : "It didn't happen: this paid nothing"}
+        </p>
+      ) : (
+        // The numbers that matter, one tile each, in plain words.
+        <div className="mt-2 grid grid-cols-2 gap-2 sm:grid-cols-4" data-testid="live-price">
+          <Tile label="Costs now" value={buy != null ? cents(buy) : "No seller"} note={buy != null ? `per $1 it can pay · ${chance(buy)}` : "Nobody is selling right now"} />
+          <Tile
+            label="Your limit"
+            value={cents(a.maxPrice)}
+            note={buy == null ? "Waits for a seller" : buy <= a.maxPrice ? "Price is within it" : "Price is above it, so it waits"}
+            tone={buy != null && buy > a.maxPrice ? "warn" : "good"}
+          />
+          {sell != null && <Tile label="Sells for" value={cents(sell)} note="If you sold now" />}
+          {closesIn(first.closesAt) && <Tile label="Closes" value={closesIn(first.closesAt).replace(/^closes /, "")} note={a.event ? "Then it pays out or not" : undefined} />}
+        </div>
+      )}
       {worth != null && !first?.resolved && (
-        <p className="num mt-0.5 text-[12.5px] text-ink-3" data-testid="live-worth">
-          What you hold would sell for about ${worth.toFixed(2)} now (you paid up to ${(held! * a.maxPrice).toFixed(2)}).
+        <p className="num mt-2 rounded-lg border border-agent/30 bg-agent-soft/60 px-2.5 py-1.5 text-[12.5px] text-agent-ink" data-testid="live-worth">
+          What you hold would sell for about <span className="font-semibold">${worth.toFixed(2)}</span> now. You paid up to ${(held! * a.maxPrice).toFixed(2)}.
         </p>
       )}
       {first && !first.resolved && <StrikeMeter t={first} side={a.side} label={a.label} />}
     </section>
+  );
+}
+
+function Tile({ label, value, note, tone }: { label: string; value: string; note?: string; tone?: "good" | "warn" }) {
+  return (
+    <div className={`rounded-xl border bg-surface px-3 py-2 ${tone === "warn" ? "border-warn/60" : "border-line"}`}>
+      <div className="font-pixel text-[10px] uppercase tracking-wide text-ink-3">{label}</div>
+      <div className="num text-[18px] font-semibold leading-tight">{value}</div>
+      {note && <div className={`text-[11.5px] leading-snug ${tone === "warn" ? "text-warn-ink" : tone === "good" ? "text-good" : "text-ink-3"}`}>{note}</div>}
+    </div>
   );
 }
