@@ -30,7 +30,7 @@ export async function routeAgent(task: string): Promise<AgentId> {
     model: FAST_MODEL,
     maxTokens: 40,
     system:
-      "Pick the agent for a request. inso: prediction markets (odds, bets, hedging a cost, selling positions) and anything that needs several agents. trado: buying or selling a crypto coin at spot, price trends. worko: real-world errands (checking a listing, seller or place before paying, driving routes, getting a ride, flight or hotel ready to book). If unsure, inso.",
+      "Pick the agent for a request. inso: prediction markets (odds, bets, hedging a cost, selling positions) and anything that needs several agents. trado: buying or selling a crypto coin at spot, price trends. worko: driving trips (routes split into days, places to stay, charge, fuel or eat near a stop). If unsure, inso.",
     user: task,
   }).catch(() => null);
   return r?.value.agent ?? "inso";

@@ -39,7 +39,7 @@ export async function claimRefund(c: { tx: string; payer: string; answer: unknow
 export type AdminRefund = { ok: true; amount: string; refundTx?: string; practice: boolean; reason: string } | { ok: false; status: number; reason: string };
 
 /**
- * A refund decided by a person (e.g. a Town Hall deposit that wasn't spam) rather than claimed by
+ * A refund decided by code or a person (e.g. a recipe whose must-know check failed) rather than claimed by
  * evidence: no delivery check, but the same once-only lock and the same transfer from the seller's
  * wallet back to the payer. A practice sale is marked refunded with no transfer.
  */

@@ -36,10 +36,10 @@ export const THEMES: Record<AgentId, AgentTheme> = {
   },
   worko: {
     name: "Worko",
-    domain: "Errands",
-    tagline: "Gets real-world things done: checks before you commit, drives planned, bookings ready.",
+    domain: "Road trips",
+    tagline: "Plans drives: the route split into easy days, with places to sleep, charge or eat.",
     copy: {
-      exploring: "What needs doing? Lookups are free.",
+      exploring: "Where are you driving? Lookups are free.",
       draft: "Here's the plan, priced. Change anything before you approve.",
       funding: "Funding the vault…",
       running: "On it.",

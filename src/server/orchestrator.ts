@@ -47,10 +47,8 @@ import { recordOutcome } from "./catalog/store";
 import { tally } from "./verdict";
 import { isDemoResource } from "./catalog/demo";
 import { buildReport } from "./report";
-import { learnFromRun } from "./learn";
 
 /** Who planned a recipe sold to an outside agent: such runs don't teach the book again. */
-export const RECIPE_BUYER = "Agento recipe (sold over x402)";
 /** Who planned a watch's check: also doesn't teach the book. */
 export const WATCH_CHECK = "Agento watch check";
 
@@ -327,35 +325,10 @@ export async function skipGap(runId: string, fact: string) {
   return ctl.run;
 }
 
-/** A proposal anywhere in the chat: the move a message shows, or one of the composer's other plans. */
+/** A proposal anywhere in the chat: the move a message shows. */
 function proposalIn(chat: ChatMsg[], id: string): { proposal: Proposal; runnable: boolean; why?: string } | undefined {
-  for (const m of [...chat].reverse()) {
-    if (m.proposal?.id === id) {
-      const t = m.tiers?.options.find((o) => o.proposal.id === id);
-      return { proposal: m.proposal, runnable: t ? t.runnable : true, why: t?.why };
-    }
-    const t = m.tiers?.options.find((o) => o.proposal.id === id);
-    if (t) return { proposal: t.proposal, runnable: t.runnable, why: t.why };
-  }
-}
-
-/**
- * Picks one of the composer's plans (Quick, Thorough, Most certain). Code only: the plan was
- * already checked when it was built. The message shows it, and a draft is rebuilt from it.
- */
-export async function chooseTier(runId: string, tier: "quick" | "thorough" | "certain") {
-  const ctl = ctlOf(runId);
-  if (!["exploring", "draft"].includes(ctl.run.status)) throw new Error("this job is already running");
-  const chat = ctl.run.chat ?? [];
-  const at = chat.findLastIndex((m) => m.tiers);
-  const t = chat[at]?.tiers?.options.find((o) => o.tier === tier);
-  if (!t) throw new Error("that plan isn't on offer here");
-  const updated = chat.map((m, i) => (i === at ? { ...m, proposal: t.runnable ? t.proposal : m.proposal, tiers: { ...m.tiers!, selected: tier } } : m));
-  ctl.run = { ...ctl.run, chat: updated };
-  if (t.runnable && ctl.run.status === "draft") await adoptProposal(ctl, t.proposal);
-  else emit(ctl, { type: "workorder.updated", run: { ...ctl.run } });
-  log(ctl, { kind: "card_edit", what: `Plan chosen: ${t.label}`, why: `${t.steps} steps, at most $${t.cost.toFixed(t.cost < 0.01 ? 4 : 2)}`, outcome: "edited", by: "user" });
-  return ctl.run;
+  const m = [...chat].reverse().find((x) => x.proposal?.id === id);
+  return m?.proposal ? { proposal: m.proposal, runnable: true } : undefined;
 }
 
 const chatBusy = new Set<string>();
@@ -406,7 +379,7 @@ async function agentReplyInNet(ctl: Ctl) {
     const r = await exploreTurn(ctl.run.agent, ctl.run.chat ?? [], (note) => emit(ctl, { type: "chat.thinking", note }), id());
     for (const u of r.usage) trackAi(ctl, "chat", u);
     if (r.usage.length) ctl.run = { ...ctl.run, planner: "ai" };
-    emit(ctl, { type: "chat.message", message: { id: id(), role: "agent", text: r.text, at: now(), tools: r.tools, facts: r.facts, unverified: r.unverified, proposal: r.proposal, plan: r.plan, brief: r.brief, tiers: r.tiers, options: r.options, suggestions: r.options ? [] : suggestionsFor(ctl.run.agent, r.suggestions, { proposal: r.proposal, plan: Boolean(r.plan) }) } });
+    emit(ctl, { type: "chat.message", message: { id: id(), role: "agent", text: r.text, at: now(), tools: r.tools, facts: r.facts, unverified: r.unverified, proposal: r.proposal, plan: r.plan, brief: r.brief, options: r.options, suggestions: r.options ? [] : suggestionsFor(ctl.run.agent, r.suggestions, { proposal: r.proposal, plan: Boolean(r.plan) }) } });
   } catch (e) {
     console.warn("chat failed", e);
     emit(ctl, { type: "chat.message", message: { id: id(), role: "agent", text: "Something went wrong on my side before I could answer. Nothing was spent.", at: now(), suggestions: ["Try again"] } });
@@ -709,15 +682,6 @@ async function finish(ctl: Ctl) {
   const report = built?.report;
   if (report?.headline && report.by === "ai") deliverable.summary = report.headline;
   emit(ctl, { type: "run.done", deliverable, refunded: refunded.toString(), refundTx: txHash, at: now(), report });
-  // A composed job that worked teaches the recipe book; a sold recipe's own run doesn't count twice.
-  if (ctl.run.proposal?.compose && ctl.run.ai?.model !== RECIPE_BUYER && ctl.run.ai?.model !== WATCH_CHECK) {
-    try {
-      const r = learnFromRun(ctl.run);
-      if (r) emit(ctl, { type: "run.learned", recipe: { id: r.id, title: r.title, status: r.status, runs: r.runs, successes: r.successes, network: r.network } });
-    } catch (e) {
-      console.warn("recipe not learned:", (e as Error).message);
-    }
-  }
 }
 
 /** Closes the vault and refunds what's left; nothing to do when no vault was opened. */

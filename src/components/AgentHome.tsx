@@ -17,7 +17,7 @@ import type { AgentId } from "@/lib/types";
 const ASK: Record<AgentId, { ask: string; placeholder: string; buildsTitle: string }> = {
   inso: { ask: "What do you want to protect?", placeholder: "e.g. my rides cost double when it snows", buildsTitle: "Problems Inso solves" },
   trado: { ask: "What are you trying to trade today?", placeholder: "e.g. buy $10 of ETH if it dips 2%", buildsTitle: "Worries people bring to Trado" },
-  worko: { ask: "What needs doing?", placeholder: "e.g. check this Marketplace seller before I pay", buildsTitle: "Things Worko gets done" },
+  worko: { ask: "Where are you driving?", placeholder: "e.g. plan a drive from Austin to Denver in 3 days", buildsTitle: "Trips Worko plans" },
 };
 
 /**

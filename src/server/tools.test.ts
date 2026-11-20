@@ -46,16 +46,13 @@ describe("moves are validated by code, whoever wrote them", () => {
     expect(r).toMatchObject({ error: expect.stringContaining("can't do") });
   });
 
-  it("turns bookings into links you finish yourself, as the last steps of the job", async () => {
-    const trip = { title: "Airport to hotel", why: "Ride when you land", ask: "Price the drive and get the ride ready?", research: [{ tool: "drive_route", args: { stops: "SEA airport|Downtown Seattle" }, label: "Driving route", why: "time" }], action: { kind: "itinerary", stops: ["SEA airport", "Downtown Seattle"], hoursPerDay: 6 }, condition: null, budgetUsd: null };
-    const r = await validateProposal("worko", { ...trip, finish: [{ kind: "ride", from: "SEA airport", to: "Downtown Seattle" }, { kind: "flight", to: "Austin" }] }, "p9");
+  it("has no booking links: a booking asked for in a move is simply not part of it", async () => {
+    const trip = { title: "Airport to hotel", why: "Drive time", ask: "Price the drive?", research: [{ tool: "drive_route", args: { stops: "SEA airport|Downtown Seattle" }, label: "Driving route", why: "time" }], action: { kind: "itinerary", stops: ["SEA airport", "Downtown Seattle"], hoursPerDay: 6 }, condition: null, budgetUsd: null };
+    const r = await validateProposal("worko", { ...trip, finish: [{ kind: "ride", from: "SEA airport", to: "Downtown Seattle" }] }, "p9");
     if (!("proposal" in r)) throw new Error(r.error);
-    expect(r.proposal.finish).toEqual([expect.objectContaining({ kind: "ride", app: "Uber" })]);
-    expect(r.proposal.adjustments).toContain("Left out a booking link that needs a place to go to");
+    expect(r.proposal).not.toHaveProperty("finish");
     const { planFromProposal } = await import("./agents/toolbox");
-    const phases = planFromProposal(r.proposal).phases;
-    expect(phases.at(-1)).toMatchObject({ id: "h1", dependsOn: ["act"], optional: true, finish: { app: "Uber" } });
-    expect(planFromProposal(r.proposal).lines.some((l) => l.phaseId === "h1")).toBe(false); // nothing paid for it
+    expect(planFromProposal(r.proposal).phases.map((p) => p.id)).toEqual(["r1", "act"]);
   });
 
   it("caps order size", async () => {

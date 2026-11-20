@@ -31,7 +31,7 @@ const GOALS: { title: string; sub: string; agent: AgentId; say: string }[] = [
   { title: "Bet on an outcome", sub: "Crypto, rates, weather, sports", agent: "inso", say: "I want to bet on something" },
   { title: "See what the odds say", sub: "What the market thinks will happen", agent: "inso", say: "What are the markets saying?" },
   { title: "Buy or sell crypto", sub: "With a price limit you set", agent: "trado", say: "I want to trade a coin" },
-  { title: "Get something done", sub: "Check a seller, plan a drive, get a booking ready", agent: "worko", say: "I need something done" },
+  { title: "Plan a road trip", sub: "A drive split into days, with places to stay", agent: "worko", say: "Plan a road trip for me" },
   { title: "Check what I hold", sub: "Your positions, and selling them", agent: "inso", say: "Show my positions" },
 ];
 
@@ -49,8 +49,6 @@ const VENUE_LINE: Record<Venue, string> = {
   gemini: "orders use real money on Gemini",
 };
 
-/** The composer demo's problem: messy, with a link and a number, as people really write it. */
-const COMPOSE_DEMO = "I'm about to send $400 to someone on Facebook Marketplace for a bike, here's the listing https://www.facebook.com/marketplace/item/1234567890 and their number (604) 555-0199";
 
 export default function NewJob() {
   const router = useRouter();
@@ -199,23 +197,6 @@ export default function NewJob() {
           <span className="block text-[13px] text-ink-2">Three agents, three sellers, real payments. Prices, network checks, a route, and a bet that waits for a sale and two price sources. You can change any step before it runs.</span>
         </span>
         {busy === "showcase" ? <Spinner /> : <Icon name="arrow" size={17} className="shrink-0 transition-transform group-hover:translate-x-0.5" />}
-      </button>
-
-      <button
-        type="button"
-        disabled={Boolean(busy)}
-        onClick={() => start(COMPOSE_DEMO, "worko", "compose")}
-        className="pressable group flex items-center gap-4 rounded-[14px] border border-line bg-panel px-4 py-3 text-left hover:border-ink disabled:opacity-60"
-        data-testid="see-it-compose"
-      >
-        <span data-agent="worko" className="shrink-0">
-          <AgentIcon agent="worko" size={34} mood={busy === "compose" ? "working" : "happy"} />
-        </span>
-        <span className="min-w-0 flex-1">
-          <span className="block text-[15px] font-semibold">See it compose: a seller check built from the whole marketplace</span>
-          <span className="block text-[13px] text-ink-2">“I&apos;m about to send $400 for a bike…” becomes three plans from the catalog. Pick one; data flows between steps and two sources are cross-checked.</span>
-        </span>
-        {busy === "compose" ? <Spinner /> : <Icon name="arrow" size={17} className="shrink-0 transition-transform group-hover:translate-x-0.5" />}
       </button>
 
       <nav aria-label="Agent homes" className="grid grid-cols-3 gap-2" data-testid="agent-homes">

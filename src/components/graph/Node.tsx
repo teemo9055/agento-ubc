@@ -30,9 +30,6 @@ const FRAME: Record<Tone, string> = {
   skipped: "border border-dashed border-line bg-panel opacity-55",
 };
 
-/** A step you finish yourself looks different: a dashed, warm card, so it's clear the agent stops there. */
-const YOURS = { open: "border-[1.5px] border-dashed border-ink/45 bg-[#fbf7ee]", done: "border-[1.5px] border-dashed border-ink bg-[#fbf7ee] shadow-[3px_3px_0_0_var(--agent)]" };
-
 const STATE_TEXT: Record<Tone, string> = { done: "Done", running: "Running", waiting: "Waiting", needs: "Needs you", failed: "Failed", skipped: "Skipped" };
 
 /** A tie-breaker waits grey and dashed until its sources disagree; a gap is hatched and never runs. */
@@ -84,7 +81,7 @@ export function Node({ p, line, step, simulated, onEdit, focused, dim, x, y, onG
             ? `Only if ${p.conditional}`
             : p.sub;
   const Box = onEdit ? "button" : "div";
-  const frame = p.gap ? GAP : p.finish && tone !== "skipped" ? YOURS[tone === "done" ? "done" : "open"] : tieWaiting ? TIE_WAITING : FRAME[tone];
+  const frame = p.gap ? GAP : tieWaiting ? TIE_WAITING : FRAME[tone];
   const red = p.finding?.tone === "bad" && tone === "done";
   const label = [`Step ${step}: ${p.label}`, p.gap ? "no service found for this" : STATE_TEXT[tone].toLowerCase(), p.finding ? `${FINDING_WORD[p.finding.tone]}: ${p.finding.text}` : null].filter(Boolean).join(", ");
   return (
@@ -149,11 +146,9 @@ export function Node({ p, line, step, simulated, onEdit, focused, dim, x, y, onG
         </div>
       ) : (
       <div className="mt-auto flex items-center justify-between gap-2 text-[12px]">
-        <span className="num truncate text-ink-3" data-kind={p.finish ? "yours" : line ? "pays" : "free"}>
+        <span className="num truncate text-ink-3" data-kind={line ? "pays" : "free"}>
           {p.gap ? (
             "Not priced"
-          ) : p.finish ? (
-            <span className="font-semibold text-ink-2">You finish it</span>
           ) : line ? (
             diff?.priceFrom ? (
               <span data-testid={`price-change-${p.id}`}>
@@ -164,11 +159,7 @@ export function Node({ p, line, step, simulated, onEdit, focused, dim, x, y, onG
             "Free"
           )}
         </span>
-        {p.finish && tone === "done" ? (
-          <a href={p.finish.url} target="_blank" rel="noreferrer" onClick={(e) => e.stopPropagation()} className="inline-flex shrink-0 items-center gap-0.5 rounded-md bg-ink px-1.5 py-0.5 text-[11px] font-semibold text-white hover:bg-ink/85" data-testid={`finish-${p.id}`}>
-            Open {p.finish.app} <Icon name="external" size={11} />
-          </a>
-        ) : onEdit ? (
+        {onEdit ? (
           <span className={`inline-flex shrink-0 items-center gap-1 rounded-md px-1.5 py-0.5 text-[11px] font-semibold ${focused ? "bg-ink text-white" : "bg-[#f1f0ec] text-ink-2 opacity-0 group-hover:opacity-100 group-focus-visible:opacity-100"}`} aria-hidden>
             <Icon name={focused ? "chat" : "edit"} size={11} /> {focused ? "In chat" : "Edit"}
           </span>

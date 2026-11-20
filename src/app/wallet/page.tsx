@@ -1,18 +1,15 @@
 "use client";
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useState } from "react";
 import { formatUnits, isAddress } from "viem";
 import { Band } from "@/components/JobCard";
 import { Icon, type IconName } from "@/components/Icon";
 import { Button, Spinner } from "@/components/ui";
 import { usePasskeyWallet } from "@/components/passkey/usePasskey";
 import { useArcBalance } from "@/components/wallet/useArcBalance";
-import { OnrampFlow } from "@/components/wallet/OnrampFlow";
-import { BridgeFlow, browserWallet } from "@/components/wallet/BridgeFlow";
 import { usePrefs } from "@/lib/prefs";
 import { NETS, NETWORKS, addressLink, txLink, type Net } from "@/lib/networks";
 
 const ADDRESS_KEY = "agento:fund-address";
-type Way = "onramp" | "bridge";
 
 const fmtUsdc = (v: bigint) => {
   const s = formatUnits(v, 6);
@@ -22,8 +19,8 @@ const fmtUsdc = (v: bigint) => {
 
 /**
  * Add money: get USDC onto Arc, on testnet (free, nothing real) or mainnet (real money), to an
- * address the person controls. Three ways side by side: buy with a card or bank (Arc Onramp),
- * bring USDC from another chain (CCTP with Circle's Forwarding Service), or free test USDC.
+ * address the person controls. Testnet: free test USDC from a faucet. Mainnet: send USDC on Arc to
+ * the address from a wallet or exchange. The balance updates as soon as it lands.
  */
 export default function AddMoney() {
   const [prefs, setPrefs, ready] = usePrefs();
@@ -32,13 +29,9 @@ export default function AddMoney() {
   const pk = usePasskeyWallet();
   const [typed, setTyped] = useState("");
   const [useOther, setUseOther] = useState(false);
-  const [way, setWay] = useState<Way | null>(null);
-  const [hasWallet, setHasWallet] = useState(false);
-  const panel = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
     setTyped(localStorage.getItem(ADDRESS_KEY) ?? "");
-    setHasWallet(Boolean(browserWallet()));
   }, []);
 
   // The passkey wallet is set up for Arc testnet in this app, so mainnet always takes an address you paste.
@@ -48,7 +41,7 @@ export default function AddMoney() {
   const address = passkeyAddress ?? (typedOk ? clean : null);
   const bal = useArcBalance(net, address);
 
-  // "Arrived" = the balance went up after a purchase or transfer was sent (the reliable signal).
+  // "Arrived" = the balance went up after money was sent (the reliable signal).
   const [watch, setWatch] = useState<{ key: string; base: bigint | null } | null>(null);
   const key = `${net}:${address?.toLowerCase() ?? ""}`;
   const startWatch = () => setWatch({ key, base: bal.value });
@@ -58,21 +51,15 @@ export default function AddMoney() {
   const arrived = watch && watch.key === key && watch.base != null && bal.value != null && bal.value > watch.base ? fmtUsdc(bal.value - watch.base) : null;
 
   useEffect(() => {
-    setWay(null);
     setWatch(null);
   }, [key]);
-
-  const open = (w: Way) => {
-    setWay(w);
-    requestAnimationFrame(() => panel.current?.scrollIntoView({ behavior: "smooth", block: "start" }));
-  };
 
   return (
     <div className="flex flex-col gap-6" data-testid="add-money" data-network={net}>
       <Band />
       <header className="max-w-2xl">
         <h1 className="font-pixel text-[30px] leading-tight sm:text-[34px]">Add money</h1>
-        <p className="mt-1.5 text-[15px] leading-relaxed text-ink-2">Get USDC onto Arc, where your agents pay for things. Pick a network, check the address it goes to, then choose a way in.</p>
+        <p className="mt-1.5 text-[15px] leading-relaxed text-ink-2">Get USDC onto Arc, where your agents pay for things. Pick a network, check the address it goes to, then add USDC.</p>
       </header>
 
       <div role="radiogroup" aria-label="Network" className="grid grid-cols-2 gap-2 sm:max-w-xl" data-testid="network-switch">
@@ -99,7 +86,7 @@ export default function AddMoney() {
         <div className="flex items-start gap-3 rounded-2xl border-[1.5px] border-bad bg-bad/5 px-4 py-3 text-bad" role="note" data-testid="real-money">
           <Icon name="shield" size={20} className="mt-0.5 shrink-0" />
           <p className="text-[14px] leading-relaxed">
-            <b>Arc mainnet: this is real money.</b> USDC you buy or bring here is real, and transfers can&apos;t be undone. Check the address below is one you control.
+            <b>Arc mainnet: this is real money.</b> USDC you send here is real, and transfers can&apos;t be undone. Check the address below is one you control.
           </p>
         </div>
       )}
@@ -181,41 +168,23 @@ export default function AddMoney() {
 
       <section aria-labelledby="ways-title">
         <h2 id="ways-title" className="mb-3 text-[12px] font-semibold uppercase tracking-wide text-ink-3">
-          Three ways in
+          How to add it
         </h2>
-        <ul className={`grid grid-cols-1 gap-4 ${n.realMoney ? "md:grid-cols-2" : "md:grid-cols-3"}`}>
-          <WayCard
-            testId="onramp-card"
-            icon="card"
-            title="Buy with card or bank"
-            who="Anyone with a debit card, Apple Pay or Google Pay, or a bank account in supported US states and EU countries. You verify your identity once with the provider."
-            cost={n.realMoney ? "The provider's fee, shown in the widget before you pay. Credit cards aren't accepted." : "Nothing: this is Circle's sandbox. Use test card data only; it sends testnet USDC."}
-          >
-            <Button onClick={() => open("onramp")} disabled={!address} data-testid="onramp-start">
-              <Icon name="card" size={16} /> {n.realMoney ? "Buy USDC" : "Try a test purchase"}
-            </Button>
-          </WayCard>
-          <WayCard
-            testId="bridge-card"
-            icon="send"
-            title="Bring USDC from another chain"
-            who={`People who already hold USDC on ${n.bridgeFrom.map((c) => c.name).join(", ")} in a browser wallet.`}
-            cost="Circle's fast-transfer fee and a small forwarding fee, both in USDC and shown before you send, plus the source chain's network fee. No Arc gas needed."
-          >
-            <Button variant={hasWallet ? "primary" : "ghost"} onClick={() => open("bridge")} disabled={!address} data-testid="bridge-start">
-              <Icon name="send" size={16} /> Start a transfer
-            </Button>
-            {!hasWallet && <p className="text-[12.5px] text-ink-3">No browser wallet found here. {n.realMoney ? "Buying with a card works without one." : "Try the free test USDC or a test purchase instead."}</p>}
-          </WayCard>
-          {!n.realMoney && <FaucetCard address={address} onSent={() => { startWatch(); void bal.refresh(); }} />}
+        <ul className="grid grid-cols-1 gap-4 md:grid-cols-2">
+          {n.realMoney ? (
+            <WayCard testId="send-card" icon="send" title="Send USDC on Arc" who="Anyone who holds USDC on Arc in a wallet app or an exchange that supports Arc." cost="Only Arc's network fee, a fraction of a cent, paid in USDC.">
+              <p className="text-[13px] text-ink-2">Send USDC on the Arc network to the address above. Check the network is Arc before you send: money sent on another network won&apos;t arrive here.</p>
+              <Button variant="ghost" onClick={startWatch} disabled={!address} data-testid="watch-arrival">
+                <Icon name="send" size={16} /> I&apos;ve sent it
+              </Button>
+            </WayCard>
+          ) : (
+            <FaucetCard address={address} onSent={() => { startWatch(); void bal.refresh(); }} />
+          )}
         </ul>
         {!address && <p className="mt-3 text-[13px] text-ink-3">Add an address above first; that&apos;s where the USDC goes.</p>}
+        {watch && !arrived && address && <p className="mt-3 text-[13px] text-ink-3" role="status">Watching your balance. It updates here as soon as the USDC lands.</p>}
       </section>
-
-      <div ref={panel} className="scroll-mt-24">
-        {way === "onramp" && address && <OnrampFlow key={key} net={net} address={address} onSubmitted={startWatch} arrived={arrived} onClose={() => setWay(null)} />}
-        {way === "bridge" && address && <BridgeFlow key={key} net={net} recipient={address} onSent={startWatch} arrived={arrived} onClose={() => setWay(null)} />}
-      </div>
 
       <footer className="rounded-2xl border border-line bg-panel px-4 py-3 text-[13px] leading-relaxed text-ink-2" data-testid="money-footer">
         Fees on Arc are paid in USDC, and Arc settles in under a second. Whatever you add goes straight to the address shown above, which you control; Agento never holds it.

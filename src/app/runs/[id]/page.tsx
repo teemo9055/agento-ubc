@@ -1,7 +1,5 @@
 "use client";
-import { ComposePanel } from "@/components/TierPicker";
 import { Report } from "@/components/Report";
-import { LearnedBanner } from "@/components/LearnedBanner";
 import { WatchThis } from "@/components/Watches";
 import { Replay } from "@/components/graph/Replay";
 import { use, useEffect, useRef, useState } from "react";
@@ -471,7 +469,6 @@ export default function RunPage({
 
       {draft && (
         <>
-          {run.proposal?.compose && <ComposePanel run={run} />}
           <Assemble play={run.proposal ? `review-${run.proposal.id}` : null}>
             <ReviewCard
               run={run}
@@ -642,7 +639,6 @@ export default function RunPage({
                 }
               />
             )}
-          <LearnedBanner run={run} />
           {run.proposal?.compose && (
             <section className="rounded-2xl border border-line bg-panel px-3 py-5 sm:px-5" aria-label="Steps" data-testid="done-graph">
               <Replay run={run} />
@@ -675,7 +671,7 @@ export default function RunPage({
               Receipt on its own page <Icon name="external" size={12} />
             </Link>
           </div>
-          {run.status === "done" && run.proposal?.compose && <WatchThis run={run} />}
+          {run.status === "done" && <WatchThis run={run} />}
           <NextSteps run={run} />
         </>
       )}

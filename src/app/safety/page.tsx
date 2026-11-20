@@ -35,8 +35,6 @@ export default function SafetyPage() {
     ["A single purchase that needs a closer look", `over ${l.bigSpendUsdc} USDC`],
     ["One request to an outside seller", "at most 0.01 USDC"],
     ["A change the AI asks for mid-job", "asks you; no answer in 2 minutes means no"],
-    ["A value one step passes to the next", "checked against the field it fills; a phone, link or wallet that doesn't fit stops that step"],
-    ["A step that only runs if needed, or a tie-breaker", "priced up front, bought only if an answer calls for it or two sources disagree"],
     ["A service that sends, buys, books or calls", "never put in a plan: Agento only buys answers"],
   ];
   const back: [string, string][] = [
@@ -44,8 +42,6 @@ export default function SafetyPage() {
     ["An answer that failed the check, from Agento's own seller", `Refunded on Arc (claims within ${REFUND_WINDOW_MIN} minutes, once per sale)`],
     ["An answer that failed the check, from an outside seller", "You aren't charged; the app covers it"],
     ["A good answer the agent then didn't use", "Stays paid: it was delivered"],
-    ["A tie-breaker or a branch that wasn't needed", "Never bought, never charged"],
-    ["A recipe an outside agent bought that couldn't deliver", "Refunded in full to the paying address"],
     ["An order that filled", "That's the trade you approved; an unfilled order can be cancelled any time"],
   ];
   return (

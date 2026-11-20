@@ -168,6 +168,7 @@ function RouteMap({ run }: { run: Run }) {
               <span className="num block text-ink-3">
                 {Math.round(x.km)} km · {x.hours.toFixed(1)} h
               </span>
+              {!x.stay?.length && days.some((d) => d.stay?.length) && <span className="mt-1.5 block border-t border-[#f1f0ec] pt-1.5 text-ink-3">The map lists no places to stay right here; look in the nearest town.</span>}
               {x.stay && x.stay.length > 0 && (
                 <div className="mt-1.5 border-t border-[#f1f0ec] pt-1.5" data-testid="stay">
                   <span className="text-ink-3">Places to stay in {x.to}:</span>

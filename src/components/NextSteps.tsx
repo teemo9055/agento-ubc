@@ -23,29 +23,13 @@ export function nextFor(run: Pick<Run, "task" | "agent">): Recipe[] {
     .slice(0, 2);
 }
 
-/** The finished job's last section: links for what you finish yourself, then what could come next. */
+/** The finished job's last section: what could come next. */
 export function NextSteps({ run }: { run: Run }) {
   const { start, busy } = useStartJob();
-  const yours = run.status === "done" ? run.phases.filter((p) => p.finish && p.status === "done") : [];
   const next = run.status === "done" ? nextFor(run) : [];
-  if (!yours.length && !next.length) return null;
+  if (!next.length) return null;
   return (
     <section className="flex flex-col gap-4" aria-label="What's next" data-testid="next-steps">
-      {yours.length > 0 && (
-        <div className="rounded-2xl border-[1.5px] border-dashed border-ink/50 bg-[#fbf7ee] p-4">
-          <h2 className="text-[15px] font-semibold">Left for you</h2>
-          <p className="mt-0.5 text-[13px] text-ink-2">These need your own account. Everything is filled in; open it and confirm.</p>
-          <ul className="mt-3 flex flex-wrap gap-2">
-            {yours.map((p) => (
-              <li key={p.id}>
-                <a href={p.finish!.url} target="_blank" rel="noreferrer" className="pressable inline-flex h-10 items-center gap-2 rounded-xl border-[1.5px] border-ink bg-panel px-3.5 text-[13.5px] font-semibold shadow-[2px_2px_0_0_var(--agent)] hover:bg-ink hover:text-white" data-testid="left-for-you">
-                  {p.label} <span className="font-normal text-ink-3">in {p.finish!.app}</span> <Icon name="external" size={13} />
-                </a>
-              </li>
-            ))}
-          </ul>
-        </div>
-      )}
       {next.length > 0 && (
         <div>
           <div className="mb-2 flex items-baseline justify-between gap-3">

@@ -2,19 +2,16 @@ import type { AgentId } from "./types";
 
 /**
  * The recipe book: combinations that solve a practical problem, written the way people feel the
- * problem ("Is this deal real?"), not the way the tools are named. A recipe is a tested starting
+ * problem ("Plan my drive so no day is too long"), not the way the tools are named. A recipe is a tested starting
  * point: picking one opens a job where the agent shapes it with you (adds, drops or swaps steps),
  * and it then goes through the same review, graph and receipt as any other job.
  *
- * Each step says who does it and whether it can run here today, so nothing is promised that can't:
+ * Only recipes whose every step runs today are listed. Each step says who does it:
  * - kind: pays (Agento pays per request from the job's vault) · free (a free lookup) ·
- *   yours (you finish it in your own app, from a ready link) · account (needs an account you link;
- *   none can be linked yet) · agent (handed to another agent in the same project).
- * - where: now (works on Arc testnet today) · mainnet (the seller takes payment on Arc mainnet
- *   only) · later (listed on Circle's marketplace, but not payable on Arc yet).
+ *   agent (handed to another agent in the same project).
  */
-export type StepKind = "pays" | "free" | "yours" | "account" | "agent";
-export type StepWhere = "now" | "mainnet" | "later";
+export type StepKind = "pays" | "free" | "agent";
+export type StepWhere = "now";
 
 export interface RecipeStep {
   label: string;
@@ -26,16 +23,14 @@ export interface RecipeStep {
   where: StepWhere;
 }
 
-export type Moment = "buying" | "moving" | "travel" | "money" | "protect" | "events" | "work";
+export type Moment = "travel" | "money" | "protect" | "events" | "work";
 
 export const MOMENTS: Record<Moment, { label: string; blurb: string }> = {
-  buying: { label: "Buying something", blurb: "Before you hand money to a stranger." },
-  moving: { label: "Moving", blurb: "Finding a place without getting burned." },
   travel: { label: "Travelling", blurb: "Getting there, and when plans go sideways." },
-  money: { label: "Money & crypto", blurb: "What your money is doing, and what could hit it." },
+  money: { label: "Money & crypto", blurb: "What could hit what you hold." },
   protect: { label: "Protecting a plan", blurb: "Pay a little now, get paid if the bad thing happens." },
   events: { label: "Nights out & events", blurb: "Plans that depend on the weather or a game." },
-  work: { label: "Work & study", blurb: "Leads, research and the boring admin." },
+  work: { label: "Work", blurb: "Costs that hit your business." },
 };
 
 export interface Recipe {
@@ -57,93 +52,9 @@ export interface Recipe {
   next?: string[];
 }
 
-const ORTH = "Orthogonal (Google data)";
 
 export const RECIPES: Recipe[] = [
   // ---------- Worko ----------
-  {
-    id: "scam-shield",
-    agent: "worko",
-    moment: "buying",
-    worry: "Is this deal real?",
-    title: "Check a listing, seller or wallet before you pay",
-    gets: "A plain verdict with the evidence behind it.",
-    say: "Is this deal real? I want to check a listing and its seller before I pay.",
-    words: ["scam", "real", "legit", "fake", "listing", "marketplace", "craigslist", "seller", "kijiji", "deal", "before i pay", "phone number"],
-    steps: [
-      { label: "Is the photo stolen from elsewhere?", by: ORTH, cost: 0.006, kind: "pays", where: "mainnet" },
-      { label: "Seller's phone: internet-only, new SIM, forwarded?", by: "BlockRun (Twilio)", cost: 0.05, kind: "pays", where: "mainnet" },
-      { label: "Reviews and mentions of the seller", by: ORTH, cost: 0.004, kind: "pays", where: "mainnet" },
-      { label: "Verdict, with what each check found", by: "Worko", kind: "free", where: "now" },
-    ],
-    next: ["big-purchase", "money-back"],
-  },
-  {
-    id: "big-purchase",
-    agent: "worko",
-    moment: "buying",
-    worry: "Am I paying too much for this used car, bike or laptop?",
-    title: "Price check a second-hand buy",
-    gets: "What it sells for new and used, and whether the listing looks right.",
-    say: "I'm buying something second-hand. Is the price fair and does the listing look right?",
-    words: ["used", "second-hand", "secondhand", "car", "bike", "laptop", "phone", "fair price", "too much", "overpriced"],
-    steps: [
-      { label: "What the photo actually shows", by: ORTH, cost: 0.006, kind: "pays", where: "mainnet" },
-      { label: "Prices for the same thing in stores", by: ORTH, cost: 0.004, kind: "pays", where: "mainnet" },
-      { label: "Seller's phone check", by: "BlockRun (Twilio)", cost: 0.05, kind: "pays", where: "mainnet" },
-      { label: "Fair price range and red flags", by: "Worko", kind: "free", where: "now" },
-    ],
-    next: ["scam-shield"],
-  },
-  {
-    id: "apartment-hunt",
-    agent: "worko",
-    moment: "moving",
-    worry: "I need a place near campus and don't want to overpay.",
-    title: "Find a place, flag the overpriced ones, book viewings",
-    gets: "A shortlist with fair rent next to each, and viewings lined up.",
-    say: "Find me a 1-bedroom under $1,800 near campus, tell me which are overpriced, and help me book viewings.",
-    words: ["apartment", "rent", "rental", "room", "lease", "landlord", "campus", "moving", "place to live", "sublet"],
-    steps: [
-      { label: "Rental listings in the area", by: "Sponge (rental data)", cost: 0.01, kind: "pays", where: "later" },
-      { label: "Fair rent for each unit", by: "Sponge (rent estimates)", cost: 0.01, kind: "pays", where: "later" },
-      { label: "Reviews of each building", by: ORTH, cost: 0.002, kind: "pays", where: "mainnet" },
-      { label: "Call the top 3 landlords to book viewings", by: "StablePhone (AI calls)", cost: 0.54, kind: "pays", where: "later" },
-    ],
-    next: ["scam-shield"],
-  },
-  {
-    id: "contractor-check",
-    agent: "worko",
-    moment: "work",
-    worry: "Can I trust this contractor with my home?",
-    title: "Check a contractor before you hire",
-    gets: "Reviews, news and any safety record, in one page.",
-    say: "Check this contractor before I hire them: reviews, news and anything worrying.",
-    words: ["contractor", "plumber", "electrician", "roofer", "renovation", "hire", "handyman", "builder", "trust"],
-    steps: [
-      { label: "Reviews of the business", by: ORTH, cost: 0.002, kind: "pays", where: "mainnet" },
-      { label: "News and web mentions", by: ORTH, cost: 0.004, kind: "pays", where: "mainnet" },
-      { label: "Workplace-safety record (OSHA)", by: "x402 Gateway (public records)", cost: 0.001, kind: "pays", where: "later" },
-      { label: "What to ask them before you sign", by: "Worko", kind: "free", where: "now" },
-    ],
-  },
-  {
-    id: "airport-ride",
-    agent: "worko",
-    moment: "travel",
-    worry: "Get me from the airport to my hotel when I land.",
-    title: "Airport to hotel, ready when you land",
-    gets: "The drive time, and a ride ready to book in your own app.",
-    say: "I land at SEA airport tonight. Get me a ride to my hotel downtown.",
-    words: ["airport", "land", "landing", "arrive", "ride", "uber", "lyft", "taxi", "pickup", "hotel"],
-    steps: [
-      { label: "Delays at the arrival airport", by: "StableTravel (FlightAware)", cost: 0.02, kind: "pays", where: "later" },
-      { label: "Drive time to the hotel", by: "Agento routes", cost: 0.03, kind: "pays", where: "now" },
-      { label: "Book the ride", by: "Uber", kind: "yours", where: "now" },
-    ],
-    next: ["dinner-plan", "ride-weather"],
-  },
   {
     id: "road-trip",
     agent: "worko",
@@ -156,105 +67,70 @@ export const RECIPES: Recipe[] = [
     steps: [
       { label: "Driving route with hours per leg", by: "Agento routes", cost: 0.03, kind: "pays", where: "now" },
       { label: "Places to sleep where each day ends", by: "OpenStreetMap", kind: "free", where: "now" },
-      { label: "Book the stays", by: "Booking.com", kind: "yours", where: "now" },
-      { label: "Cover a rained-out day", by: "Inso", kind: "agent", where: "now" },
-    ],
-    next: ["event-weather"],
-  },
-  {
-    id: "dinner-plan",
-    agent: "worko",
-    moment: "events",
-    worry: "Sort out dinner tonight near where I'm staying.",
-    title: "A dinner plan, table ready to book",
-    gets: "A few places nearby with reviews, and a table link ready.",
-    say: "Find a good place for dinner tonight near my hotel and get a table ready to book.",
-    words: ["dinner", "restaurant", "table", "reservation", "date night", "eat", "lunch", "brunch", "birthday"],
-    steps: [
-      { label: "Restaurants nearby", by: "OpenStreetMap", kind: "free", where: "now" },
-      { label: "What people say about them", by: ORTH, cost: 0.002, kind: "pays", where: "mainnet" },
-      { label: "Book the table", by: "OpenTable", kind: "yours", where: "now" },
-      { label: "Patio plan? Cover the rain", by: "Inso", kind: "agent", where: "now" },
-    ],
-    next: ["event-weather"],
-  },
-  {
-    id: "money-back",
-    agent: "worko",
-    moment: "buying",
-    worry: "Did the price drop after I bought it?",
-    title: "Get money back on something you already bought",
-    gets: "Whether it's cheaper now, and the price-match claim written for you.",
-    say: "I bought a TV last week. Check if it's cheaper now so I can ask for a price match.",
-    words: ["price drop", "price match", "refund", "cheaper", "receipt", "bought", "price adjustment"],
-    steps: [
-      { label: "Today's price across stores", by: ORTH, cost: 0.004, kind: "pays", where: "mainnet" },
-      { label: "Price history", by: "Syntalic", cost: 0.01, kind: "pays", where: "later" },
-      { label: "Send the price-match claim", by: "Your email", kind: "yours", where: "now" },
     ],
   },
   {
-    id: "job-hunt",
+    id: "ev-trip",
     agent: "worko",
-    moment: "work",
-    worry: "I'm applying for jobs and want to walk in prepared.",
-    title: "A one-page brief on each company you apply to",
-    gets: "Openings, recent news and what to ask, per company.",
-    say: "I'm applying to software jobs in Vancouver. Find openings and give me a brief on each company.",
-    words: ["job", "jobs", "apply", "applying", "interview", "internship", "co-op", "hiring", "career", "company research"],
+    moment: "travel",
+    worry: "Will I find chargers on my EV road trip?",
+    title: "A drive with charging at each stop",
+    gets: "The route split into days, and EV chargers near where each day ends.",
+    say: "Plan an EV drive from Seattle to Portland and find chargers near each stop.",
+    words: ["ev", "electric", "charger", "chargers", "charging", "tesla", "supercharger"],
     steps: [
-      { label: "Openings that match", by: ORTH, cost: 0.002, kind: "pays", where: "mainnet" },
-      { label: "Recent news on each company", by: ORTH, cost: 0.002, kind: "pays", where: "mainnet" },
-      { label: "Filings and funding (public companies)", by: "x402 Gateway (SEC)", cost: 0.001, kind: "pays", where: "later" },
+      { label: "Driving route with hours per leg", by: "Agento routes", cost: 0.03, kind: "pays", where: "now" },
+      { label: "Chargers near each stop", by: "OpenStreetMap", kind: "free", where: "now" },
     ],
   },
-
+  {
+    id: "stay-nearby",
+    agent: "worko",
+    moment: "travel",
+    worry: "I need somewhere to sleep near where I'm stopping.",
+    title: "Places to stay near a stop",
+    gets: "A shortlist of places to stay, closest first. You book the one you like yourself.",
+    say: "Find places to stay near Bend, Oregon.",
+    words: ["hotel", "motel", "stay", "sleep", "tonight", "lodging", "place to stay"],
+    steps: [{ label: "Places to stay near the stop", by: "OpenStreetMap", kind: "free", where: "now" }],
+  },
   // ---------- Trado ----------
   {
-    id: "rug-check",
+    id: "coin-check",
     agent: "trado",
     moment: "money",
-    worry: "I saw a coin online. Is it a rug pull?",
+    worry: "Should I buy now or wait?",
     title: "Check a coin before you buy it",
-    gets: "Who holds it, whether you could sell it, and its real price trend.",
-    say: "I saw a coin hyped online. Check whether it's safe before I buy any.",
-    words: ["rug", "rug pull", "memecoin", "meme coin", "token", "hyped", "shill", "safe coin", "new coin", "presale"],
+    gets: "The trend, the price confirmed by Chainlink, and a limit order at your price.",
+    say: "I want to buy $20 of ETH. Check the trend and confirm the price with Chainlink first.",
+    words: ["buy", "should i buy", "dip", "entry", "limit", "eth", "sol", "btc"],
     steps: [
-      { label: "Can it be sold? Taxes, owner controls", by: "KushBitx", cost: 0.001, kind: "pays", where: "later" },
-      { label: "How concentrated the holders are", by: "EMC2 AI (Bitquery)", cost: 0.35, kind: "pays", where: "later" },
       { label: "Price trend", by: "Agento feed", cost: 0.02, kind: "pays", where: "now" },
-      { label: "Verdict: buy at your limit, wait, or stay away", by: "Trado", kind: "free", where: "now" },
+      { label: "Confirm the price with Chainlink", by: "Quicknode (Chainlink)", cost: 0.0001, kind: "pays", where: "now" },
+      { label: "Buy at your limit", by: "Gemini", kind: "free", where: "now" },
     ],
   },
   {
-    id: "fx-tuition",
+    id: "gas-check",
     agent: "trado",
     moment: "money",
-    worry: "I'm paying tuition or rent in another currency.",
-    title: "Watch an exchange rate for a big payment",
-    gets: "Today's rate from Chainlink, and when it's a good day to convert.",
-    say: "I'm paying tuition in euros soon. Watch the euro rate and tell me when it's a good day to convert.",
-    words: ["tuition", "exchange rate", "currency", "convert", "euro", "pound", "yen", "fx", "abroad", "international"],
-    steps: [
-      { label: "Today's rate (euro, pound, yen)", by: "Quicknode (Chainlink)", cost: 0.0001, kind: "pays", where: "now" },
-      { label: "Rate history and other currencies", by: "Blocksize", cost: 0.005, kind: "pays", where: "later" },
-      { label: "Convert on the day", by: "Your bank", kind: "yours", where: "now" },
-    ],
+    worry: "Is now a cheap time to send?",
+    title: "Gas price before you send",
+    gets: "The live gas price on the chain you pick, and what a transfer costs right now.",
+    say: "What's the gas price on Base right now?",
+    words: ["gas", "fee", "fees", "gwei", "send", "transfer", "base", "arbitrum", "optimism", "polygon"],
+    steps: [{ label: "Live gas price", by: "Quicknode", cost: 0.0001, kind: "pays", where: "now" }],
   },
   {
-    id: "idle-cash",
+    id: "wallet-check",
     agent: "trado",
     moment: "money",
-    worry: "My money is just sitting there.",
-    title: "Find what your idle money could earn",
-    gets: "What you hold, and a few options with their risks spelled out.",
-    say: "I have USDC sitting in a wallet doing nothing. What could it earn, and what's the risk?",
-    words: ["idle", "sitting", "earn", "yield", "interest", "savings", "apy", "doing nothing", "stablecoin"],
-    steps: [
-      { label: "What the wallet holds", by: "Quicknode", cost: 0.0001, kind: "pays", where: "now" },
-      { label: "Idle funds and where they could go", by: "vaults.fyi", cost: 0.2, kind: "pays", where: "later" },
-      { label: "Is the stablecoin healthy?", by: "Quicknode (Chainlink)", cost: 0.0001, kind: "pays", where: "now" },
-    ],
+    worry: "How much USDC is in this wallet?",
+    title: "A wallet's USDC balance",
+    gets: "The wallet's USDC balance on the chain you pick, read live.",
+    say: "What's the USDC balance of 0x3C44CdDdB6a900fa2b585dd299e03d12FA4293BC on Ethereum?",
+    words: ["wallet", "balance", "usdc", "address", "holds", "0x"],
+    steps: [{ label: "USDC balance", by: "Quicknode", cost: 0.0001, kind: "pays", where: "now" }],
   },
   {
     id: "whats-coming",
@@ -272,23 +148,6 @@ export const RECIPES: Recipe[] = [
     ],
     next: ["crash-cover"],
   },
-  {
-    id: "report-card",
-    agent: "trado",
-    moment: "money",
-    worry: "Did my trading actually make money?",
-    title: "An honest report card on your trading",
-    gets: "What you made after fees, and whether bots skimmed your trades.",
-    say: "Did my trading actually make money after fees? Give me an honest report card.",
-    words: ["profit", "pnl", "made money", "lost money", "report card", "fees", "how am i doing", "performance"],
-    steps: [
-      { label: "Your positions and fills", by: "Gemini", kind: "free", where: "now" },
-      { label: "Profit after fees, across chains", by: "LoneStarOracle", cost: 0.2, kind: "pays", where: "later" },
-      { label: "Were your trades front-run by bots?", by: "EMC2 AI (Bitquery)", cost: 0.45, kind: "pays", where: "later" },
-    ],
-  },
-
-  // ---------- Inso ----------
   {
     id: "ticket-cover",
     agent: "inso",
@@ -308,32 +167,16 @@ export const RECIPES: Recipe[] = [
     id: "event-weather",
     agent: "inso",
     moment: "events",
-    worry: "Rain would ruin my outdoor plan.",
-    title: "Cover a wedding, BBQ or trip against the weather",
-    gets: "A payout if it rains or freezes on the day, sized to what you'd lose.",
-    say: "I'm planning something outdoors this weekend. Cover me if the weather ruins it.",
-    words: ["rain", "weather", "outdoor", "wedding", "bbq", "picnic", "patio", "snow", "storm", "cold", "heat"],
+    worry: "A heatwave or a cold snap would ruin my outdoor plan.",
+    title: "Cover a wedding, BBQ or trip against the temperature",
+    gets: "A payout if it's hotter or colder than a line you pick on the day, sized to what you'd lose.",
+    say: "I'm planning something outdoors this weekend. Cover me if it's too cold.",
+    words: ["weather", "outdoor", "wedding", "bbq", "picnic", "patio", "cold", "heat", "heatwave", "freezing", "temperature"],
     steps: [
-      { label: "Weather markets for the day and city", by: "Gemini markets", kind: "free", where: "now" },
+      { label: "Temperature markets for the day and city", by: "Gemini markets", kind: "free", where: "now" },
       { label: "How the odds moved", by: "Agento feed", cost: 0.02, kind: "pays", where: "now" },
       { label: "Place the cover at your price", by: "Gemini", kind: "free", where: "now" },
     ],
-  },
-  {
-    id: "trip-cover",
-    agent: "inso",
-    moment: "travel",
-    worry: "What if something ruins the trip I've paid for?",
-    title: "Insure your flight and hotel against the unexpected",
-    gets: "A payout if a storm, a cold snap or an event you name hits your dates.",
-    say: "Insure my flight and hotel bookings in case something unexpected happens on the trip.",
-    words: ["flight", "hotel", "trip", "vacation", "holiday", "booking", "travel insurance", "cancel"],
-    steps: [
-      { label: "Markets on what could ruin it", by: "Gemini markets", kind: "free", where: "now" },
-      { label: "How the odds moved", by: "Agento feed", cost: 0.02, kind: "pays", where: "now" },
-      { label: "Place the cover, sized to the bookings", by: "Gemini", kind: "free", where: "now" },
-    ],
-    next: ["airport-ride"],
   },
   {
     id: "rate-hike",
@@ -371,8 +214,8 @@ export const RECIPES: Recipe[] = [
     moment: "travel",
     worry: "Rides cost double when the weather turns.",
     title: "Cover your ride fares in bad weather",
-    gets: "A payout on the days it's cold or stormy enough to surge.",
-    say: "Cover my ride fares if the weather turns bad tomorrow in my city.",
+    gets: "A payout on the days it's cold enough to surge.",
+    say: "Cover my ride fares if it's freezing in New York tomorrow.",
     words: ["uber", "ride", "fare", "surge", "commute", "taxi", "weather", "cold snap"],
     steps: [
       { label: "Temperature markets for your city", by: "Gemini markets", kind: "free", where: "now" },
@@ -402,15 +245,7 @@ export const recipeById = (id: string) => RECIPES.find((r) => r.id === id);
 /** The most a recipe's paid steps cost per run, in USDC. */
 export const recipeCost = (r: Recipe) => r.steps.reduce((a, s) => a + (s.cost ?? 0), 0);
 
-/** Whether every step can run here today, some only on Arc mainnet, or some not yet. */
-export function recipeReady(r: Recipe): StepWhere {
-  if (r.steps.some((s) => s.where === "later")) return "later";
-  if (r.steps.some((s) => s.where === "mainnet")) return "mainnet";
-  return "now";
-}
-
-export const WHERE_TEXT: Record<StepWhere, string> = { now: "Works today", mainnet: "On Arc mainnet", later: "Not payable here yet" };
-export const KIND_TEXT: Record<StepKind, string> = { pays: "Agento pays", free: "Free", yours: "You finish it", account: "Your account", agent: "Another agent" };
+export const KIND_TEXT: Record<StepKind, string> = { pays: "Agento pays", free: "Free", agent: "Another agent" };
 
 const words = (t: string) => t.toLowerCase().replace(/[^a-z0-9$' -]/g, " ");
 

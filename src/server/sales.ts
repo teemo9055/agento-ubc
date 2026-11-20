@@ -138,7 +138,7 @@ export function finishRefund(id: string, outcome: { tx?: string } | null) {
   d.prepare("UPDATE sales SET refunded = ?, refundTx = ? WHERE id = ?").run(at, outcome?.tx ?? null, id);
 }
 
-/** A practice sale (Town Hall deposit in practice mode): recorded so it follows the same refund path, but no money moved. */
+/** A practice sale: recorded so it follows the same refund path, but no money moved. */
 export const PRACTICE_TX = "practice";
 export const isPractice = (s: Pick<Sale, "tx">) => s.tx.startsWith(PRACTICE_TX);
 

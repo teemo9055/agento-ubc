@@ -31,15 +31,16 @@ const show = (v: unknown) => (v === undefined ? "–" : typeof v === "object" ? 
 function watchable(run: Run) {
   const out: { ref: string; label: string; value: unknown }[] = [];
   for (const p of run.phases.filter((x) => x.status === "done" && x.lineId)) {
-    const r = run.results?.[p.id] as { data?: unknown; paid?: unknown } | undefined;
-    const a = r && typeof r === "object" && "paid" in r ? r.data : r;
+    const r = run.results?.[p.id];
+    // Same unwrapping as the server's check: a marketplace answer sits under data; the receipt isn't watchable.
+    const a = r && typeof r === "object" && "data" in r && "paid" in r ? (r as { data: unknown }).data : r;
     const walk = (v: unknown, path: string, depth: number) => {
       if (depth > 2 || out.length > 30 || v == null) return;
       if (typeof v === "number" || typeof v === "string" || typeof v === "boolean") {
         if (path) out.push({ ref: `$${p.id}.${path}`, label: `${p.label.replace(/^[^:]+: /, "")} · ${path.replace(/_/g, " ")}`, value: v });
         return;
       }
-      if (typeof v === "object" && !Array.isArray(v)) for (const [k, x] of Object.entries(v as Record<string, unknown>).slice(0, 12)) walk(x, path ? `${path}.${k}` : k, depth + 1);
+      if (typeof v === "object" && !Array.isArray(v)) for (const [k, x] of Object.entries(v as Record<string, unknown>).filter(([k]) => k !== "paid").slice(0, 12)) walk(x, path ? `${path}.${k}` : k, depth + 1);
     };
     walk(a, "", 0);
   }

@@ -81,8 +81,6 @@ export interface Phase {
   progress?: number;
   note?: string;
   lineId?: string;
-  /** A step you finish yourself in another app: Agento only gets the link ready. */
-  finish?: { app: string; url: string };
   payments: Payment[];
   alternatives?: { payeeName: string; payee: Hex; service: string; price: string }[];
   error?: { code: FailureCode; message: string };
@@ -368,8 +366,6 @@ export interface Proposal {
   hedge?: { protects: string; lossUsd: number; cost: number; payout: number; /** How much of the loss the payout covers after its own cost. */ covered: number };
   /** Changes code made to the model's move (rounding, budget), shown to the user. */
   adjustments?: string[];
-  /** Steps you finish yourself in another app (a ride, a flight), with a ready link. Nothing is paid here. */
-  finish?: import("./handoff").Handoff[];
   /** What the user gave, extracted once by the composer: name -> value with its type. */
   givens?: Record<string, { type: string; value: string }>;
   /** How this proposal was found, for the funnel and the report. */

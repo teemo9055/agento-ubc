@@ -14,22 +14,7 @@ import { PRODUCTS } from "./x402";
 import { marketBase, positions as heldPositions, spotFeeBps, tradingVenue, VENUE_NAME } from "./exchange";
 import { FEEDS } from "./chainlink";
 import { checkQuestion, readArc } from "./chain-tools";
-import { buildHandoff, type Handoff, type HandoffAsk } from "@/lib/handoff";
-import { KIND_TEXT, matchRecipes, WHERE_TEXT } from "@/lib/recipes";
-import { matchLearned } from "./learn";
-
-/** The details a ready-made booking link was built from, read back out of its link. */
-function handoffAskOf(h: Handoff): HandoffAsk {
-  const u = new URL(h.url);
-  const get = (k: string) => u.searchParams.get(k);
-  if (h.kind === "ride") return { kind: "ride", from: get("pickup[formatted_address]"), to: get("dropoff[formatted_address]") };
-  if (h.kind === "flight") {
-    const m = /^Flights from (.+) to (.+?)(?: on (\d{4}-\d{2}-\d{2}))?$/.exec(get("q") ?? "");
-    return { kind: "flight", from: m?.[1] ?? null, to: m?.[2] ?? null, date: m?.[3] ?? null };
-  }
-  if (h.kind === "hotel") return { kind: "hotel", to: get("ss"), date: get("checkin") };
-  return { kind: "table", to: get("term"), date: get("dateTime")?.slice(0, 10) ?? null };
-}
+import { KIND_TEXT, matchRecipes } from "@/lib/recipes";
 
 /**
  * Two kinds of tools.
@@ -203,28 +188,14 @@ export const FREE_TOOLS: Record<string, FreeTool> = {
       return { data, summary: `${list.length} marketplace services for “${q}” · ${here} payable now` };
     },
   },
-  compose_solution: {
-    description: "Open-ended problem, not a trade (check a seller, business, deal, person): builds up to 3 plans from the whole marketplace catalog, shown to the user. Then reply in one sentence.",
-    params: z.object({ problem: z.string().describe("In the user's words, with the links and numbers they gave") }),
-    async run(a) {
-      const { compose, tierSummary } = await import("./composer");
-      const c = await compose(String(a.problem ?? ""), [], { payable: "any", agent: "worko" });
-      rememberComposed(c);
-      const sum = tierSummary(c);
-      return { data: sum, summary: sum.funnel };
-    },
-  },
   find_recipe: {
     description: "Tested step combos for common problems. Start open-ended ones from the closest; tailor it.",
     params: z.object({ query: z.string() }),
     async run(a) {
       const q = String(a.query ?? "");
       const found = matchRecipes(q, { limit: 2 });
-      // Recipes learned from jobs that worked, sold to other agents too: offered first when they fit.
-      const learned = matchLearned(q, 1).map(({ recipe: r }) => ({ id: r.id, learned: `worked ${r.successes} of ${r.runs} times`, worry: r.worry, gets: r.gets, needs: r.needs.map((n) => n.name), steps: r.steps.map((s) => s.label), hint: "Call compose_solution with the problem to build it fresh, or follow these steps." }));
-      const data = found.map(({ recipe: r }) => ({ id: r.id, agent: r.agent, worry: r.worry, gets: r.gets, steps: r.steps.map((s) => `${s.label} · ${s.by}${s.cost ? ` · $${s.cost}` : ""} · ${KIND_TEXT[s.kind]} · ${WHERE_TEXT[s.where]}`) }));
-      const all = [...learned, ...data];
-      return { data: all.length ? all : { none: "No recipe fits; build it from the tools." }, summary: learned.length ? `Learned recipe: ${learned[0].worry}` : found.length ? `Recipe: ${found[0].recipe.worry}` : "No recipe for that yet" };
+      const data = found.map(({ recipe: r }) => ({ id: r.id, agent: r.agent, worry: r.worry, gets: r.gets, steps: r.steps.map((s) => `${s.label} · ${s.by}${s.cost ? ` · $${s.cost}` : ""} · ${KIND_TEXT[s.kind]}`) }));
+      return { data: data.length ? data : { none: "No recipe fits; build it from the tools." }, summary: found.length ? `Recipe: ${found[0].recipe.worry}` : "No recipe for that yet" };
     },
   },
   read_arc: {
@@ -237,14 +208,6 @@ export const FREE_TOOLS: Record<string, FreeTool> = {
     },
   },
 };
-
-/** Composed plans kept on the server by proposal id, so a client can pick one without sending it back. */
-const composedStore = new Map<string, import("./composer").Composed>();
-export function rememberComposed(c: import("./composer").Composed) {
-  for (const t of c.tiers) composedStore.set(t.proposal.id, c);
-  if (composedStore.size > 500) composedStore.delete(composedStore.keys().next().value!);
-}
-export const composedFor = (proposalId: string) => composedStore.get(proposalId);
 
 export async function runFreeTool(name: string, args: Record<string, unknown>): Promise<{ call: ToolCall; data: unknown }> {
   const tool = FREE_TOOLS[name];
@@ -332,7 +295,7 @@ export const RESEARCH: Record<string, ResearchTool> = {
   },
   drive_route: {
     product: "routes.drive",
-    description: "Driving route through ordered stops with distance and hours per leg (args: stops, place names joined by |)",
+    description: "Driving route through ordered stops with distance and hours per leg (args: stops, full place names with state or country joined by |)",
     args: ["stops"],
     key: (a) => `route:${a.stops}`,
     params: (a) => ({ stops: a.stops }),
@@ -347,10 +310,10 @@ export const MAX_SERVICE = BigInt(process.env.MARKETPLACE_MAX_PER_REQUEST ?? 10_
 
 /** Each agent's own harness: what it can look up for free, what it can buy, and what it can do. */
 export const TOOLKIT: Record<AgentId, { free: string[]; research: string[] }> = {
-  inso: { free: ["search_markets", "get_market", "browse_markets", "combo_quote", "my_positions", "spot_price", "search_services", "find_recipe", "compose_solution", "read_arc"], research: ["odds_history", "trade_tape", "oracle_price", "service"] },
-  trado: { free: ["spot_price", "search_markets", "get_market", "browse_markets", "my_positions", "search_services", "find_recipe", "compose_solution", "read_arc"], research: ["spot_candles", "oracle_price", "odds_history", "gas_price", "btc_network", "wallet_balance", "service"] },
+  inso: { free: ["search_markets", "get_market", "browse_markets", "combo_quote", "my_positions", "spot_price", "search_services", "find_recipe", "read_arc"], research: ["odds_history", "trade_tape", "oracle_price", "service"] },
+  trado: { free: ["spot_price", "search_markets", "get_market", "browse_markets", "my_positions", "search_services", "find_recipe", "read_arc"], research: ["spot_candles", "oracle_price", "odds_history", "gas_price", "btc_network", "wallet_balance", "service"] },
   // The trip agent can look at markets too, so a brief about a trip can name the fuel cover Inso would build.
-  worko: { free: ["find_place", "find_nearby", "search_markets", "my_positions", "search_services", "find_recipe", "compose_solution", "read_arc"], research: ["drive_route", "oracle_price", "service"] },
+  worko: { free: ["find_place", "find_nearby", "search_markets", "my_positions", "search_services", "find_recipe", "read_arc"], research: ["drive_route", "oracle_price", "service"] },
 };
 
 export const researchMenu = (agent?: AgentId) =>
@@ -404,7 +367,7 @@ export const ProposalInput = z.object({
           .describe("One order that pays only if EVERY leg resolves as its side says (legs from combo_quote). With it: eventTicker and symbol 'COMBO', side yes, orderType limit."),
       }),
       z.object({ kind: z.literal("spot_order"), symbol: z.string(), side: z.enum(["buy", "sell"]), limitPrice: z.number().positive(), amountUsd: z.number().min(1).max(100) }),
-      z.object({ kind: z.literal("itinerary"), stops: z.array(z.string().min(2).max(60)).min(2).max(6), hoursPerDay: z.number().int().min(2).max(12) }),
+      z.object({ kind: z.literal("itinerary"), stops: z.array(z.string().min(2).max(60)).min(2).max(6).describe("Full place names with state or country, e.g. 'Santa Fe, New Mexico'"), hoursPerDay: z.number().int().min(2).max(12).describe("Most hours of driving a day: the user's number; 6 if they didn't say") }),
     ])
     .nullable()
     .describe("The concrete move. null for research only."),
@@ -424,12 +387,6 @@ export const ProposalInput = z.object({
     .nullable()
     .optional()
     .describe("Set when the order is insurance (the user loses money if an event happens; buy the side that pays then). Code sizes it to cover lossUsd or fit budgetUsd. prediction_order buys only."),
-  finish: z
-    .array(z.object({ kind: z.enum(["ride", "flight", "hotel", "table"]), from: z.string().nullable().optional(), to: z.string().nullable().optional(), date: z.string().nullable().optional().describe("YYYY-MM-DD") }))
-    .max(3)
-    .nullable()
-    .optional()
-    .describe("Bookings the person makes in their own app; code adds the link."),
 });
 export type ProposalInput = z.infer<typeof ProposalInput>;
 
@@ -709,8 +666,6 @@ export async function validateProposal(agent: AgentId, input: unknown, id: strin
     if (members.length < 2) return { error: `The tie-breaker ${r.label} needs two steps that answer the same thing (group ${r.onConflict})` };
     if (Number(r.id.slice(1)) < Math.max(...members.map((m) => Number(m.id.slice(1))))) return { error: `The tie-breaker ${r.label} must come after the steps it settles` };
   }
-  const finish = (p.finish ?? []).map(buildHandoff).filter((h): h is Handoff => Boolean(h));
-  if ((p.finish ?? []).length > finish.length) adjustments.push("Left out a booking link that needs a place to go to");
   return {
     proposal: {
       id,
@@ -727,7 +682,6 @@ export async function validateProposal(agent: AgentId, input: unknown, id: strin
       hedge: hedgeOf(p.hedge, action),
       market,
       adjustments: adjustments.length ? adjustments : undefined,
-      finish: finish.length ? finish : undefined,
       ...(opts.composed
         ? {
             givens: Object.keys(givens).length ? givens : undefined,
@@ -840,7 +794,6 @@ export function toProposalInput(p: Proposal): ProposalInput {
     alsoRequire: p.also?.length ? p.also : null,
     budgetUsd: p.budgetUsd ?? null,
     hedge: p.hedge ? { protects: p.hedge.protects, lossUsd: p.hedge.lossUsd } : null,
-    finish: p.finish?.length ? p.finish.map(handoffAskOf) : null,
   } as ProposalInput;
 }
 
@@ -867,7 +820,7 @@ export const PlanInput = z.object({
   steps: z
     .array(
       z.object({
-        agent: z.enum(["inso", "trado", "worko"]).describe("inso: prediction-market orders, hedges and sells. trado: spot crypto orders and onchain checks. worko: errands, checks and driving itineraries."),
+        agent: z.enum(["inso", "trado", "worko"]).describe("inso: prediction-market orders, hedges and sells. trado: spot crypto orders and onchain checks. worko: driving routes and places near a stop."),
         brief: z.string().min(8).max(260).describe("What this agent should do, complete on its own: name the market, coin, places and amounts. That agent builds the move with its own tools; it never sees this conversation."),
         after: z.array(z.number().int().min(1).max(12)).max(6).describe("Numbers of the earlier steps this one must wait for. Empty when it doesn't depend on any: independent steps run at the same time."),
         gate: z.enum(["done", "filled"]).describe("done: start once the steps in `after` finish. filled: only once their orders have actually filled."),

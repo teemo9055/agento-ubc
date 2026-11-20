@@ -39,7 +39,8 @@ export function outcomeOf(a: Pick<Prediction, "label" | "side">): string {
 export function titleOf(p: Pick<Proposal, "action" | "hedge" | "title">): string {
   const a = p.action;
   if (!a) return p.title;
-  if (a.kind === "itinerary") return `Drive: ${a.stops.join(" → ")}`.slice(0, 60);
+  // Start and end, by town name: the full list with states runs past the line and loses the destination.
+  if (a.kind === "itinerary") return `Drive: ${a.stops[0].split(",")[0]} → ${a.stops[a.stops.length - 1].split(",")[0]}`.slice(0, 60);
   if (a.kind === "spot_order") return `${a.side === "buy" ? "Buy" : "Sell"} ${coin(a.symbol)}`;
   if (p.hedge && a.trade !== "sell") return `Cover: ${p.hedge.protects}`.slice(0, 60);
   if (a.combo) return `Pays if all ${a.combo.legs.length} happen`;

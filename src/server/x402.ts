@@ -1,6 +1,4 @@
 import type { Hex } from "viem";
-import { allLearned, learnedById, recipePrice } from "./learn";
-import { recipeInputs, runRecipe } from "./recipeRun";
 import { chainOf, send, usdcAbi } from "./chain";
 import { NETWORKS, type Net } from "@/lib/networks";
 import { SELLERS } from "./sellers";
@@ -8,7 +6,6 @@ import * as gemini from "./gemini";
 import * as geo from "./geo";
 import { TEST_LABEL, type DeliveryPromise } from "./delivery";
 import type { Sale } from "./sales";
-import { createItem, depositPaid, HALL_DEPOSIT, HallInput, KINDS } from "./town/hall";
 
 /** The network the catalog leads with. Each 402 lists every network this seller can settle on. */
 export const NETWORK = NETWORKS.testnet.caip;
@@ -48,52 +45,10 @@ export interface Product {
   failed?: (data: unknown) => string | null;
 }
 
-// ---------- learned recipes for sale: recipe.<id> ----------
+/** Everything on sale. */
+export const forSale = (): Product[] => Object.values(PRODUCTS);
 
-const salesToday = new Map<string, number>();
-const today = () => new Date().toISOString().slice(0, 10);
-/** USDC spent today running recipes for buyers; the day's cap stops sales before more is spent. */
-export const recipeSpendToday = () => salesToday.get(today()) ?? 0;
-const DAILY_CAP = () => Number(process.env.RECIPE_SALES_DAILY_CAP_USD ?? 5);
-
-/** A promoted learned recipe as a product other agents can buy. */
-export function recipeProduct(id: string): Product | undefined {
-  const r = learnedById(id);
-  if (!r || r.status !== "promoted") return undefined;
-  const price = recipePrice(r);
-  return {
-    id: `recipe.${r.id}`,
-    description: `${r.title}: ${r.gets}. Worked ${r.successes} of ${r.runs} times; runs ${r.steps.length} paid checks from Circle's Agent Marketplace and returns a report with the evidence`.slice(0, 300),
-    price,
-    params: Object.fromEntries(r.needs.map((n) => [n.name, `${n.type.replace(/_/g, " ")} (required)`])),
-    example: r.needs.map((n) => `${n.name}=${encodeURIComponent(n.type === "phone" ? "+16045550199" : n.type.includes("url") ? "https://example.com/item/1" : n.type === "email" ? "someone@example.com" : n.type === "domain" ? "example.com" : "example")}`).join("&"),
-    promise: { fields: ["report", "receipt"] },
-    payFirst: true,
-    nets: [r.network],
-    validate: (q) => {
-      recipeInputs(r, (k) => q.get(k));
-      if (recipeSpendToday() + r.avgCostUsd > DAILY_CAP()) throw new BadInput(`Sold out for today: recipe runs are capped at $${DAILY_CAP()} a day`);
-    },
-    run: async (q) => {
-      const out = await runRecipe(r, recipeInputs(r, (k) => q.get(k)));
-      salesToday.set(today(), recipeSpendToday() + out.receipt.spentUsd);
-      return out;
-    },
-    failed: (d) => ((d as { ok?: boolean } | null)?.ok === false ? "A must-know check didn't deliver" : null),
-  };
-}
-
-/** Everything on sale: the fixed products and every promoted learned recipe. */
-export function forSale(): Product[] {
-  const recipes = allLearned()
-    .filter((r) => r.status === "promoted")
-    .map((r) => recipeProduct(r.id))
-    .filter((p): p is Product => Boolean(p));
-  return [...Object.values(PRODUCTS), ...recipes];
-}
-
-/** A fixed product, or a learned recipe for sale. */
-export const productFor = (id: string): Product | undefined => PRODUCTS[id] ?? (id.startsWith("recipe.") ? recipeProduct(id.slice(7)) : undefined);
+export const productFor = (id: string): Product | undefined => PRODUCTS[id];
 
 /** How long after a sale a refund can be claimed. */
 export const REFUND_WINDOW_MIN = 10;
@@ -219,24 +174,6 @@ export const PRODUCTS: Record<string, Product> = {
     example: "list=new&limit=5",
     promise: { list: true },
     run: (q) => gemini.listEvents((["new", "upcoming", "settled"].includes(q.get("list") ?? "") ? q.get("list") : "new") as gemini.Listing, Number(q.get("limit") ?? 8)),
-  },
-  "hall.request": {
-    id: "hall.request",
-    description: "Send Agento's Town Hall a request, feedback, a need or a feature offer. The 1 USDC is a deposit against spam: refunded when an admin finds it isn't spam",
-    price: HALL_DEPOSIT,
-    params: { kind: KINDS.join(", "), text: "What you want to say, 5 to 1000 characters", from: "Your name or your agent's (optional)", contact: "How to reach you (optional)" },
-    example: "kind=feedback&text=Please%20list%20more%20Arc%20testnet%20services&from=my-agent",
-    promise: { fields: ["id", "status", "statusUrl"] },
-    run: async (q) => {
-      const v = HallInput.safeParse({ kind: q.get("kind") ?? "", text: q.get("text") ?? "", from: q.get("from") ?? undefined, contact: q.get("contact") ?? undefined });
-      if (!v.success) throw new BadInput(v.error.issues[0]?.message ?? "Check kind and text");
-      const item = createItem(v.data, "agent", "live");
-      return { id: item.id, status: "received", statusUrl: `/town/hall/${item.id}`, deposit: "1 USDC, refunded if it isn't spam" };
-    },
-    settled: (sale, data) => {
-      const id = (data as { id?: unknown } | null)?.id;
-      if (typeof id === "string") depositPaid(id, sale);
-    },
   },
 };
 

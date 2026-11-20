@@ -12,7 +12,7 @@ export const BOARD_H = 320;
 const AGENTS: { id: AgentId; name: string; does: string; x: number; y: number; tilt: number }[] = [
   { id: "inso", name: "Inso", does: "Markets & cover", x: 16, y: 150, tilt: -6 },
   { id: "trado", name: "Trado", does: "Coins", x: 126, y: 168, tilt: 4 },
-  { id: "worko", name: "Worko", does: "Errands", x: 236, y: 146, tilt: -3 },
+  { id: "worko", name: "Worko", does: "Road trips", x: 236, y: 146, tilt: -3 },
 ];
 
 /** 1. The ask box and the three agents. */

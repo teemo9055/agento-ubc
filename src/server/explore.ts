@@ -1,40 +1,18 @@
 import { z } from "zod";
 import { onMainnet } from "./netContext";
-import { buildHandoff, type HandoffAsk } from "@/lib/handoff";
 import type { Plan, AgentId, ChatMsg, Proposal, ToolCall } from "@/lib/types";
 import { aiChat, aiEnabled, type AiUsage, type ChatTurn, type ToolSpec } from "./ai";
 import * as gemini from "./gemini";
 import { describeAction, tradingVenue, VENUE_NAME, VENUE_NOTE } from "./exchange";
 import { mainnetOn } from "@/lib/network";
 import { plainWords } from "@/lib/plain";
-import type { Brief, ChatTiers } from "@/lib/types";
+import type { Brief } from "@/lib/types";
 import { ACTIONS, FREE_TOOLS, PlanInput, ProposalInput, researchMenu, runFreeTool, TOOLKIT, validatePlan, validateProposal } from "./tools";
 import { checksText, conditionText } from "./agents/toolbox";
 import { lessonLines, PLAYBOOKS, PRIMERS } from "./knowledge";
-import { providerDirectory } from "./providers";
 import { diffMoves } from "./move-diff";
 import { groundReply } from "./grounding";
-import { rememberComposed, toProposalInput } from "./tools";
-import type { Composed } from "./composer";
-
-/** The composer's plans as the chat carries them. */
-export const chatTiers = (c: Composed): ChatTiers => ({
-  options: c.tiers.map((t) => ({ tier: t.tier, label: t.label, proposal: t.proposal, runnable: t.runnable, why: t.why, cost: t.cost, steps: t.steps, answers: t.answers })),
-  selected: c.selected,
-  trace: c.trace,
-  gaps: c.gaps,
-});
-
-/** Runs the composer for a problem, keeps its plans, and says what to show. */
-async function composeTurn(problem: string, chat: ChatMsg[], agent: AgentId, id: string, onTool: (note: string) => void) {
-  onTool("Searching the whole marketplace for a way to do this");
-  const { compose, tierSummary } = await import("./composer");
-  const c = await compose(problem, chat, { payable: "any", agent, id });
-  rememberComposed(c);
-  const sel = c.tiers.find((t) => t.tier === c.selected);
-  return { composed: c, tiers: c.tiers.length ? chatTiers(c) : undefined, proposal: sel?.runnable ? sel.proposal : undefined, summary: tierSummary(c) };
-}
-
+import { toProposalInput } from "./tools";
 /**
  * Explore: the agent answers questions with free tools, then turns the
  * conversation into one concrete move the user can approve. Paid research and
@@ -51,7 +29,7 @@ const PERSONA: Record<AgentId, string> = {
     "Voice: a brisk trading-desk pro. Numbers first, no hype, a little sceptical. Short sentences ('ETH's down 8% on the day. Not an uptrend.').",
   ].join(" "),
   worko: [
-    "You are Worko, an errands agent: you get real-world things done. Checks before someone commits (a listing, a seller, a place): paid marketplace services as `service` steps (search_services; only payableHere ones). Drives: drive_route + an itinerary. Bookings (ride, flight, hotel, table): put them in `finish`; the person completes them in their own app. You never book, sign in or pay a merchant. If no payable service fits, say which one would and that it isn't payable here yet. Hours and distances only from a route that has run.",
+    "You are Worko, a trip helper. You plan drives (drive_route, then an itinerary split into days that fit the person's hours on the road) and find places near a stop: hotels, EV chargers, fuel and food, from OpenStreetMap. You can't book or buy anything (no flights, hotels, rides or tables), can't search the web and can't read reviews. Hours and distances only from a route that has run.",
     "Voice: a calm, capable fixer. Practical and warm; you think in next steps ('First I'd check the seller's photos, then the number.').",
   ].join(" "),
 };
@@ -90,11 +68,11 @@ function system(agent: AgentId) {
       ? "CHAINLINK: you CAN check crypto prices against Chainlink's oracle (BTC, ETH, SOL, LINK). It isn't a free lookup: add a research step {tool: oracle_price, args: {symbol: 'btcusd'}} to the move, and to make the order depend on it add condition {metric: 'oracle_price', symbol: 'btcusd', op, value}. It's bought for 0.0001 USDC right before the check. Never tell the user you can't access Chainlink."
       : "",
     `PAID RESEARCH you can attach to a move (bought after approval; Gemini data from the user's vault over x402 on Arc, everything else from vendors on Circle's Agent Marketplace with Gateway nanopayments):\n${researchMenu(agent)}\nAttach 1-2 lookups only when they could change the decision and say why in each; skip research the free tools already answered. Research symbols must be live markets with data.`,
-    `PROBLEMS: when the user describes a worry, not what to do: call find_recipe first. For checks and research (a seller, a business, a deal, a person), call compose_solution: it builds the plans from the whole catalog. For money risks, look around (markets, prices), then call propose_plan with \`understood\`, \`drivers\` (2-5; each now/partly with its step number, mainnet with the provider in \`how\`, or no with why) and \`leftOpen\`. Ask (ask_user) only if you can't tell the drivers. ${onMainnet() ? "Mainnet is ON: payable services can be steps now." : "Testnet: crypto and commodity markets can be ordered; mark mainnet only for weather, sports or rates markets, or a service you found (name its provider)."}`,
+    `PROBLEMS: when the user describes a worry, not what to do: call find_recipe first. For money risks, look around (markets, prices), then call propose_plan with \`understood\`, \`drivers\` (2-5; each now/partly with its step number, mainnet with the provider in \`how\`, or no with why) and \`leftOpen\`. Ask (ask_user) only if you can't tell the drivers. ${onMainnet() ? "Mainnet is ON: payable services can be steps now." : "Testnet: crypto and commodity markets can be ordered; mark mainnet only for weather, sports or rates markets, or a service you found (name its provider)."}`,
     `KNOW-HOW for problems:\n- ${PLAYBOOKS.join("\n- ")}`,
-    "PLANS: when a request has several parts (more than one move, or work for more than one agent), call propose_plan instead of propose_move. Break it into the steps that really make it up, one per thing to get done (as many as the task needs, up to 12; long workflows are fine), and for each write a brief the owning agent can act on alone (inso: prediction orders, hedges, sells; trado: spot orders and onchain checks like gas, Bitcoin fees or a wallet balance; worko: errands, checks and drives). Put real names and numbers in the brief; look them up first. Say what each step waits for in `after`: leave it empty for steps that don't depend on anything, so they run at the same time; use gate 'filled' when a step should only start once the order it waits for has filled, useProceeds when it should spend what that sell brought in, and usesFindings when WHAT it does depends on what those steps find. Hotels, flights and rides go in a worko step's `finish` (the person books them). Put anything else no agent can do in `unavailable` with the honest reason. Never pretend a step books something.",
-    `PROVIDERS YOU KNOW (say plainly what each sells and whether you can use it now):\n${providerDirectory()}`,
-    "MARKETPLACE: prefer your typed lookups; use a `service` step for any other payableHere listing. Most listings charge on Arc mainnet or Base: say 'that one needs mainnet' rather than pretend.",
+    "PLANS: when a request has several parts (more than one move, or work for more than one agent), call propose_plan instead of propose_move. Break it into the steps that really make it up, one per thing to get done (as many as the task needs, up to 12; long workflows are fine), and for each write a brief the owning agent can act on alone (inso: prediction orders, hedges, sells; trado: spot orders and onchain checks like gas, Bitcoin fees or a wallet balance; worko: errands, checks and drives). Put real names and numbers in the brief; look them up first. Say what each step waits for in `after`: leave it empty for steps that don't depend on anything, so they run at the same time; use gate 'filled' when a step should only start once the order it waits for has filled, useProceeds when it should spend what that sell brought in, and usesFindings when WHAT it does depends on what those steps find. Put anything else no agent can do in `unavailable` with the honest reason. Never pretend a step books something.",
+    "MARKETPLACE: prefer your typed lookups; use a `service` step only for a listing search_services marks payableHere.",
+    "CAN'T DO: when something isn't possible here, say so in one short plain sentence, then offer the closest thing you can do. Never name services, providers or networks (no 'testnet', 'mainnet', vendor or product names) when explaining what you can't do.",
     `KNOWLEDGE (shared notes; use them, don't recite them):\n- ${[...PRIMERS[agent], ...lessonLines(agent).map((l) => `Learned from past jobs: ${l}`)].join("\n- ")}`,
     "TRUTH: never invent tickers, symbols, prices, odds or places; use what the tools returned in this conversation (see 'facts' in earlier turns) or look them up again. Prices of prediction contracts are 0-1; say them as cents or %. Don't promise fills or profits. This isn't financial advice; say so only if asked for advice.",
     [
@@ -200,8 +178,6 @@ export interface TurnResult {
   proposal?: Proposal;
   plan?: Plan;
   brief?: Brief;
-  /** Plans the composer built: shown as tiers above the move. */
-  tiers?: ChatTiers;
   /** Tappable answers to the question in `text`. */
   options?: string[];
   suggestions: string[];
@@ -296,7 +272,6 @@ export async function exploreTurn(agent: AgentId, chat: ChatMsg[], onTool: (note
   let proposal: Proposal | undefined;
   let plan: Plan | undefined;
   let brief: Brief | undefined;
-  let tiers: ChatTiers | undefined;
   for (let round = 0; round < MAX_ROUNDS; round++) {
     const last = round === MAX_ROUNDS - 1;
     const r = await aiChat(messages, last ? [] : toolSpecs(agent, opts.solo));
@@ -310,7 +285,7 @@ export async function exploreTurn(agent: AgentId, chat: ChatMsg[], onTool: (note
       const text = tighten(g.text, Boolean(plan ?? proposal));
       // A plan replaces any single move drafted in the same turn: the card shown is the plan.
       if (plan) return { unverified: g.unverified.length ? g.unverified : undefined, facts: facts.filter(Boolean).join(" || ").slice(0, 1500) || undefined, text: text || plan.why, tools, plan, brief, suggestions: ["Yes, start the plan", ...suggestions.filter((x) => !/^yes/i.test(x))].slice(0, 3), usage };
-      return { unverified: g.unverified.length ? g.unverified : undefined, facts: facts.filter(Boolean).join(" || ").slice(0, 1500) || undefined, text: text || (proposal ? proposal.why : brief ? brief.understood : "Here's what I found."), tools, proposal, brief, tiers, suggestions: proposal ? withAccept(suggestions, proposal) : suggestions, usage };
+      return { unverified: g.unverified.length ? g.unverified : undefined, facts: facts.filter(Boolean).join(" || ").slice(0, 1500) || undefined, text: text || (proposal ? proposal.why : brief ? brief.understood : "Here's what I found."), tools, proposal, brief, suggestions: proposal ? withAccept(suggestions, proposal) : suggestions, usage };
     }
     for (const c of r.calls) {
       let content: unknown;
@@ -341,17 +316,6 @@ export async function exploreTurn(agent: AgentId, chat: ChatMsg[], onTool: (note
             ? { ok: true, shown: "The brief is on screen: what you understood, each driver with what can be done, and the steps. Reply with ONE short sentence: the single most useful thing this does for them. Don't repeat the list or numbers." }
             : { ok: true, shown: "The plan card is now on screen. Reply with ONE short sentence on how the steps fit together; add a second only to name what's in `unavailable`. Don't repeat numbers or mention the card." };
         }
-      } else if (c.name === "compose_solution") {
-        const problem = String((c.args as { problem?: string }).problem ?? "") || ([...chat].reverse().find((m) => m.role === "user")?.text ?? "");
-        const t = await composeTurn(problem, chat, agent, proposalId, onTool);
-        tools.push({ tool: "compose_solution", args: { problem: problem.slice(0, 120) }, summary: t.summary.funnel, ok: true });
-        if (t.tiers) {
-          tiers = t.tiers;
-          if (t.proposal) proposal = t.proposal;
-        }
-        content = t.tiers
-          ? { ok: true, ...t.summary, shown: "The plans are on screen as Quick / Thorough / Most certain, with what each answers and costs. Reply with ONE short sentence on what they check. Don't repeat numbers." }
-          : { ok: false, ...t.summary, hint: "No plan could be built from the catalog. Say in one line what's missing (the gaps), and what the user could give to make it possible." };
       } else if (c.name === "propose_move") {
         onTool("Drafting a move");
         const v = await validateProposal(agent, onlyStatedBudget(c.args, chat), proposalId);
@@ -460,7 +424,7 @@ export function partsOf(text: string): string[] {
 /** Which agent does a part of a request. */
 export function agentFor(part: string): AgentId | null {
   const t = part.toLowerCase();
-  // A booking on its own needs your account: it's handed to you as a link (see rulesPlan), not given to an agent.
+  // Agento can't book: a hotel or flight on its own isn't given to an agent.
   if (/\b(hotel|flight|airbnb|room|accommodation|stay)\b/.test(t) && !/\b(drive|trip|route)\b/.test(t)) return null;
   if (/\b(drive|driving|road ?trip|itinerary|route|ride|uber|errand|listing|seller|scam)\b/.test(t) || /\bfrom \S.* to \S/.test(t)) return "worko";
   if (/\b(position|odds|bet|contract|prediction|market)s?\b/.test(t) || /\bsell\b/.test(t)) return "inso";
@@ -478,15 +442,9 @@ async function rulesPlan(text: string, onTool: (note: string) => void, pid: stri
   const steps: Plan["steps"] = [];
   const unavailable: Plan["unavailable"] = [];
   const notes: string[] = [];
-  const bookings: { part: string; ask: HandoffAsk }[] = [];
   for (const r of routed) {
-    const place = /\b(?:in|at|near|to)\s+([A-Z][\w.' -]{1,40})/.exec(r.part)?.[1]?.trim();
-    if (!r.agent && place && /hotel|room|stay|accommodation|airbnb/i.test(r.part)) {
-      bookings.push({ part: r.part, ask: { kind: "hotel", to: place } });
-      continue;
-    }
     if (!r.agent) {
-      unavailable.push({ what: r.part.slice(0, 80), why: /hotel|room|stay|accommodation|airbnb/i.test(r.part) ? "Hotel booking services on Circle's marketplace take Arc mainnet only; this app pays on Arc testnet" : /flight/i.test(r.part) ? "Flight booking services on Circle's marketplace take Arc mainnet only" : "No agent here does this" });
+      unavailable.push({ what: r.part.slice(0, 80), why: /hotel|room|stay|accommodation|airbnb|flight/i.test(r.part) ? "Agento can't book hotels or flights" : "No agent here does this" });
       continue;
     }
     const sub = await rulesTurn(r.agent, [{ id: "p", role: "user", text: r.part, at: new Date().toISOString() }], onTool, `${pid}-s${steps.length + 1}`);
@@ -499,13 +457,6 @@ async function rulesPlan(text: string, onTool: (note: string) => void, pid: stri
     const spendsProceeds = /\b(proceeds|money|cash|that|it)\b/i.test(r.part) && prev?.kind === "prediction_order" && prev.trade === "sell";
     // Without the model the order the user said things in is the order they run in.
     steps.push({ id: `s${steps.length + 1}`, agent: r.agent, proposal: sub.proposal, after: steps.length ? [`s${steps.length}`] : [], gate: spendsProceeds ? "filled" : "done", brief: r.part, useProceeds: spendsProceeds || undefined, status: "waiting" });
-  }
-  // Bookings ride along with the trip as links you finish yourself; with no trip, they're named as yours to do.
-  const trip = steps.find((x) => x.agent === "worko");
-  for (const b of bookings) {
-    const h = buildHandoff(b.ask);
-    if (trip && h) trip.proposal = { ...trip.proposal, finish: [...(trip.proposal.finish ?? []), h] };
-    else unavailable.push({ what: b.part.slice(0, 80), why: "Booking needs your own account; Worko can get the link ready as part of a trip" });
   }
   const cant = unavailable.length ? ` I can't do ${unavailable.map((u) => u.what).join(" or ")} here: ${unavailable[0].why}.` : "";
   // One doable part is just a move, with an honest note about the rest.
@@ -536,7 +487,6 @@ export function guide(agent: AgentId, text: string): { question: string; options
 const failText = (v: { error: string } | { proposal: Proposal }) => ("error" in v ? ` I couldn't set up a move: ${v.error.split(". ")[0]}.` : "");
 
 /** Words and values that mean: check someone or something before paying. */
-const CHECKS = /\b(scam|legit|real\b|fake|trust|check (the|this|a) (seller|listing|business|company|number|website|wallet)|before i (pay|send|buy)|seller|listing)\b|https?:\/\/|\+?\(?\d{3}\)?[\s.-]?\d{3}[\s.-]?\d{4}|0x[0-9a-f]{40}/i;
 
 async function rulesTurn(agent: AgentId, chat: ChatMsg[], onTool: (note: string) => void, pid: string): Promise<TurnResult> {
   const userText = [...chat].reverse().find((m) => m.role === "user")?.text ?? "";
@@ -578,20 +528,11 @@ async function rulesTurn(agent: AgentId, chat: ChatMsg[], onTool: (note: string)
 
   if (agent === "worko") {
     const stops = stopsIn(userText).length ? stopsIn(userText) : stopsIn(task);
-    // A check before paying someone: build it from the marketplace catalog.
-    if (stops.length < 2 && CHECKS.test(task)) {
-      const t = await composeTurn(task, chat, agent, pid, onTool);
-      if (t.tiers) {
-        const sel = t.tiers.options.find((o) => o.tier === t.tiers!.selected);
-        return { text: `${t.summary.funnel}. ${sel?.runnable ? `${sel.label} answers ${sel.answers.length} question${sel.answers.length === 1 ? "" : "s"}.` : `These run on Arc mainnet (${sel?.why ?? "not payable here"}).`}`, tools: [{ tool: "compose_solution", args: { problem: task.slice(0, 120) }, summary: t.summary.funnel, ok: true }], proposal: t.proposal, tiers: t.tiers, suggestions: t.proposal ? ["Yes, set it up", "Not now"] : [], usage: [] };
-      }
-      return { text: `I couldn't build a check for that from the marketplace: ${t.summary.gaps.map((g) => `${g.fact.replace(/\?$/, "")} (${g.why.toLowerCase()})`).join("; ") || "nothing fits"}.`, tools, suggestions: [], usage: [] };
-    }
     if (stops.length < 2)
       return {
-        text: /\b(drive|driving|road ?trip|route)\b/i.test(task) ? "Where are you starting and where do you want to end up?" : "I can check a listing or seller before you pay, plan a drive, or get a ride, flight or hotel ready for you to book. Which one?",
+        text: /\b(drive|driving|road ?trip|route)\b/i.test(task) ? "Where are you starting and where do you want to end up?" : "I can plan a drive and find places to stay, eat, charge or fuel along it. Where are you starting and where do you want to end up?",
         tools,
-        suggestions: ["From Vancouver to Seattle", "Check a listing before I pay", "A ride from the airport"],
+        suggestions: ["From Vancouver to Seattle", "From Austin to Denver in 3 days"],
         usage: [],
       };
     const days = Number(task.match(/(\d+)\s*days?/)?.[1] ?? 0);
@@ -603,11 +544,6 @@ async function rulesTurn(agent: AgentId, chat: ChatMsg[], onTool: (note: string)
       action: { kind: "itinerary", stops, hoursPerDay: days ? 8 : 6 },
       condition: null,
       budgetUsd: null,
-      // Bookings it can't make for you come back as ready links.
-      finish: [
-        ...(/\b(ride|uber|lyft|taxi|airport|land)\b/i.test(task) ? [{ kind: "ride" as const, from: stops[0], to: stops[stops.length - 1] }] : []),
-        ...(/\b(hotel|stay|sleep|room)\b/i.test(task) ? [{ kind: "hotel" as const, to: stops[stops.length - 1] }] : []),
-      ],
     }, pid);
     return { text: "proposal" in v ? "Here's a plan for that drive." : `I couldn't plan that drive.${failText(v)}`, tools, proposal: "proposal" in v ? v.proposal : undefined, suggestions: ["Yes, set it up", "Max 5 hours a day", "Not now"], usage: [] };
   }

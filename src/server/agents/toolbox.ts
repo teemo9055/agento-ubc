@@ -80,6 +80,37 @@ function splitDays(route: geo.Route, places: geo.Place[], hoursPerDay: number): 
   return days;
 }
 
+/**
+ * A stretch longer than a day's driving gets an overnight stop at a real town along the road, so no
+ * day runs past the hours asked for. Towns come from the map at even points along that stretch; the
+ * route is then driven again to check, at most twice.
+ */
+export async function fitLongLegs(places: geo.Place[], route: geo.Route, hoursPerDay: number): Promise<{ places: geo.Place[]; route: geo.Route; added: string[] }> {
+  const added: string[] = [];
+  for (let round = 0; round < 2; round++) {
+    const long = route.legs.map((l, i) => ({ l, i })).filter(({ l }) => l.hours > hoursPerDay + 0.1);
+    if (!long.length) break;
+    const next = [...places];
+    // From the end, so earlier positions stay right as towns go in.
+    for (const { l, i } of long.reverse()) {
+      const parts = Math.ceil(l.hours / hoursPerDay);
+      const leg = await geo.drive([places[i], places[i + 1]]);
+      const towns: geo.Place[] = [];
+      for (let k = 1; k < parts; k++) {
+        const [lon, lat] = geo.pointAlong(leg.path, k / parts);
+        const t = await geo.townAt(lat, lon).catch(() => null);
+        if (t && ![...next, ...towns].some((x) => x.name === t.name)) towns.push(t);
+      }
+      next.splice(i + 1, 0, ...towns);
+      added.push(...towns.map((t) => t.name));
+    }
+    if (next.length === places.length) break;
+    places = next;
+    route = await geo.drive(places);
+  }
+  return { places, route, added };
+}
+
 async function geocodeAll(names: string[]) {
   const out: geo.Place[] = [];
   for (const n of names) {
@@ -191,11 +222,6 @@ export function planFromProposal(p: Proposal): PlanDraft {
   } else if (a?.kind === "itinerary") {
     phases.push({ id: "act", label: "Plan the days", sub: `${a.stops.length} stops · ≤ ${a.hoursPerDay} h a day`, dependsOn: before, optional: false });
   }
-  // Bookings you make yourself come last: the link is ready once everything before it is done.
-  const last = phases.some((x) => x.id === "act") ? ["act"] : phases.some((x) => x.id === "check") ? ["check"] : research;
-  (p.finish ?? []).forEach((h, i) =>
-    phases.push({ id: `h${i + 1}`, label: h.label, sub: `You finish it in ${h.app}`, dependsOn: last, optional: true, finish: { app: h.app, url: h.url } }),
-  );
 
   const cards: Card[] = [
     { kind: "deliverable", title: p.title, points: [p.ask, ...(a ? [describeAction(a)] : []), ...p.research.map((r) => r.label)].slice(0, 4) },
@@ -455,11 +481,6 @@ export function toolboxAgent(id: AgentId): AgentDef {
         ctx.progress(1);
         return;
       }
-      if (/^h\d$/.test(phaseId)) {
-        // Nothing to pay or call: the link was built when the move was checked.
-        ctx.progress(1, "Link ready for you");
-        return;
-      }
       if (phaseId === "check") {
         await analyse(p, mem, ctx);
         ctx.progress(1, mem.check!.text);
@@ -475,6 +496,11 @@ export function toolboxAgent(id: AgentId): AgentDef {
         if (a.kind === "itinerary") {
           mem.places ??= await geocodeAll(a.stops);
           mem.route ??= await geo.drive(mem.places);
+          // No day longer than asked: a stretch that is too long gets a night at a town on the way.
+          const fit = await fitLongLegs(mem.places, mem.route, a.hoursPerDay);
+          mem.places = fit.places;
+          mem.route = fit.route;
+          if (fit.added.length) ctx.progress(0.4, `Added a night in ${fit.added.join(" and ")} so no day goes past ${a.hoursPerDay} h`);
           mem.days = splitDays(mem.route, mem.places, a.hoursPerDay);
           // Where each driving day ends, list a few places to sleep. One at a time: the map service asks for that.
           let stays = 0;
@@ -491,7 +517,9 @@ export function toolboxAgent(id: AgentId): AgentDef {
               stays++;
             }
           }
-          ctx.progress(1, `${mem.days.length} day${mem.days.length === 1 ? "" : "s"}${stays ? ` · places to stay listed for ${stays === mem.days.length ? "each night" : `${stays} of them`}` : ""}`);
+          const over = mem.days.filter((d) => d.hours > a.hoursPerDay + 0.25).length;
+          const longest = Math.max(...mem.days.map((d) => d.hours));
+          ctx.progress(1, `${mem.days.length} day${mem.days.length === 1 ? "" : "s"} · longest ${longest.toFixed(1)} h of driving${fit.added.length ? ` · added a night in ${fit.added.join(" and ")}` : ""}${over ? ` · ${over} day${over === 1 ? "" : "s"} still over ${a.hoursPerDay} h: no town on the way to stop in` : ""}${stays ? ` · places to stay listed for ${stays === mem.days.length ? "each night" : `${stays} of them`}` : ""}`);
           return;
         }
         if (!mem.check?.met) {

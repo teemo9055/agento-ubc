@@ -19,8 +19,7 @@ export async function GET(req: NextRequest, ctx: { params: Promise<{ product: st
   const price = priceAt(product.price, seller) * (fault === "price_increase" ? 2n : 1n);
   const resource = req.nextUrl.pathname + req.nextUrl.search;
   // One price, on every network this seller can settle on; the buyer pays on the one its money is on.
-  // Town Hall deposits stay on testnet: they follow the practice/testnet setting, never real money by default.
-  const nets: Net[] = id === "hall.request" ? ["testnet"] : NETS.filter(sellsOn).filter((n) => !product.nets || product.nets.includes(n));
+  const nets: Net[] = NETS.filter(sellsOn).filter((n) => !product.nets || product.nets.includes(n));
   if (!nets.length && product.nets) return NextResponse.json({ error: "Not on sale on any network this server settles on yet" }, { status: 503 });
   // A product that buys from other sellers checks the request before asking for money.
   if (product.validate) {

@@ -96,9 +96,8 @@ describe("plans across agents", () => {
       ["inso", "prediction_order"],
       ["worko", "itinerary"],
     ]);
-    // The hotel can't be booked from here: it rides along with the drive as a link you finish yourself.
-    expect(plan?.unavailable).toEqual([]);
-    expect(plan?.steps[1].proposal.finish?.[0]).toMatchObject({ kind: "hotel", app: "Booking.com", label: "Book a stay in Seattle" });
+    // The hotel can't be booked from here: it's named as something Agento can't do.
+    expect(plan?.unavailable).toEqual([expect.objectContaining({ why: "Agento can't book hotels or flights" })]);
     expect(r.lines).toHaveLength(0); // nothing priced or paid yet
   });
 

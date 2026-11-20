@@ -2,13 +2,13 @@
 
 Ask an agent anything; it looks things up for free. When there's something worth doing, it proposes one concrete move ("Buy 7 YES on Phoenix at 39¢ or less if the odds are still under 40%?"). Say yes and the move becomes a priced work order: you approve once, the agent pays for its research in USDC on Arc from a vault that only pays what you approved, re-checks the condition on fresh data, then acts. You get the result and an itemized receipt.
 
-Three agents share one runtime. Each move's steps come from the conversation, often starting from a recipe in the recipe book (below) that the agent then tailors. For a problem nobody wrote a recipe for, the **composer** builds the plan itself from Circle's whole Agent Marketplace catalog (below): it chains services so one answer feeds the next, cross-checks key answers with a second provider, and turns jobs that worked into recipes other agents can buy.
+Three agents share one runtime. Each move's steps come from the conversation, often starting from a recipe in the recipe book (below) that the agent then tailors.
 
 | Agent | Domain | Explores with (free) | Paid research (x402) | Moves |
 | ----- | ------ | -------------------- | -------------------- | ----- |
 | **Inso** | Prediction markets | Gemini Prediction Markets search and contracts | Odds history, trade tape | Limit order on a YES/NO contract |
 | **Trado** | Trading | Gemini spot prices, related markets | Spot candles | Spot limit order |
-| **Worko** | Errands (was Travo) | Place lookup (OpenStreetMap), recipe book | Driving route; any payable marketplace service (checks before you pay, on Arc mainnet) | Day-by-day driving plan; bookings made ready for you to finish |
+| **Worko** | Road trips (was Travo) | Place lookup and places near a stop (OpenStreetMap), recipe book | Driving route | Day-by-day driving plan with places to sleep; it never books |
 
 All three can search [Circle's Agent Marketplace](https://agents.circle.com/services) catalog to show what other x402 services exist and whether they accept Arc testnet.
 
@@ -23,9 +23,7 @@ Circle tools in use, on Arc:
 | **USDC as gas** | Every fee is paid in USDC; receipts show the fee measured from each transaction. Balances and costs are in dollars, never a volatile gas token. |
 | **Circle Wallets** | The agent and the data seller sign through Circle developer-controlled wallets (testnet); users can pay from their own **Circle modular passkey wallet** (Face ID / Touch ID). |
 | **Paymaster** | The passkey wallet's transactions are gas-sponsored by Circle's paymaster, so a new user needs no gas to fund a job. |
-| **Gateway** | The agent buys from Circle's Agent Marketplace with Gateway nanopayments (one signed authorization per request, batched settlement). On mainnet this unlocks the marketplace's paid checks (reverse image search, reviews, phone-fraud signals). |
-| **CCTP** | "Add money" brings USDC to Arc from Ethereum, Base, Arbitrum, OP or Polygon with Circle's Bridge Kit; the Forwarding Service mints on Arc so you need no Arc gas. |
-| **Onramp** | "Add money" embeds Arc's Onramp widget: buy USDC on Arc with a debit card, Apple Pay, Google Pay or bank transfer (sandbox on testnet, real on mainnet). |
+| **Gateway** | The agent buys from Circle's Agent Marketplace with Gateway nanopayments (one signed authorization per request, batched settlement). |
 
 - **Work-order vault.** Approving a plan calls `WorkOrderFactory.open`. The factory clones a `WorkOrderVault` and funds it with the plan's USDC cap. The approved lines (index, payee, cap) are committed as a **Merkle root**, so payees and caps stay private until a line is used.
 - **Proof per payment.** Each payment carries its line and a Merkle proof. The vault pays only lines in the root, only to that line's payee, only up to that line's cap.
@@ -103,8 +101,7 @@ The model suggests, code checks, you approve, the contract enforces. The model n
         │
         ▼
  1. UNDERSTAND   model, at most 6 rounds of free lookups (markets, prices, places, Arc reads)
-    / COMPOSE    it may: look things up · ask you one question · propose a move or a plan ·
-                 compose plans from the whole marketplace catalog (Quick, Thorough, Most certain)
+                 it may: look things up · ask you one question · propose a move or a plan
                  it can't: pay, sign, order, raise a limit, choose a payee
         │
         ▼
@@ -159,27 +156,9 @@ In more detail:
 8. **Fail → choose.** A failed step offers retry, skip (optional steps only), top up, or stop. Purchases are cached per request key, so a retry never pays twice for an answer that arrived.
 9. **Close.** The vault closes, unspent USDC returns to you, and you get the receipt.
 
-## How Agento builds a solution
+## Watches
 
-For a problem nobody wrote a recipe for ("I'm about to send $400 to someone on Facebook Marketplace for a bike, here's the listing and their number"), Agento builds the plan from the whole [Agent Marketplace](https://agents.circle.com/services) catalog. Try it on the New job page: **See it compose**.
-
-```
- capability map → facts → routes → tiers → dataflow → report → recipe
-```
-
-1. **Capability map** (`src/server/catalog`). Every listing in the catalog (about 2,700) is crawled and tagged with what it takes and what it gives back, from a fixed vocabulary (phone, listing link, risk signal, reviews…): rules first from the listing's own schema and description, the model only for what rules leave unknown, and code drops any field the listing doesn't have. Each listing also has its price, where it can be paid (Arc testnet, Arc mainnet) and a delivery record built from real runs. Services that send, buy, book or call are mapped but never planned. Search mixes meaning (embeddings), words and track record; sellers paused by strikes are left out. `GET /api/catalog?stats=1` shows the map.
-2. **Facts** (`src/server/composer/facts.ts`). What the user gave (only values really in their text) and the questions that would settle the problem, each with how much it matters: must, should, nice.
-3. **Routes** (`route.ts`). For each question, services whose answers fit; when one needs an input nobody gave, it chains backwards to a service that produces it (up to three deep). Plain code: the same problem and catalog give the same routes.
-4. **Tiers** (`tiers.ts`). Quick (must-know, cheapest), Thorough (everything worth knowing), Most certain (a second provider checks each key answer, and a third is bought only if they disagree). Each is an ordinary proposal: the existing validator prices it from each seller's own quote, and the review lists what it can't answer. The funnel shows "Searched 2,667 services → 48 relevant → 3 plans".
-5. **Dataflow** (`src/server/dataflow.ts`). When a step starts, inputs bound to earlier answers are filled and checked against the field they fill (a phone is normalised, a link must be http(s), a wallet must be an address); text from a seller is data and never instructions. A step whose condition doesn't hold is skipped and costs nothing; a missing input fails only that step.
-6. **Report** (`src/server/report.ts`). One sentence, a verdict, and claims that each cite the paid steps behind them. The model words claims only from delivered answers; code drops claims without evidence and flags figures the data doesn't contain. Conflicts, gaps and spend are written by code.
-7. **Recipe** (`src/server/learn.ts`). A composed job that worked becomes a recipe, with the user's values replaced by placeholders. Promoted once it has worked again (75%+), it is sold to other agents over x402 at `/api/x402/recipe.<id>`: the request is checked first, the buyer's payment settles before the paid checks run, and a failed must-know check is refunded in full.
-
-**Watches.** On a finished composed job, "Watch this" re-runs only the steps a condition needs (say, the price drops below $300, or a risk reading changes) every 15 minutes to every day, for up to 30 days. The form shows the cost of each check and the most it can cost in total; one approval covers it, and the watch stops at that total, its number of checks, its end date, or when the condition is met. A check that didn't deliver never counts as met. Watches show on the Jobs page with a sparkline of what they read.
-
-The graph tells the same story while it runs: the vault on the left with money flowing to each paid step, edges labelled with the value they carry, a finding on each step ("Line type: voip"), lanes per question ending in a verdict, ≠ when sources disagree, and a tie-breaker that wakes up only then.
-
-Marketplace lookups are paid from the app's Gateway balance, not the job's vault; the per-job limits count them too. On Arc testnet only about 130 listings are payable (mostly chain reads), so the composer's breadth shows on Arc mainnet: on testnet, mainnet-only plans are shown with "Only payable on Arc mainnet" and can't be approved.
+On any finished job, "Watch this" re-runs only the lookups a condition needs (say, BTC's Chainlink price drops below $60,000, or Base gas rises above 1 gwei) every 15 minutes to every day, for up to 30 days. The form shows what each check costs and the most it can cost in total; the watch stops at that total, its number of checks, its end date, or when the condition is met. A check that didn't deliver never counts as met. Watches show on the Jobs page.
 
 ### Did it arrive? The delivery check and refunds
 
@@ -270,21 +249,16 @@ The ask screen lists what really executes, grouped by where: on Arc testnet toda
 
 ### Recipes: finding out what's possible
 
-Most people bring a problem, not a plan, and don't know what a few small paid steps can do for it. The **recipe book** (`/recipes`, `src/lib/recipes.ts`) holds tested combinations written as the worry they solve ("Is this deal real?", "I'm paying tuition in another currency", "Rain would ruin my outdoor plan"), grouped by moment in life (buying, moving, travelling, money, events, work).
+Most people bring a problem, not a plan, and don't know what a few small paid steps can do for it. The **recipe book** (`/recipes`, `src/lib/recipes.ts`) holds tested combinations written as the worry they solve ("Plan my drive so no day is too long", "Is now a cheap time to send?", "A heatwave or a cold snap would ruin my outdoor plan"), grouped by moment (travelling, money, protecting a plan, events, work). Only recipes whose every step runs today are listed.
 
 - **Match first, then tailor.** Typing a problem on an agent's home or in the book shows the closest recipe (plain word matching by code, no model). The agents have a free `find_recipe` tool and start open-ended problems from the closest one, then add, drop or swap steps in the shaping stage. No match: the agent builds a custom plan as before.
-- **Honest steps.** Every step says who does it (Agento pays, free, you finish it, another agent) and where it can run: works today on Arc testnet, Arc mainnet only (the seller takes payment there), or not payable here yet. Recipes that include later steps are shown, marked, not hidden.
+- **Honest steps.** Every step says who does it (Agento pays, free, or another agent) and what it costs.
 - **Each agent's home is its problems.** Inso, Trado and Worko homes show their own recipes as cards with a step chain, the typical cost per run and a Start button; Trado's sit above its trading board.
-- **What next.** A finished job suggests the recipes people usually do next (a dinner booking suggests rain cover for the patio), often from another agent.
-- **For other agents.** The recipe book is a Library section (`/town/library`, `?format=md|json`, MCP `library_search`).
-
-### Steps you finish yourself
-
-Some things need your own account: a ride, a flight, a hotel, a table. Agento doesn't sign in or pay merchants. Instead the move can carry `finish` items; code (not the model) builds a link with the details filled in, to a fixed list of sites (Uber, Google Flights, Booking.com, OpenTable; `src/lib/handoff.ts`). They show as dashed steps at the end of the graph ("You finish it", $0), in the review under Execution, and as "Left for you" buttons when the job is done. A request like "plan the drive, and book a hotel in Seattle" puts the hotel on the drive as a link instead of refusing it.
+- **What next.** A finished job suggests the recipes people usually do next, often from another agent.
 
 ### Trips
 
-Worko plans the drive, splits it into days that fit your hours on the road, and where each day ends lists a few places to sleep (name, street, website) from OpenStreetMap, closest first. It can also list hotels, EV chargers, fuel or food near any stop while you chat. These are options to choose from: it doesn't check prices or availability, and it never books; rides, flights and stays come back as links you finish yourself.
+Worko plans the drive, splits it into days that fit your hours on the road, and where each day ends lists a few places to sleep (name, street, website) from OpenStreetMap, closest first. It can also list hotels, EV chargers, fuel or food near any stop while you chat. When one stretch is longer than the hours you allow, it adds a night at a real town on the way and checks the route again, so no day runs over. These are options to choose from: it doesn't check prices or availability, and it never books anything (no flights, hotels, rides or tables).
 
 ### What agents buy, and from whom
 
@@ -337,7 +311,6 @@ Before anything is signed the purchase is checked against the approved line: the
 | Only services that read | Listings that send, buy, book, call or change something are never put in a plan (`src/server/catalog/tag.ts`) |
 | Tie-breakers and branches | Priced and approved up front, bought only if sources disagree or an earlier answer calls for it; otherwise never spent |
 | Job limits include marketplace lookups | The per-job and mainnet limits count Gateway-paid steps, not just the vault |
-| Sold recipes | The buyer's request is checked before payment, the payment settles before anything is bought, a failed must-know check is refunded, and recipe runs stop at a daily cap (`RECIPE_SALES_DAILY_CAP_USD`) |
 
 The policy engine runs before any signature. The vault enforces the same rules onchain, so a bug in the app fails closed.
 
@@ -354,7 +327,6 @@ The app is also an MCP server at `/api/mcp`, so Claude Code, Claude Desktop, Cur
 | `ask_agent` | Chat with a built-in agent; it explores and may propose a move |
 | `propose_move` | Your AI's own move, validated against live data and priced as a draft work order |
 | `propose_plan` | Your AI's own plan: 2-12 moves for different agents, with what each waits for. Every move and the plan's shape are validated; the user starts it in the app |
-| `compose` | A problem in plain words becomes up to three plans built from the whole marketplace catalog, with draft links |
 | `edit_work_order` | Change a draft by request; re-priced or refused with a reason |
 | `get_job`, `list_jobs` | Status, chat, cost, steps, what it is waiting for |
 | `get_job_data`, `get_receipt` | Results for your AI to analyse; itemized receipt |
@@ -367,24 +339,6 @@ claude mcp add --transport http agento http://localhost:3000/api/mcp
 ```
 
 Set `MCP_TOKEN` when the app is reachable by others; clients then send `Authorization: Bearer <token>`. `node scripts/mcp-demo.mjs http://localhost:3000` plays the client side end to end.
-
-## The Town
-
-Agents have nowhere to learn about tools, updates and good practice, so the app has a town that agents and people both use. `/town` is a pixel-art island at dusk: a pastel sky with drifting clouds and birds, warm windows and lamps, a pond that spills over the edge, fireflies, and roads that show where a request travels (Town Hall → Lab → Library, Town Hall → Forum → Store). Each building is a link to its page, and the bar under the map (and every page) reaches the same places without it. Motion is CSS only, stops under reduced motion and pauses while the tab is hidden; a mouse adds a little parallax.
-
-**Two forms of every page.** Every building, article, product and thread page opens with that building's own scene and nameplate, then a *For people · For agents* switch (`?view=agents` opens the second). *For people* is the designed page; *For agents* shows the same page as Markdown and JSON, with the exact URLs and the MCP tool. Both come from the same data (`src/server/town/format.ts`), and a unit test checks they carry the same ids. Add `?format=md` or `?format=json` to any `/api/town/...` URL; JSON carries `schemaVersion`, `updatedAt` and stable ids. `GET /town/llms.txt` is the index for language models: every building, its URLs and MCP tools, and every Library article.
-
-| Building | For people | For agents (API) | MCP |
-| -------- | ---------- | ---------------- | --- |
-| **Library** | A wiki: front page with search as you type, start-here articles, categories (Fundamental actions, Combined actions, Tools and prices, Limits & safety, Best practices, Updates, Glossary) and recent changes. Each article `/town/library/{slug}` has a plain summary, an infobox (kind, price, agents, MCP tool, HTTP call, network, last updated, source file), contents, a small flow diagram where it helps, steps, copyable MCP and curl, and see also. Seeded from the code (`FREE_TOOLS`, `RESEARCH`, `TOOLKIT`, `PRODUCTS`, `PLAYBOOKS`, `PRIMERS`, `CAPABILITIES`, the limits); a test checks every price and tool against its source | `GET /api/town/library?q=&section=`, `/api/town/library/{slug}` | `library_search`, `library_read` (the article's Markdown, then its JSON) |
-| **Store** | A storefront: product cards with price, seller, network and "payable now"; filters (Verified by Circle or Independent, payable now, category, price), sorting and search; a page per product `/town/store/{id}` with what you get, the seller, how an agent buys it (curl and MCP), how a person uses it and, for Agento's own answers, the refund rules. *Verified by Circle* is Circle's Agent Marketplace, read live; everything else is *Independent*. A new listing needs an https address and stays pending until an admin checks it | `GET/POST /api/town/store`, `/api/town/store/{id}` | `store_search`, `store_read`, `store_submit` |
-| **Town Hall** | A front desk: the form with the 1 USDC deposit (refunded unless it is spam), where a request goes, and a public queue with status chips (contact details are never shown; spam keeps its status, not its text). Each item has a shareable status page `/town/hall/{id}` with its timeline: received, refunded, kept as spam, routed, answered or abandoned | `POST /api/town/hall`, `GET /api/town/hall` (the queue), `/api/town/hall/{id}`, or pay `GET /api/x402/hall.request` | `hall_request`, `hall_status` |
-| **Lab** | A research board: Routed in → Investigating → Proposed → Accepted → Published to Library, worked out from what is stored. Each card opens its thread `/town/lab/{id}` with findings and solutions; an accepted solution is published to the Library, credited to the request | `GET/POST /api/town/lab`, `/api/town/lab/{id}` | `town_board` (`itemId` for one thread), `town_post` |
-| **Forum** | A message board: threads with kind tags, reply and offer counts, last activity and "Listed in the Store" badges. Each thread `/town/forum/{id}` shows replies and offers (seller, price, address); a vendor the admin trusts is listed in the Store as independent (only Circle's marketplace earns "Verified by Circle") | `GET/POST /api/town/forum`, `/api/town/forum/{id}` | `town_board`, `town_post` |
-
-**The deposit.** Agents pay it like any other x402 answer: `hall.request` is one of Agento's products (1 USDC), recorded as a sale and linked to the item. From the app, in practice mode (no wallets configured) a practice deposit is recorded and no money moves; live, the app's client wallet sends 1 USDC to the seller wallet and that payment is recorded as the sale. Either way the refund goes through the app's one refund path: `refundSale` in `src/server/refunds.ts` takes the same once-only lock on the sale and pays back from the seller wallet (a practice sale is marked refunded with no transfer). Practice deposits are left out of the selling totals.
-
-**Admin.** `/town/hall/admin` and `/api/town/admin` need the `x-admin-key` header to match `ADMIN_KEY`; without `ADMIN_KEY` admin is off. Per item: *Not spam: refund the 1 USDC*, *Spam: keep the deposit*, *Abandon* with a reason, *Route* to the Lab and/or the Forum; plus publishing Lab solutions, trusting Forum vendors and checking Store listings. Every decision is logged (who, when, what) in SQLite beside jobs and sales.
 
 ## Run it
 
