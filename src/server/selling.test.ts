@@ -110,6 +110,22 @@ describe("hedging an everyday cost", () => {
     expect(r.proposal.hedge).toEqual({ protects: "a pricier ride", lossUsd: 30, cost: 7.6, payout: 38, covered: 30 });
     expect(r.proposal.ask).toBe("Pay up to $7.60 to get $38 if “Higher” happens (BTC today)?");
   });
+  it("'make it 50 contracts' and '$10' on a cover give exactly that", async () => {
+    const { hedgeSized } = await import("./edit-move");
+    const first = await validateProposal("inso", hedge(), "h3");
+    if (!("proposal" in first)) throw new Error(first.error);
+    expect(first.proposal.action).toMatchObject({ quantity: 38 });
+    // The model only changes the count, as people say it; code turns that into the cover that sizes to it.
+    const fifty = hedge({ action: { ...(hedge().action as object), quantity: 50 } });
+    const r = await validateProposal("inso", hedgeSized(first.proposal, fifty), "h3");
+    if (!("proposal" in r)) throw new Error(r.error);
+    expect(r.proposal.action).toMatchObject({ quantity: 50 });
+    const ten = hedge({ budgetUsd: 10 });
+    const t = await validateProposal("inso", hedgeSized(first.proposal, ten), "h3");
+    if (!("proposal" in t)) throw new Error(t.error);
+    expect(t.proposal.action).toMatchObject({ quantity: 50 });
+    expect(t.proposal.hedge?.cost).toBe(10);
+  });
   it("a budget wins over full cover", async () => {
     const r = await validateProposal("inso", hedge({ budgetUsd: 5, action: { kind: "prediction_order", eventTicker: "BTC-1", symbol: "GEMI-BTC-2", label: "Higher", side: "yes", orderType: "limit", maxPrice: 0.2, stopPrice: null, quantity: 100 } }), "h2");
     if (!("proposal" in r)) throw new Error(r.error);

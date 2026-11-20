@@ -137,14 +137,19 @@ async function choose(o: Options, venue: Venue, skip: Set<string>, choice?: stri
 
 type Built = { input: ProposalInput; intro: string; venue: Venue } | { plan: (id: string) => Promise<Plan | { error: string }>; intro: string; venue: Venue };
 
+/** What the person typed into a card: their link, business, phone or place, by input name. */
+export type Inputs = Record<string, string>;
+/** "Check: {business}" with the person's business filled in. */
+const fill = (s: string, g: Inputs) => s.replace(/\{(\w+)\}/g, (m, k: string) => g[k] ?? m);
+
 interface CardDef {
   /** How it reads as a request in the job's chat. */
-  ask: (c?: Cover) => string;
+  ask: (c?: Cover, inputs?: Inputs) => string;
   /** What the card can be built on right now (cities, teams, price lines). */
   options?: () => Promise<Options>;
   /** What a cover protects and roughly what's at stake, in dollars. */
   loss?: { protects: string; usd: number };
-  build: (venue: Venue, skip?: Set<string>, choice?: string) => Promise<Built | { error: string }>;
+  build: (venue: Venue, skip?: Set<string>, choice?: string, inputs?: Inputs) => Promise<Built | { error: string }>;
   /** For checks: their total listed price and how many paid steps. */
   cost?: () => { usd: number; steps: number };
 }
@@ -249,38 +254,31 @@ const watchCost = (steps: Stage[], w?: Then) => {
   const checks = Math.ceil((w.days * 86_400_000) / { "15m": 900_000, "1h": 3_600_000, "6h": 21_600_000, "1d": 86_400_000 }[w.every]);
   return step ? VENDOR_TOOLS[step.tool].price(step.args ?? {}) * BigInt(checks) : 0n;
 };
-const chainCard = (c: { ask: string; title: string; why: string; question: string; intro: string; steps: Stage[]; then?: Then }): CardDef => ({
-  ask: () => c.ask,
-  cost: () => ({ usd: usd(priceOf(c.steps) + watchCost(c.steps, c.then)), steps: c.steps.length + (c.then ? 1 : 0) }),
-  build: async () => {
-    const input = check(c.title, c.why, `${c.question} for up to ${cash(priceOf(c.steps))}${c.then ? `, then keep watching for up to ${cash(watchCost(c.steps, c.then))} more` : ""}?`, c.steps.map((s) => ({ args: {}, ...s })) as ProposalInput["research"]);
-    return { input: (c.then ? { ...input, then: { watch: c.then } } : input) as ProposalInput, intro: c.intro, venue: "paper" };
-  },
-});
+/**
+ * A job whose stages feed each other, built from what the person typed: "{business}" in any text or
+ * argument becomes their business, and later stages read earlier answers through `bind`. Its price is
+ * worked out from its stages.
+ */
+const chainCard = (c: { id: string; ask: string; title: string; why: string; question: string; intro: string; steps: Stage[]; then?: Then }): CardDef => {
+  const fields = () => jobById(c.id)?.inputs ?? [];
+  const valuesOf = (g?: Inputs): Inputs => Object.fromEntries(fields().map((f) => [f.name, g?.[f.name]?.trim() || f.example]));
+  return {
+    ask: (_c, g) => fill(c.ask, valuesOf(g)),
+    cost: () => ({ usd: usd(priceOf(c.steps) + watchCost(c.steps, c.then)), steps: c.steps.length + (c.then ? 1 : 0) }),
+    build: async (_venue, _skip, _choice, g) => {
+      const v = valuesOf(g);
+      const steps = c.steps.map((st) => ({ ...st, args: Object.fromEntries(Object.entries(st.args ?? {}).map(([k, x]) => [k, fill(x, v)])), label: fill(st.label, v) }));
+      const input = check(fill(c.title, v), fill(c.why, v), `${fill(c.question, v)} for up to ${cash(priceOf(c.steps))}${c.then ? `, then keep watching for up to ${cash(watchCost(c.steps, c.then))} more` : ""}?`, steps as ProposalInput["research"]);
+      // What the person gave travels with the job, so it's shown as theirs and a watch reuses it.
+      const givens = Object.fromEntries(fields().map((f) => [f.name, { type: f.type, value: v[f.name] }]));
+      const then = c.then ? { watch: { ...c.then, title: fill(c.then.title, v) } } : undefined;
+      return { input: { ...input, ...(fields().length ? { givens } : {}), ...(then ? { then } : {}) } as ProposalInput, intro: fill(c.intro, v), venue: "paper" };
+    },
+  };
+};
 
 const CARDS: Record<string, CardDef> = {
   // Worko: researching (real USDC on Arc mainnet)
-  "company-brief": {
-    ask: () => "What's going on with Circle lately? Give me the top results and the latest news.",
-    cost: () => ({ usd: usd(WEB_PRICES.search + WEB_PRICES.news), steps: 2 }),
-    build: async () => ({
-      input: check("Brief: Circle", "Top search results and the latest news, so you can see what the company is doing now.", "Search the web and the news about Circle for $0.004?", [
-        { tool: "web_search", args: { query: "Circle Internet Group" }, label: "Top search results", why: "What the company is and does" },
-        { tool: "news_search", args: { query: "Circle Internet Group" }, label: "Latest news", why: "What changed recently" },
-      ]),
-      intro: "I'll read the top search results and the latest news about Circle, then sum them up. Change the company in the chat.",
-      venue: "paper",
-    }),
-  },
-  "fair-price": {
-    ask: () => "Someone's selling an iPhone 15 128GB for $500. Is that a fair price?",
-    cost: () => ({ usd: usd(WEB_PRICES.shopping), steps: 1 }),
-    build: async () => ({
-      input: check("Fair price: iPhone 15 128GB", "What stores charge right now, to compare with the $500 you were offered.", "Check store prices for an iPhone 15 128GB for $0.004?", [{ tool: "shopping_prices", args: { product: "iPhone 15 128GB unlocked" }, label: "Store prices now", why: "Lowest, typical and highest price" }]),
-      intro: "I'll pull what stores charge for an iPhone 15 128GB right now, so you can compare it with $500. Change the product in the chat.",
-      venue: "paper",
-    }),
-  },
   // Worko: planning (works on test money)
   "road-trip": {
     ask: () => "Plan a drive from Austin to Denver, no more than 6 hours a day, with places to sleep.",
@@ -326,121 +324,82 @@ const CARDS: Record<string, CardDef> = {
       },
     }),
   },
-  // Worko: verifying (real USDC on Arc mainnet)
-  // Worko: chains. Each stage uses what the one before found, across several sellers.
-  "company-deep": chainCard({
-    ask: "I'm thinking of investing in Rivian. Give me the full picture first.",
-    title: "Brief: Rivian",
-    why: "Find its real website, read what it says, check the company record behind it, then the news and the risks.",
-    question: "Build the Rivian brief in 6 stages",
-    intro: "Six stages, each using the last: find Rivian's official site, read it, look up the company record behind that site (age, official phones, location), then the latest news, complaints and money health, and a written analysis at the end. Change the company in the chat.",
+  // Worko: find → verify → act, built from what the person typed (real USDC on Arc mainnet).
+  "listing-check": chainCard({
+    id: "listing-check",
+    ask: "Is this a fair deal? {listing}",
+    title: "Fair deal? Your listing",
+    why: "Read the listing, price that exact item in stores, check the photo and who's selling it.",
+    question: "Check the listing in 4 stages",
+    intro: "Three phases. Find: I read the listing (what it is, its price, condition and seller). Verify: I search store prices for that exact item, check whether its photo is reused elsewhere, and look up the seller; fixed rules compare the listing's price with what stores charge. Act: a verdict and a fair offer, then I watch the lowest store price for 14 days. Paste a different link on the card or in the chat.",
     steps: [
-      { id: "s1", tool: "web_search", args: { query: "Rivian official website" }, label: "Find the official site", why: "Everything after starts from the real website" },
-      { id: "s2", tool: "read_page", bind: { url: "$s1.results[0].link" }, label: "Read the site", why: "What the company says about itself right now" },
-      { id: "s3", tool: "company_record", bind: { site: "$s1.results[0].link" }, label: "Company record", why: "Who is behind that site: age, official phones, location" },
-      { id: "s4", tool: "news_search", args: { query: "Rivian" }, label: "Latest news", why: "What changed recently" },
-      { id: "s5", tool: "web_search", args: { query: "Rivian complaints lawsuit recall" }, label: "Complaints and lawsuits", why: "What goes wrong, from outside the company" },
-      { id: "s6", tool: "web_search", args: { query: "Rivian earnings cash burn layoffs" }, label: "Money health", why: "Earnings, cash and layoffs" },
+      { id: "s1", tool: "read_listing", args: { url: "{listing}" }, label: "Read the listing", why: "What's for sale, its price, condition and seller" },
+      { id: "s2", tool: "shopping_prices", bind: { product: "$s1.searchTitle" }, label: "Store prices for that item", why: "What the same item costs in stores" },
+      { id: "s3", tool: "image_check", bind: { imageUrl: "$s1.photo" }, label: "Is the photo copied?", why: "A reused photo is a classic scam sign" },
+      { id: "s4", tool: "web_search", bind: { query: "$s1.seller" }, label: "Who the seller is", why: "An official store, a known reseller, or nobody" },
     ],
+    then: { ref: "$s2.lowest", op: "changed", every: "1d", days: 14, title: "Watch: lowest store price for your listing's item", says: "Tells you when the lowest store price moves." },
   }),
-  "big-buy": chainCard({
-    ask: "I want to buy Sony WH-1000XM5 headphones. Is it the right pick, at the right price, right now?",
-    title: "Buy check: Sony WH-1000XM5",
-    why: "Store prices, then the best review read in full, recalls, and whether a newer model is about to replace it.",
-    question: "Check the Sony WH-1000XM5 in 5 stages",
-    intro: "Three phases. Find: what stores charge and the most-read review. Verify: that review read in full, recalls, and whether a newer model is about to replace it, judged against the prices. Act: a verdict on whether to buy now, then I keep watching the lowest price daily for 14 days and tell you when it moves. Change the product in the chat.",
+  "seller-check": chainCard({
+    id: "seller-check",
+    ask: "Is this seller real? Listing: {listing} · phone: {phone}",
+    title: "Seller check: your listing",
+    why: "Their phone line, the listing's photo and price, checked against each other.",
+    question: "Check the seller in 4 stages",
+    intro: "Three phases. Find: I read the listing. Verify: is their phone a real line or an internet number, is the listing's photo copied from elsewhere, and is the price far below what stores charge for that item (too good to be true). Act: a verdict and what to ask them before paying. Change the link or number on the card.",
     steps: [
-      { id: "s1", tool: "shopping_prices", args: { product: "Sony WH-1000XM5" }, label: "Store prices", why: "What stores charge right now" },
-      { id: "s2", tool: "web_search", args: { query: "Sony WH-1000XM5 review" }, label: "Find the top review", why: "The review most people read" },
-      { id: "s3", tool: "read_page", bind: { url: "$s2.results[0].link" }, label: "Read that review", why: "The full verdict, not a snippet" },
-      { id: "s4", tool: "news_search", args: { query: "Sony WH-1000XM5 recall problem" }, label: "Recalls and problems", why: "Known faults" },
-      { id: "s5", tool: "web_search", args: { query: "Sony WH-1000XM6 release" }, label: "Is a new model coming?", why: "Whether to wait" },
-    ],
-    then: { ref: "$s1.lowest", op: "changed", every: "1d", days: 14, title: "Watch: lowest price for Sony WH-1000XM5", says: "Tells you when the lowest store price moves." },
-  }),
-  "place-reviews": chainCard({
-    ask: "Is Blue Bottle Coffee in Oakland any good?",
-    title: "Check: Blue Bottle Coffee, Oakland",
-    why: "Find it on Google with its reviews, then read its own site and any news.",
-    question: "Check Blue Bottle Coffee in 3 stages",
-    intro: "Three stages: find it on Google and read its recent reviews, then read the website Google lists for it, and look for news. Change the place in the chat.",
-    steps: [
-      { id: "s1", tool: "place_reviews", args: { place: "Blue Bottle Coffee Oakland" }, label: "Google reviews", why: "How people rate it lately" },
-      { id: "s2", tool: "read_page", bind: { url: "$s1.found.website" }, label: "Read its website", why: "Menu, hours and what it offers" },
-      { id: "s3", tool: "news_search", args: { query: "Blue Bottle Coffee Oakland" }, label: "In the news", why: "Openings, closures, changes" },
-    ],
-  }),
-  "city-weekend": chainCard({
-    ask: "I'm spending this weekend in Portland, Oregon. What's on, and where should I eat?",
-    title: "Weekend: Portland",
-    why: "Find this weekend's guide and read it, check the news, then reviews of where to eat.",
-    question: "Plan the Portland weekend in 5 stages",
-    intro: "Five stages: find this weekend's events guide and read it in full, check the news for closures or crowds, then real reviews of a breakfast and a dinner spot, and a plan at the end. Change the city or the places in the chat.",
-    steps: [
-      { id: "s1", tool: "web_search", args: { query: "things to do in Portland Oregon this weekend" }, label: "Find the weekend guide", why: "Where the events are listed" },
-      { id: "s2", tool: "read_page", bind: { url: "$s1.results[0].link" }, label: "Read the guide", why: "The actual events, dates and places" },
-      { id: "s3", tool: "news_search", args: { query: "Portland Oregon this weekend" }, label: "In the news", why: "Closures, weather or crowds to plan around" },
-      { id: "s4", tool: "place_reviews", args: { place: "Pine State Biscuits Portland" }, label: "Breakfast: reviews", why: "Is it worth the line" },
-      { id: "s5", tool: "place_reviews", args: { place: "Ox Restaurant Portland" }, label: "Dinner: reviews", why: "Recent ratings" },
-    ],
-  }),
-  "used-car": chainCard({
-    ask: "I'm buying a 2018 Honda Civic for $14,000 from a private seller. Their number is +1 415 555 0134. Check everything first.",
-    title: "Check: 2018 Honda Civic sale",
-    why: "The seller's phone, what the car really sells for, recalls, the common faults read in full, and known scams.",
-    question: "Check the sale in 6 stages before you pay $14,000",
-    intro: "Six stages: the seller's phone line, what the car really sells for, recalls, find the best guide to its common faults and read it, and known scams, then a verdict. Paste their number in the chat to check yours.",
-    steps: [
-      { id: "s1", tool: "phone_check", args: { phone: "+1 415 555 0134" }, label: "Seller's phone line", why: "Internet-only numbers are common in scams" },
-      { id: "s2", tool: "shopping_prices", args: { product: "2018 Honda Civic used" }, label: "What it sells for", why: "Whether $14,000 is fair" },
-      { id: "s3", tool: "news_search", args: { query: "2018 Honda Civic recall" }, label: "Recalls", why: "Faults to ask the seller about" },
-      { id: "s4", tool: "web_search", args: { query: "2018 Honda Civic common problems" }, label: "Find a faults guide", why: "What to check on the test drive" },
-      { id: "s5", tool: "read_page", bind: { url: "$s4.results[0].link" }, label: "Read the faults guide", why: "The full list, not a snippet" },
-      { id: "s6", tool: "web_search", args: { query: "private seller used car scam deposit" }, label: "Known scams", why: "The tricks to watch for" },
-    ],
-  }),
-  "rental-check": chainCard({
-    ask: "I found an apartment managed by Greystar in Austin. The landlord's number is +1 512 555 0199. Is the listing real?",
-    title: "Check: Austin apartment listing",
-    why: "The landlord's phone, the manager's reviews and the company behind their website, what rent usually is, and how rental scams work.",
-    question: "Check the listing in 5 stages before you send a deposit",
-    intro: "Five stages: the landlord's phone, find the manager on Google with its reviews, then check the company behind the website Google lists, what rent usually is there, and how rental scams work. Paste the real number in the chat.",
-    steps: [
-      { id: "s1", tool: "phone_check", args: { phone: "+1 512 555 0199" }, label: "Landlord's phone line", why: "Internet-only numbers are common in rental scams" },
-      { id: "s2", tool: "place_reviews", args: { place: "Greystar Austin" }, label: "Manager's reviews", why: "How tenants rate them" },
-      { id: "s3", tool: "company_record", bind: { site: "$s2.found.website" }, label: "Company behind the site", why: "Official phones to compare with the landlord's" },
-      { id: "s4", tool: "web_search", args: { query: "average rent 1 bedroom apartment Austin" }, label: "What rent usually is", why: "A price far below it is a warning sign" },
-      { id: "s5", tool: "web_search", args: { query: "rental listing scam deposit wire" }, label: "How rental scams work", why: "The signs to watch for" },
+      { id: "s1", tool: "read_listing", args: { url: "{listing}" }, label: "Read the listing", why: "What they sell, the price and the photo" },
+      { id: "s2", tool: "phone_check", args: { phone: "{phone}" }, label: "Seller's phone line", why: "Internet-only numbers are common in scams" },
+      { id: "s3", tool: "image_check", bind: { imageUrl: "$s1.photo" }, label: "Is the photo copied?", why: "A reused photo is a classic scam sign" },
+      { id: "s4", tool: "shopping_prices", bind: { product: "$s1.searchTitle" }, label: "Store prices for that item", why: "Far below stores is too good to be true" },
     ],
   }),
   "business-check": chainCard({
-    ask: "Can I trust Bay Area Plumbing in San Francisco before I hire them?",
-    title: "Check: Bay Area Plumbing",
-    why: "Find them on Google, then check the phone and the website Google lists, the company behind it, and any complaints.",
-    question: "Check Bay Area Plumbing in 6 stages",
-    intro: "Three phases. Find: their Google listing and reviews. Verify: the phone and website that listing gives are checked (is it a real line, is it the company's own number, how old is the site, who is behind it), plus news and complaints, judged by fixed rules. Act: a verdict with what to do, then I keep watching their news daily for 14 days and tell you if a new story appears. Change the business in the chat.",
+    id: "business-check",
+    ask: "Can I trust {business} before I hire them?",
+    title: "Check: {business}",
+    why: "Find them on Google, then check the phone and website that listing gives, the company behind it, and any trouble.",
+    question: "Check {business} in 6 stages",
+    intro: "Three phases. Find: their Google listing and reviews. Verify: the phone and website that listing gives are checked (a real line? the company's own number? how old is the site, who's behind it?), plus news and complaints, judged by fixed rules. Act: a verdict with what to do, then I watch their news daily for 14 days. Change the business on the card or in the chat.",
     steps: [
-      { id: "s1", tool: "place_reviews", args: { place: "Bay Area Plumbing San Francisco" }, label: "Find them on Google", why: "Their listing, phone, website and reviews" },
+      { id: "s1", tool: "place_reviews", args: { place: "{business}" }, label: "Find them on Google", why: "Their listing, phone, website and reviews" },
       { id: "s2", tool: "phone_check", bind: { phone: "$s1.found.phone" }, label: "Check their phone", why: "A real business line, or an internet number" },
       { id: "s3", tool: "read_page", bind: { url: "$s1.found.website" }, label: "Read their website", why: "Licence, services and address they claim" },
       { id: "s4", tool: "company_record", bind: { site: "$s1.found.website" }, label: "Company behind the site", why: "How old the site is and its official contacts" },
-      { id: "s5", tool: "news_search", args: { query: "Bay Area Plumbing San Francisco" }, label: "In the news", why: "Complaints, lawsuits or closures" },
-      { id: "s6", tool: "web_search", args: { query: "Bay Area Plumbing San Francisco complaints license BBB" }, label: "Complaints and licence", why: "Licence status and complaint records" },
+      { id: "s5", tool: "news_search", args: { query: "{business}" }, label: "In the news", why: "Complaints, lawsuits or closures" },
+      { id: "s6", tool: "web_search", args: { query: "{business} complaints license" }, label: "Complaints and licence", why: "Licence status and complaint records" },
     ],
-    then: { ref: "$s5.results[0].title", op: "changed", every: "1d", days: 14, title: "Watch: news about Bay Area Plumbing", says: "Tells you if a new top news story about them appears." },
+    then: { ref: "$s5.results[0].title", op: "changed", every: "1d", days: 14, title: "Watch: news about {business}", says: "Tells you if a new top news story about them appears." },
   }),
-  "seller-check": {
-    ask: () => "I'm about to pay a stranger $400 for a bike. Their number is +1 415 555 0134 and here's the listing photo.",
-    cost: () => ({ usd: usd(WEB_PRICES.phone + WEB_PRICES.lens), steps: 2 }),
-    build: async () => ({
-      input: check("Check the seller", "A real seller's number is usually a mobile line, and their photo shouldn't appear on other sites.", "Check the seller's phone and photo for $0.016?", [
-        { tool: "phone_check", args: { phone: "+1 415 555 0134" }, label: "Seller's phone line", why: "Internet-only numbers are common in scams" },
-        { tool: "image_check", args: { imageUrl: "https://upload.wikimedia.org/wikipedia/commons/thumb/4/41/Left_side_of_Flying_Pigeon.jpg/640px-Left_side_of_Flying_Pigeon.jpg" }, label: "Is the photo copied?", why: "A stolen photo shows up on other sites" },
-      ]),
-      intro: "I'll check whether the seller's number is a real mobile line, and whether the listing photo appears elsewhere online. Paste their number and the photo link in the chat to check yours.",
-      venue: "paper",
-    }),
-  },
+  "company-deep": chainCard({
+    id: "company-deep",
+    ask: "I'm thinking of investing in or working with {company}. Give me the full picture first.",
+    title: "Brief: {company}",
+    why: "Find its real website, read it, check the company record behind that site, then the news and the risks.",
+    question: "Build the {company} brief in 6 stages",
+    intro: "Three phases. Find: its official website. Verify: I read that site, look up the company record behind that exact domain (age, official phones, location), then news, complaints and money health, judged by fixed rules. Act: a written verdict and next steps. Change the company on the card or in the chat.",
+    steps: [
+      { id: "s1", tool: "web_search", args: { query: "{company} official website" }, label: "Find the official site", why: "Everything after starts from the real website" },
+      { id: "s2", tool: "read_page", bind: { url: "$s1.results[0].link" }, label: "Read the site", why: "What the company says about itself right now" },
+      { id: "s3", tool: "company_record", bind: { site: "$s1.results[0].link" }, label: "Company record", why: "Who is behind that site: age, official phones, location" },
+      { id: "s4", tool: "news_search", args: { query: "{company}" }, label: "Latest news", why: "What changed recently" },
+      { id: "s5", tool: "web_search", args: { query: "{company} complaints lawsuit recall" }, label: "Complaints and lawsuits", why: "What goes wrong, from outside the company" },
+      { id: "s6", tool: "web_search", args: { query: "{company} earnings cash layoffs" }, label: "Money health", why: "Earnings, cash and layoffs" },
+    ],
+  }),
+  "place-reviews": chainCard({
+    id: "place-reviews",
+    ask: "Is {place} any good?",
+    title: "Check: {place}",
+    why: "Find it on Google with its reviews, then read its own site and any news.",
+    question: "Check {place} in 3 stages",
+    intro: "Find it on Google and read its recent reviews, then read the website Google lists for it, and look for news; fixed rules judge the ratings and any trouble. Change the place on the card or in the chat.",
+    steps: [
+      { id: "s1", tool: "place_reviews", args: { place: "{place}" }, label: "Google reviews", why: "How people rate it lately" },
+      { id: "s2", tool: "read_page", bind: { url: "$s1.found.website" }, label: "Read its website", why: "What it offers, hours, prices" },
+      { id: "s3", tool: "news_search", args: { query: "{place}" }, label: "In the news", why: "Openings, closures, changes" },
+    ],
+  }),
   // Inso: news + markets (headlines bought in real USDC on Arc mainnet, then the market)
   "news-crypto": coverCard("Bet: Bitcoin moves up", { protects: "missing a Bitcoin rally", usd: 15 }, () => lineOptions(["BTC2"], "BTC price"), (c) => `Bitcoin's in the news. Read the headlines, then bet on “${c.contract.label}” by ${day(c.event)}.`, { oracle: "btcusd", news: "Bitcoin price", odds: "bitcoin" }),
   "news-oil": coverCard("Cover: oil jumps on the news", { protects: "a higher fuel bill", usd: 25 }, () => lineOptions(["WTI", "BRENT"], "Oil"), (c) => `Oil supply is in the news. Read it, then cover me if oil reaches ${c.contract.label} by ${day(c.event)}.`, { news: "OPEC oil supply", odds: "oil price" }),
@@ -472,27 +431,27 @@ export function venueFor(card: JobCardInfo, want: Venue): Venue {
 export const realOnly = (card: JobCardInfo) => card.section === "weather" || card.section === "sports" || card.id === "news-fed";
 
 /** The request text a card opens with, naming the option it's built on. */
-export const askOf = async (id: string, venue: Venue, choice?: string) => {
+export const askOf = async (id: string, venue: Venue, choice?: string, inputs?: Inputs) => {
   const def = CARDS[id];
-  if (!def?.options) return def?.ask();
+  if (!def?.options) return def?.ask(undefined, inputs);
   const c = await choose(await def.options(), venue, new Set(), choice).catch(() => null);
   return def.ask(c && !("error" in c) ? c : undefined);
 };
 
 /** Builds a card's job: one checked move, or a plan of two. */
-export async function buildJob(id: string, want: Venue, skip?: Set<string>, choice?: string): Promise<Built | { error: string }> {
+export async function buildJob(id: string, want: Venue, skip?: Set<string>, choice?: string, inputs?: Inputs): Promise<Built | { error: string }> {
   const card = jobById(id);
   const def = CARDS[id];
   if (!card || !def) return { error: "That job isn't in the catalog" };
-  return def.build(venueFor(card, want), skip, choice);
+  return def.build(venueFor(card, want), skip, choice, inputs);
 }
 
 /** A card's single move, built and checked; a line that closed in between is skipped and the next one tried. */
-export async function buildChecked(id: string, want: Venue, check: (input: ProposalInput) => Promise<{ proposal: Proposal } | { error: string }>, choice?: string): Promise<{ proposal: Proposal; intro: string; venue: Venue } | { plan: Extract<Built, { plan: unknown }> } | { error: string }> {
+export async function buildChecked(id: string, want: Venue, check: (input: ProposalInput) => Promise<{ proposal: Proposal } | { error: string }>, choice?: string, inputs?: Inputs): Promise<{ proposal: Proposal; intro: string; venue: Venue } | { plan: Extract<Built, { plan: unknown }> } | { error: string }> {
   const skip = new Set<string>();
   let last = "That job couldn't be built right now";
   for (let i = 0; i < 3; i++) {
-    const b = await buildJob(id, want, skip, choice);
+    const b = await buildJob(id, want, skip, choice, inputs);
     if ("error" in b) return { error: i ? last : b.error };
     if ("plan" in b) return { plan: b };
     const v = await check(b.input);

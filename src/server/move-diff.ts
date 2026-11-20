@@ -32,6 +32,7 @@ export function diffMoves(prev: Proposal, next: Proposal): string[] {
   else if (a && !b) out.push(`− ${describeAction(a)}`);
   else if (a && b) out.push(...actionChanges(a, b));
   if ((prev.budgetUsd ?? null) !== (next.budgetUsd ?? null) && next.budgetUsd != null) out.push(`budget $${next.budgetUsd}`);
+  if (prev.hedge && next.hedge && prev.hedge.lossUsd !== next.hedge.lossUsd) out.push(`cover $${prev.hedge.lossUsd} → $${next.hedge.lossUsd}`);
   return out;
 }
 

@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { z } from "zod";
 import { jobById } from "@/lib/jobs";
+import { coerce } from "@/server/dataflow";
 import { liveAllowed } from "@/server/access";
 import { liveReady } from "@/server/chain";
 import { tradingVenue, venueReady, withVenue } from "@/server/exchange";
@@ -16,6 +17,8 @@ const Body = z.object({
   id: z.string().max(40),
   /** What was picked on the card: a city, a team, a price line. */
   choice: z.string().max(80).optional(),
+  /** What the person typed into the card: their link, business, phone or place. */
+  inputs: z.record(z.string().max(40), z.string().max(600)).optional(),
   mode: z.enum(["demo", "live"]).default("demo"),
   network: z.enum(["testnet", "mainnet"]).default("testnet"),
   venue: z.enum(["paper", "gemini-sandbox", "gemini"]).optional(),
@@ -37,13 +40,22 @@ export async function POST(req: NextRequest) {
   const network = real ? "mainnet" : b.data.network;
   if (real && !liveReady("mainnet")) return NextResponse.json({ error: "This check is paid in real USDC on Arc mainnet, which isn't set up on this server yet." }, { status: 503 });
   if (mode === "live" && !liveAllowed(b.data.accessCode)) return NextResponse.json({ error: "Real-money jobs need the access code. Add it in Settings." }, { status: 403 });
+  // Each input is checked by its type before anything is built: a link must be a link, a phone a phone.
+  const inputs: Record<string, string> = {};
+  for (const f of card.inputs ?? []) {
+    const raw = b.data.inputs?.[f.name]?.trim();
+    if (!raw) continue;
+    const v = coerce(f.type, raw);
+    if (v == null || v === "") return NextResponse.json({ error: `That doesn't look like a ${f.label.toLowerCase()}: “${raw.slice(0, 60)}”` }, { status: 400 });
+    inputs[f.name] = String(v);
+  }
   const want: Venue = b.data.venue && venueReady(b.data.venue) ? b.data.venue : tradingVenue();
   const venue = venueFor(card, want);
   try {
     // The request reads with the market it's built on ("I have tickets for Portland vs New York…").
-    const ask = (await withVenue(venue, () => askOf(card.id, venue, b.data.choice)).catch(() => undefined)) ?? card.title;
+    const ask = (await withVenue(venue, () => askOf(card.id, venue, b.data.choice, inputs)).catch(() => undefined)) ?? card.title;
     const run = await createRun({ agent: card.id === "trip-gas" ? "inso" : card.agent, task: ask, mode, network, venue }, { quiet: true });
-    const built = await withNet(run.network, () => withVenue(run.venue, () => buildChecked(card.id, want, (input) => validateProposal(card.agent, input, `${run.id}-m`, { composed: true }), b.data.choice)));
+    const built = await withNet(run.network, () => withVenue(run.venue, () => buildChecked(card.id, want, (input) => validateProposal(card.agent, input, `${run.id}-m`, { composed: true }), b.data.choice, inputs)));
     if ("error" in built) {
       discard(run.id);
       return NextResponse.json({ error: built.error }, { status: 503 });

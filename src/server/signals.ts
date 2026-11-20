@@ -1,6 +1,6 @@
 import type { Run } from "@/lib/types";
 import { answerOf } from "./dataflow";
-import type { CompanyRecord, OtherOdds, PageRead, PhoneCheck, PlaceReviews, ShoppingPrices, WebResults } from "./web-tools";
+import type { CompanyRecord, ImageCheck, ListingRead, OtherOdds, PageRead, PhoneCheck, PlaceReviews, ShoppingPrices, WebResults } from "./web-tools";
 import type { OraclePrice } from "./onchain";
 
 /**
@@ -70,15 +70,37 @@ export function signalsOf(run: Run): Signal[] {
     if (low >= 2) out.push({ level: "warn", text: `${low} of its ${r.data.reviews.length} most recent reviews are 1 or 2 stars.`, evidence: [r.id] });
   }
 
-  // Price: is what they were asked far from what stores charge?
-  const asked = askedPrice(`${run.task} ${run.proposal?.ask ?? ""}`);
+  // Price: is what they're asked (on the listing itself, or in their words) far from what stores charge?
+  const listings = of<ListingRead>("read_listing");
+  const listed = listings.find((l) => l.data.price != null);
+  const asked = listed?.data.price ?? askedPrice(`${run.task} ${run.proposal?.ask ?? ""}`);
   for (const s of of<ShoppingPrices>("shopping_prices")) {
     const typical = s.data.median;
     if (!typical || !asked) continue;
     const ratio = asked / typical;
-    if (ratio < 0.6) out.push({ level: "bad", text: `$${asked.toLocaleString()} is ${Math.round((1 - ratio) * 100)}% below the typical $${Math.round(typical).toLocaleString()}: too good to be true is the most common scam sign.`, evidence: [s.id] });
-    else if (ratio > 1.15) out.push({ level: "warn", text: `$${asked.toLocaleString()} is ${Math.round((ratio - 1) * 100)}% above the typical $${Math.round(typical).toLocaleString()}. Worth negotiating.`, evidence: [s.id] });
-    else out.push({ level: "good", text: `$${asked.toLocaleString()} is in line with the typical $${Math.round(typical).toLocaleString()}.`, evidence: [s.id] });
+    const what = listed ? `The listing's $${asked.toLocaleString()}` : `$${asked.toLocaleString()}`;
+    const evidence = listed ? [listed.id, s.id] : [s.id];
+    const range = s.data.lowest != null && s.data.highest != null ? ` (stores: $${Math.round(s.data.lowest).toLocaleString()} to $${Math.round(s.data.highest).toLocaleString()})` : "";
+    if (ratio < 0.6) out.push({ level: "bad", text: `${what} is ${Math.round((1 - ratio) * 100)}% below the typical $${Math.round(typical).toLocaleString()}${range}: too good to be true is the most common scam sign.`, evidence });
+    else if (ratio > 1.15) out.push({ level: "warn", text: `${what} is ${Math.round((ratio - 1) * 100)}% above the typical $${Math.round(typical).toLocaleString()}${range}. Worth negotiating, or buying elsewhere.`, evidence });
+    else if (ratio <= 0.9) out.push({ level: "good", text: `${what} is ${Math.round((1 - ratio) * 100)}% below the typical $${Math.round(typical).toLocaleString()}${range}: a good price, not suspiciously low.`, evidence });
+    else out.push({ level: "good", text: `${what} is in line with the typical $${Math.round(typical).toLocaleString()}${range}.`, evidence });
+  }
+
+  // The seller on the listing: how buyers rate them.
+  for (const l of listings) {
+    const fb = l.data.sellerFeedback;
+    if (fb == null || !l.data.seller) continue;
+    if (fb < 95) out.push({ level: "warn", text: `The seller ${l.data.seller} has ${fb}% positive feedback, below the 98%+ most reliable sellers keep.`, evidence: [l.id] });
+    else if (fb >= 98) out.push({ level: "good", text: `The seller ${l.data.seller} has ${fb}% positive feedback.`, evidence: [l.id] });
+  }
+
+  // The photo: does the same picture show up on other marketplace listings (a sign it was copied)?
+  for (const i of of<ImageCheck>("image_check")) {
+    const own = listings.map((l) => l.data.url.replace(/[?#].*$/, ""));
+    const others = i.data.matches.filter((m) => /ebay|facebook|craigslist|offerup|mercari|poshmark|kijiji|gumtree/i.test(`${m.link} ${m.source ?? ""}`) && !own.some((u) => m.link.startsWith(u)));
+    if (others.length >= 2) out.push({ level: "warn", text: `The same photo appears on ${others.length} other marketplace listings, e.g. ${others[0].source ?? new URL(others[0].link).hostname}. Copied photos are common in scams; ask for a new photo.`, evidence: [i.id] });
+    else if (i.data.matches.length) out.push({ level: "good", text: `The photo isn't reused on other marketplace listings${i.data.matches.length ? ` (it matches ${i.data.matches.length} product pages, which is normal)` : ""}.`, evidence: [i.id] });
   }
 
   // News: stories about lawsuits, recalls, layoffs or fraud.

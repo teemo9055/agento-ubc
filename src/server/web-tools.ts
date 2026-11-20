@@ -221,7 +221,7 @@ export interface PageRead {
 /** Reads a public web page as text (MrScraper): its title, headings and the opening of its text. */
 export async function readPage(url: string): Promise<PageRead> {
   if (!/^https?:\/\//.test(url)) throw new Error("Reading a page needs a full link starting with https://");
-  const r = await payRequest<{ markdown?: string; data?: { markdown?: string } }>(`${MRSCRAPER}/v1/circle/scrape-markdown?${new URLSearchParams({ url })}`, { method: "GET" }, WEB_PRICES.page, MRSCRAPER_PAYEE);
+  const r = await payRequest<{ markdown?: string; data?: { markdown?: string } }>(`${MRSCRAPER}/v1/circle/scrape-markdown?${new URLSearchParams({ url })}`, { method: "GET" }, WEB_PRICES.page, MRSCRAPER_PAYEE, 60_000);
   const md = r.data.markdown ?? r.data.data?.markdown ?? "";
   // Links and images are noise for a reader: keep their words, drop the addresses.
   const plain = md
@@ -259,4 +259,59 @@ export async function otherOdds(query: string): Promise<OtherOdds> {
     return yes == null || !m.title ? [] : [{ source: "Kalshi" as const, title: clip(m.title, 120)!, yes: Math.round(yes * 1000) / 1000, volumeUsd: m.dollar_volume ? Math.round(m.dollar_volume) : undefined, closes: m.close_time?.slice(0, 10) }];
   });
   return { query, markets: [...poly, ...kal].slice(0, 10), paid: sum(paidOf(p), paidOf(k)) };
+}
+
+export interface ListingRead {
+  url: string;
+  title?: string;
+  /** The title cut down to what a store search needs: no condition words, no shop names. */
+  searchTitle?: string;
+  price?: number;
+  currency?: string;
+  condition?: string;
+  seller?: string;
+  sellerFeedback?: number;
+  photo?: string;
+  paid: Paid;
+}
+
+const LISTING_PROMPT =
+  "Return JSON with: title (the item name), price (number, in the listing's currency), currency, condition, seller (seller username or shop name), sellerFeedback (percent positive, number, if shown), photo (main image URL).";
+
+/** "EcoFlow DELTA 3 Max Power Station Backup Refurbished | eBay" → "EcoFlow DELTA 3 Max Power Station Backup". */
+export function searchTitleOf(title: string): string {
+  return title
+    .replace(/\|.*$/, "")
+    .replace(/\(.*?\)|\[.*?\]/g, " ")
+    .replace(/\b(certified|refurbished|renewed|used|brand new|new|open box|free shipping|fast shipping|sealed|unlocked|oem|genuine|authentic|lot of \d+)\b/gi, " ")
+    .replace(/[^\w\s.+-]/g, " ")
+    .replace(/\s+/g, " ")
+    .trim()
+    .split(" ")
+    .slice(0, 9)
+    .join(" ");
+}
+
+/** Reads a listing page (MrScraper, structured): what's for sale, at what price, by whom, with its photo. */
+export async function readListing(url: string): Promise<ListingRead> {
+  if (!/^https?:\/\//.test(url)) throw new Error("Reading a listing needs its full link, starting with https://");
+  const r = await payRequest<{ data?: Record<string, unknown> }>(`${MRSCRAPER}/v1/circle/scrape-json?${new URLSearchParams({ url, prompt: LISTING_PROMPT })}`, { method: "GET" }, WEB_PRICES.page, MRSCRAPER_PAYEE, 75_000);
+  const d = r.data.data ?? {};
+  const num = (x: unknown) => (typeof x === "number" ? x : typeof x === "string" && x.trim() ? Number(x.replace(/[^\d.]/g, "")) : NaN);
+  const title = clip(d.title, 160);
+  const price = num(d.price);
+  const feedback = num(d.sellerFeedback);
+  const photo = typeof d.photo === "string" && /^https:\/\//.test(d.photo) ? d.photo : undefined;
+  return {
+    url,
+    title,
+    searchTitle: title ? searchTitleOf(title) : undefined,
+    price: Number.isFinite(price) && price > 0 ? price : undefined,
+    currency: clip(d.currency, 8),
+    condition: clip(d.condition, 60),
+    seller: clip(d.seller, 60),
+    sellerFeedback: Number.isFinite(feedback) ? feedback : undefined,
+    photo,
+    paid: paidOf(r),
+  };
 }

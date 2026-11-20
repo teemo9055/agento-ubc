@@ -48,7 +48,7 @@ export function useCatalog(agent: AgentId, venue?: string) {
 }
 
 /** One section: a title, its one-line promise, and a row of cards that scrolls sideways. */
-export function JobRow({ section, jobs, previews, onStart, busy, loading }: { section: JobSection; jobs: JobCardInfo[]; previews: Map<string, JobPreview>; onStart: (id: string, choice?: string) => void; busy: string; loading: boolean }) {
+export function JobRow({ section, jobs, previews, onStart, busy, loading }: { section: JobSection; jobs: JobCardInfo[]; previews: Map<string, JobPreview>; onStart: (id: string, choice?: string, inputs?: Record<string, string>) => void; busy: string; loading: boolean }) {
   const row = useRef<HTMLDivElement>(null);
   const [edge, setEdge] = useState({ left: false, right: true });
   const s = SECTIONS[section];
@@ -99,11 +99,13 @@ export function JobRow({ section, jobs, previews, onStart, busy, loading }: { se
  * A job as a card, the way a market is on a prediction exchange: what it's about, the live number
  * that matters (the market's odds, or what the checks cost), and one button to start.
  */
-function JobTile({ job, p, i, onStart, busy, disabled, loading }: { job: JobCardInfo; p?: JobPreview; i: number; onStart: (id: string, choice?: string) => void; busy: boolean; disabled: boolean; loading: boolean }) {
+function JobTile({ job, p, i, onStart, busy, disabled, loading }: { job: JobCardInfo; p?: JobPreview; i: number; onStart: (id: string, choice?: string, inputs?: Record<string, string>) => void; busy: boolean; disabled: boolean; loading: boolean }) {
   const cover = job.agent === "inso" || job.id === "trip-gas";
   const off = Boolean(p?.unavailable);
   // What the person picked on the card (their city, team or price line); the card's numbers follow it.
   const [picked, setPicked] = useState<string>();
+  // The person's own link, business, phone or place: the job is built from these.
+  const [typed, setTyped] = useState<Record<string, string>>({});
   const choice = p?.choices?.find((c) => c.id === picked) ?? p?.choices?.find((c) => c.id === p?.choice);
   const shown = p && choice ? { ...p, market: choice.market, line: choice.line, chance: choice.chance, pay: choice.pay, get: choice.get, closes: choice.closes } : p;
   const venue = p?.venue ?? "paper";
@@ -128,11 +130,31 @@ function JobTile({ job, p, i, onStart, busy, disabled, loading }: { job: JobCard
       <p className="mt-1 text-[13px] leading-snug text-ink-2">{job.does}</p>
 
       <div className="mt-auto pt-4">
+        {job.inputs && !off && (
+          <div className="mb-2.5 grid gap-2" data-testid="job-inputs">
+            {job.inputs.map((f) => (
+              <label key={f.name} className="flex flex-col gap-1 rounded-xl border-[1.5px] border-ink bg-panel px-3 py-2 transition-shadow focus-within:shadow-[3px_3px_0_0_var(--agent)]">
+                <span className="text-[10.5px] font-semibold uppercase tracking-wide text-agent-ink">{f.label}</span>
+                <input
+                  value={typed[f.name] ?? ""}
+                  onChange={(e) => setTyped((t) => ({ ...t, [f.name]: e.target.value }))}
+                  placeholder={f.example}
+                  disabled={disabled}
+                  inputMode={f.type === "phone" ? "tel" : f.type === "listing_url" ? "url" : "text"}
+                  className="min-w-0 bg-transparent text-[13.5px] font-medium outline-none placeholder:text-ink-3 focus-visible:outline-none"
+                  data-testid="job-input"
+                  data-input={f.name}
+                />
+              </label>
+            ))}
+            <span className="text-[11.5px] text-ink-3">Leave blank to try the example.</span>
+          </div>
+        )}
         {p?.choices && p.choices.length > 1 && !off && <Picker label={p.pick ?? "Pick"} choices={p.choices} value={choice?.id} onChange={setPicked} disabled={disabled} />}
         {job.agent === "inso" ? <Odds p={shown} loading={loading} /> : <Cost job={job} p={p} loading={loading} />}
         <button
           type="button"
-          onClick={() => onStart(job.id, choice?.id)}
+          onClick={() => onStart(job.id, choice?.id, Object.fromEntries(Object.entries(typed).filter(([, v]) => v.trim())))}
           disabled={disabled || off || (loading && !p)}
           className="pressable mt-3 inline-flex h-11 w-full items-center justify-center gap-2 rounded-full border-[1.5px] border-ink bg-ink text-[14px] font-semibold text-white transition-colors hover:bg-agent hover:text-agent-on disabled:cursor-not-allowed disabled:opacity-50"
           data-testid="job-start"
@@ -324,7 +346,7 @@ function Shimmer({ lines, on }: { lines: number; on: boolean }) {
 }
 
 /** Every section of one agent, in order, from the live catalog. */
-export function Catalog({ agent, venue, onStart, busy }: { agent: AgentId; venue?: string; onStart: (id: string, choice?: string) => void; busy: string }) {
+export function Catalog({ agent, venue, onStart, busy }: { agent: AgentId; venue?: string; onStart: (id: string, choice?: string, inputs?: Record<string, string>) => void; busy: string }) {
   const { data, failed } = useCatalog(agent, venue);
   const previews = useMemo(() => new Map((data?.previews ?? []).map((p) => [p.id, p])), [data]);
   const jobs = data?.jobs ?? JOBS.filter((j) => j.agent === agent);

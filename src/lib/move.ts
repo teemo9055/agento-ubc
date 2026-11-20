@@ -19,6 +19,7 @@ export const RESEARCH_PRICE: Record<string, number> = {
   phone_check: 0.01,
   company_record: 0.01,
   read_page: 0.001,
+  read_listing: 0.001,
   market_odds: 0.002,
 };
 /** What a paid lookup costs; a marketplace service carries the price its seller quoted. */

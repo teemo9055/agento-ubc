@@ -1,5 +1,6 @@
 import { keccak256, toBytes, type Hex } from "viem";
 import { createWatch } from "./watches";
+import { payBackForJob, payInForJob } from "./payments/job-pay";
 import { randomUUID } from "node:crypto";
 import type { RunEvent, SeqEvent } from "@/lib/events";
 import { fmt, fmtFee, sum } from "@/lib/money";
@@ -70,6 +71,8 @@ type Waiter = (v: string) => void;
 
 interface Ctl {
   run: Run;
+  /** What the person's wallet paid in on Arc for a lookup-only job, to send the unspent part back. */
+  paidIn?: bigint;
   /** An order fingerprint is being written; only one per job. */
   anchoring?: boolean;
   events: SeqEvent[];
@@ -592,9 +595,14 @@ export async function approve(runId: string, signed?: { txHash?: Hex }) {
   const hash = planHash(ctl.run);
   const adapter = adapterFor(ctl.run);
   try {
+    // Lookups bought through Circle Gateway are paid by the app's agent wallet. On a real job the
+    // person's wallet pays that total in on Arc first, one transaction they can see at once.
+    const gateway = sum(ctl.run.lines.filter((l) => l.rail === "gateway").map((l) => l.approved));
+    const payIn = noVault && ctl.run.mode === "live" && ctl.run.payer !== "passkey" && gateway > 0n ? await payInForJob(ctl.run.network ?? "testnet", gateway) : null;
+    if (payIn) ctl.paidIn = gateway;
     const { vault, fundingTx } =
       // A move with no paid research spends nothing from USDC, so no vault is opened.
-      noVault ? {} : ctl.run.payer === "passkey" ? { vault: await verifyUserFunding(ctl.run, hash), fundingTx: signed!.txHash } : await adapter.open(ctl.run, hash);
+      noVault ? { fundingTx: payIn?.txHash } : ctl.run.payer === "passkey" ? { vault: await verifyUserFunding(ctl.run, hash), fundingTx: signed!.txHash } : await adapter.open(ctl.run, hash);
     ctl.funded = BigInt(ctl.run.cap);
     emit(ctl, { type: "run.approved", planHash: hash, vault, fundingTx, at: now() });
     const big = ctl.run.lines.filter((l) => l.bigSpend);
@@ -680,7 +688,19 @@ async function finish(ctl: Ctl) {
       deliverable.notes = r.summary.bullets;
     }
   }
-  const { refunded, txHash } = await closeVault(ctl.run);
+  let { refunded, txHash } = await closeVault(ctl.run);
+  // A lookup-only job paid in on Arc: what the lookups didn't use goes back to the person's wallet.
+  // After a restart the amount is worked out again from the job itself: its approved lookups.
+  if (!ctl.paidIn && ctl.run.fundingTx && BigInt(ctl.run.cap) === 0n && ctl.run.mode === "live") ctl.paidIn = sum(ctl.run.lines.filter((l) => l.rail === "gateway").map((l) => l.approved));
+  if (ctl.paidIn) {
+    const spent = sum(ctl.run.lines.filter((l) => l.rail === "gateway").map((l) => l.actual));
+    const back = ctl.paidIn > spent ? ctl.paidIn - spent : 0n;
+    const sent = back > 0n ? await payBackForJob(ctl.run.network ?? "testnet", back).catch((e) => (console.warn("pay back:", (e as Error).message), null)) : null;
+    if (sent) {
+      refunded = back;
+      txHash = sent.txHash;
+    }
+  }
   // The write-up: claims tied to the paid steps behind them; conflicts, gaps and spend by code.
   const built = await buildReport(ctl.run).catch((e) => {
     console.warn("report:", (e as Error).message);

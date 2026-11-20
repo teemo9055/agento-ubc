@@ -55,7 +55,7 @@ describe("checks paid in real USDC", () => {
 describe("every check job in the catalog", () => {
   // Checks need no market data, so each one can be built and checked here: a wrong argument name
   // or an unpriced lookup fails now, not when someone clicks the card.
-  const checks = ["company-brief", "company-deep", "fair-price", "big-buy", "place-reviews", "city-weekend", "seller-check", "used-car", "rental-check", "business-check"];
+  const checks = ["company-deep", "place-reviews", "listing-check", "seller-check", "business-check"];
   for (const id of checks)
     it(`${id} builds and passes the checks on mainnet`, async () => {
       const b = await buildJob(id, "paper");
@@ -76,5 +76,32 @@ describe("chained jobs", () => {
     expect(phone.bind?.phone).toBe(`$${google.id}.found.phone`);
     expect(site.bind?.url).toBe(`$${google.id}.found.website`);
     expect(company.bind?.site).toBe(`$${google.id}.found.website`);
+  });
+});
+
+describe("jobs built from what the person typed", () => {
+  it("their business fills every stage, and travels with the job as theirs", async () => {
+    const b = await buildJob("business-check", "paper", undefined, undefined, { business: "Acme Plumbing, Denver" });
+    if ("error" in b || !("input" in b)) throw new Error("not a single move");
+    const r = await withNet("mainnet", () => validateProposal("worko", b.input, "t-in", { composed: true }));
+    if ("error" in r) throw new Error(r.error);
+    expect(r.proposal.title).toBe("Check: Acme Plumbing, Denver");
+    expect(r.proposal.research[0].args.place).toBe("Acme Plumbing, Denver");
+    expect(r.proposal.research[5].args.query).toBe("Acme Plumbing, Denver complaints license");
+    expect(r.proposal.givens?.business).toEqual({ type: "company_name", value: "Acme Plumbing, Denver" });
+    expect(r.proposal.then?.watch.title).toBe("Watch: news about Acme Plumbing, Denver");
+    expect(JSON.stringify(r.proposal)).not.toMatch(/Bay Area/);
+  });
+
+  it("a pasted listing is read first, and later stages price and check what it sells", async () => {
+    const b = await buildJob("listing-check", "paper", undefined, undefined, { listing: "https://www.ebay.com/itm/123" });
+    if ("error" in b || !("input" in b)) throw new Error("not a single move");
+    const r = await withNet("mainnet", () => validateProposal("worko", b.input, "t-l", { composed: true }));
+    if ("error" in r) throw new Error(r.error);
+    const [read, prices, photo] = r.proposal.research;
+    expect(read.tool).toBe("read_listing");
+    expect(read.args.url).toBe("https://www.ebay.com/itm/123");
+    expect(prices.bind?.product).toBe(`$${read.id}.searchTitle`);
+    expect(photo.bind?.imageUrl).toBe(`$${read.id}.photo`);
   });
 });

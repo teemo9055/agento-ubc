@@ -306,18 +306,24 @@ export function ReceiptView({ run }: { run: Run }) {
           </div>
         ))}
       </div>
-      <div className="mt-2 space-y-1 text-[11.5px] text-ink-3">
-        {r.budget.fundingTx && (
-          <div>
-            Funding (vault cap {fmt(r.budget.cap)}): <Hash h={r.budget.fundingTx} />
-          </div>
-        )}
-        {r.budget.refundTx && (
-          <div>
-            Refund: <Hash h={r.budget.refundTx} />
-          </div>
-        )}
-      </div>
+      {(r.budget.fundingTx || r.budget.refundTx) && (
+        <div className="mt-3 grid gap-2 sm:grid-cols-2" data-testid="arc-txs">
+          {r.budget.fundingTx && (
+            <div className="rounded-xl border-[1.5px] border-ink bg-panel p-3 shadow-[2px_2px_0_0_var(--agent)]">
+              <span className="text-[10.5px] font-semibold uppercase tracking-wide text-agent-ink">On Arc · you paid</span>
+              <div className="mt-1 text-[12.5px] text-ink-2">{BigInt(r.budget.cap) > 0n ? `Into this job's vault (cap ${fmt(r.budget.cap)})` : "This job's lookups, from your wallet to the app's agent wallet"}</div>
+              <Hash h={r.budget.fundingTx} />
+            </div>
+          )}
+          {r.budget.refundTx && (
+            <div className="rounded-xl border-[1.5px] border-ink bg-panel p-3 shadow-[2px_2px_0_0_var(--agent)]">
+              <span className="text-[10.5px] font-semibold uppercase tracking-wide text-good">On Arc · came back</span>
+              <div className="mt-1 text-[12.5px] text-ink-2">{fmt(r.budget.returned)} USDC the job didn't use</div>
+              <Hash h={r.budget.refundTx} />
+            </div>
+          )}
+        </div>
+      )}
 
       <h3 className="mt-7 text-[12px] font-semibold uppercase tracking-wide text-ink-3">Approval trail</h3>
       <ol className="mt-2 space-y-1.5 text-[12.5px]">

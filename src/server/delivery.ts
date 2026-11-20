@@ -98,5 +98,6 @@ export const VENDOR_PROMISES: Record<string, DeliveryPromise> = {
   phone_check: { fields: ["valid"] },
   company_record: { fields: ["domain"] },
   read_page: { fields: ["text"] },
+  read_listing: { fields: ["url"] },
   market_odds: { fields: ["markets"] },
 };

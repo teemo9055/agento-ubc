@@ -63,7 +63,7 @@ export async function aiEditMove(agent: AgentId, current: Proposal, prompt: stri
   const { understood, message, alternatives } = r.value;
   if (!understood || !r.value.move) return { ok: false, message, alternatives: alternatives.length ? alternatives : undefined, usage: r.usage };
   // What the user gave and how the move was put together aren't the editor's to change.
-  const move = composed ? { ...r.value.move, givens: current.givens, compose: current.compose, tier: current.tier, gaps: current.gaps } : r.value.move;
+  const move = hedgeSized(current, composed ? { ...r.value.move, givens: current.givens, compose: current.compose, tier: current.tier, gaps: current.gaps } : r.value.move);
   const research = move.research as { id?: string }[];
   // A step left reading from one that was removed gets a plain reason, not a validator message.
   const early = composed && research.every((x) => x.id) ? brokenLinks(move as unknown as Proposal) : [];
@@ -82,9 +82,36 @@ export async function aiEditMove(agent: AgentId, current: Proposal, prompt: stri
     proposal = again.proposal;
   }
   const changes = diffMoves(current, proposal);
-  if (!changes.length) return { ok: false, message: undone.length ? `That would change ${undone.join(" and ")}, which this step doesn't control. Ask in the chat.` : "Nothing to change.", alternatives: alternatives.length ? alternatives : undefined, usage: r.usage };
+  // Never a bare "nothing to change": say what code decided and why (e.g. how a cover was sized).
+  if (!changes.length)
+    return {
+      ok: false,
+      message: undone.length ? `That would change ${undone.join(" and ")}, which this step doesn't control. Ask in the chat.` : (proposal.adjustments?.find((x) => /sized/i.test(x)) ?? "That's already how the job is set up."),
+      alternatives: alternatives.length ? alternatives : current.hedge ? [`Cover $${Math.round(current.hedge.lossUsd * 2)} instead`] : undefined,
+      usage: r.usage,
+    };
   proposal = { ...proposal, changes };
   return { ok: true, message: `${changes.join(" · ")}${undone.length ? ` (kept ${undone.join(" and ")} as is)` : ""}`, proposal, usage: r.usage };
+}
+
+/**
+ * A cover order is sized by code from what it covers, so a contract count or a dollar amount the
+ * person asks for is turned into the cover that sizes to exactly that: "make it 50 contracts" gives
+ * 50, "$10" gives about $10 of contracts. Same maths as the quick buttons.
+ */
+export function hedgeSized<T extends { action?: unknown; hedge?: unknown; budgetUsd?: unknown }>(current: Proposal, move: T): T {
+  const was = current.action;
+  const now = move.action as { kind?: string; quantity?: number; maxPrice?: number } | null | undefined;
+  const hedge = move.hedge as { protects: string; lossUsd: number } | null | undefined;
+  if (!current.hedge || !hedge || was?.kind !== "prediction_order" || now?.kind !== "prediction_order") return move;
+  // The model already changed the cover itself.
+  if (hedge.lossUsd !== current.hedge.lossUsd) return move;
+  const price = now.maxPrice ?? was.maxPrice;
+  const budget = typeof move.budgetUsd === "number" && move.budgetUsd !== current.budgetUsd ? move.budgetUsd : undefined;
+  const want = budget != null ? Math.floor(budget / price) : now.quantity;
+  if (!want || want === was.quantity || price >= 1) return move;
+  const lossUsd = Math.min(1000, Math.max(0.01, Math.round((want - 0.5) * (1 - price) * 100) / 100));
+  return { ...move, hedge: { ...hedge, lossUsd }, budgetUsd: null };
 }
 
 /** Tells the model which steps use the edited one's answer, so it can keep them reading something real. */

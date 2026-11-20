@@ -324,6 +324,13 @@ export const RESEARCH: Record<string, ResearchTool> = {
     key: (a) => `web:company:${a.site?.toLowerCase()}`,
     params: (a) => ({ site: a.site }),
   },
+  read_listing: {
+    product: "web.listing",
+    description: "Read a marketplace listing (eBay, Facebook, Craigslist, a shop page) as fields: title, price, condition, seller, seller feedback and photo (args: url, the full listing link). Later steps can use its title, price and photo. Real USDC on Arc mainnet only",
+    args: ["url"],
+    key: (a) => `web:listing:${a.url}`,
+    params: (a) => ({ url: a.url }),
+  },
   read_page: {
     product: "web.page",
     description: "Read a public web page as text (MrScraper): title, headings and its opening text (args: url, a full https link). Real USDC on Arc mainnet only",
@@ -362,10 +369,10 @@ export const MAX_SERVICE = BigInt(process.env.MARKETPLACE_MAX_PER_REQUEST ?? 10_
 
 /** Each agent's own harness: what it can look up for free, what it can buy, and what it can do. */
 export const TOOLKIT: Record<AgentId, { free: string[]; research: string[] }> = {
-  inso: { free: ["search_markets", "get_market", "browse_markets", "combo_quote", "my_positions", "spot_price", "search_services", "read_arc"], research: ["odds_history", "trade_tape", "oracle_price", "news_search", "web_search", "market_odds", "read_page", "service"] },
+  inso: { free: ["search_markets", "get_market", "browse_markets", "combo_quote", "my_positions", "spot_price", "search_services", "read_arc"], research: ["odds_history", "trade_tape", "oracle_price", "news_search", "web_search", "market_odds", "read_page", "read_listing", "service"] },
   trado: { free: ["spot_price", "search_markets", "get_market", "browse_markets", "my_positions", "search_services", "read_arc"], research: ["spot_candles", "oracle_price", "odds_history", "gas_price", "btc_network", "wallet_balance", "service"] },
   // The trip agent can look at markets too, so a brief about a trip can name the fuel cover Inso would build.
-  worko: { free: ["find_place", "find_nearby", "search_markets", "my_positions", "search_services", "read_arc"], research: ["drive_route", "oracle_price", "web_search", "news_search", "place_reviews", "shopping_prices", "image_check", "phone_check", "company_record", "read_page", "market_odds", "service"] },
+  worko: { free: ["find_place", "find_nearby", "search_markets", "my_positions", "search_services", "read_arc"], research: ["drive_route", "oracle_price", "web_search", "news_search", "place_reviews", "shopping_prices", "image_check", "phone_check", "company_record", "read_page", "read_listing", "market_odds", "service"] },
 };
 
 export const researchMenu = (agent?: AgentId) =>

@@ -217,7 +217,7 @@ export async function quote(url: string, init: RequestInit = {}) {
 }
 
 /** Pays one request with a Gateway nanopayment and returns the seller's response. */
-export async function payRequest<T>(url: string, init: RequestInit = {}, maxAmount = MAX_PER_REQUEST, expectPayTo?: string): Promise<PaidResponse<T>> {
+export async function payRequest<T>(url: string, init: RequestInit = {}, maxAmount = MAX_PER_REQUEST, expectPayTo?: string, timeoutMs = 20_000): Promise<PaidResponse<T>> {
   const { req, option, amount } = await quote(url, init);
   // Checked before anything is signed: never more than approved, never to someone else.
   if (amount > maxAmount) throw new Error(`Seller asks ${Number(amount) / 1e6} USDC, above the ${Number(maxAmount) / 1e6} USDC limit`);
@@ -229,7 +229,7 @@ export async function payRequest<T>(url: string, init: RequestInit = {}, maxAmou
   // batch, so this is reported as "may have been charged", never as "not charged".
   let res: Response;
   try {
-    res = await fetch(url, { ...init, headers: { ...(init.headers as Record<string, string>), "PAYMENT-SIGNATURE": sig }, signal: AbortSignal.timeout(20_000) });
+    res = await fetch(url, { ...init, headers: { ...(init.headers as Record<string, string>), "PAYMENT-SIGNATURE": sig }, signal: AbortSignal.timeout(timeoutMs) });
   } catch (e) {
     throw new MaybeChargedError(`No answer from ${new URL(url).host} after paying (${(e as Error).message.slice(0, 80)})`);
   }

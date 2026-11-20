@@ -4,7 +4,7 @@ import { chainlinkPrice } from "./chainlink";
 import { QUICKNODE_PAYEE, bitcoinNetwork, gasPrice, walletBalance, type BitcoinNetwork, type GasPrice, type OraclePrice, type Paid, type WalletBalance } from "./onchain";
 import { callService, findService, type ServiceResult } from "./marketplace";
 import type { Net } from "@/lib/networks";
-import { BLOCKRUN_PAYEE, companyRecord, imageCheck, MRSCRAPER_PAYEE, newsSearch, otherOdds, phoneCheck, placeReviews, readPage, SERPER_PAYEE, shoppingPrices, TOMBA_PAYEE, WEB_PRICES, webSearch, type CompanyRecord, type ImageCheck, type OtherOdds, type PageRead, type PhoneCheck, type PlaceReviews, type ShoppingPrices, type WebResults } from "./web-tools";
+import { BLOCKRUN_PAYEE, companyRecord, imageCheck, MRSCRAPER_PAYEE, newsSearch, otherOdds, phoneCheck, placeReviews, readListing, readPage, SERPER_PAYEE, shoppingPrices, TOMBA_PAYEE, WEB_PRICES, webSearch, type CompanyRecord, type ImageCheck, type ListingRead, type OtherOdds, type PageRead, type PhoneCheck, type PlaceReviews, type ShoppingPrices, type WebResults } from "./web-tools";
 
 /**
  * Paid lookups bought from vendors on Circle's Agent Marketplace with Gateway nanopayments.
@@ -119,6 +119,23 @@ export const VENDOR_TOOLS: Record<string, VendorTool> = {
     },
     stat: (d) => {
       const { paid: _p, ...rest } = d as CompanyRecord;
+      return rest;
+    },
+  },
+  read_listing: {
+    service: (a) => `Read listing: ${a.url ?? "the link you gave"}`.slice(0, 80),
+    payeeName: () => "MrScraper (Agent Marketplace)",
+    payee: () => MRSCRAPER_PAYEE,
+    price: () => WEB_PRICES.page,
+    nets: ["mainnet"],
+    run: (a) => readListing(a.url),
+    note: (d) => {
+      const r = d as ListingRead;
+      if (!r.title) return "Couldn't read what the listing sells";
+      return `“${r.title.slice(0, 50)}”${r.price != null ? ` · ${r.currency === "USD" || !r.currency ? "$" : `${r.currency} `}${r.price.toLocaleString()}` : ""}${r.seller ? ` · ${r.seller}` : ""}`;
+    },
+    stat: (d) => {
+      const { paid: _p, ...rest } = d as ListingRead;
       return rest;
     },
   },

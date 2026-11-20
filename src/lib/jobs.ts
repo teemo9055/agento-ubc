@@ -29,6 +29,16 @@ export interface JobCardInfo {
   glyph: string;
   /** "real" when its checks are paid in real USDC on Arc mainnet. */
   money: "real" | "any";
+  /** What the person fills in before it's built: their own link, business, phone or place. */
+  inputs?: JobInput[];
+}
+
+/** One thing a card asks for, typed so the server can check it before building anything. */
+export interface JobInput {
+  name: string;
+  type: "listing_url" | "company_name" | "place" | "phone" | "product_name";
+  label: string;
+  example: string;
 }
 
 /** One thing a person can pick on a card (a city, their team, a price line), with its live numbers. */
@@ -76,19 +86,14 @@ export interface JobPreview {
 
 export const JOBS: JobCardInfo[] = [
   // ---------- Worko ----------
-  { id: "company-brief", agent: "worko", section: "research", title: "What's going on with this company?", does: "Top search results and the latest news, summed up", glyph: "case", money: "real" },
-  { id: "fair-price", agent: "worko", section: "research", title: "Is this a fair price?", does: "What stores charge for the same thing right now", glyph: "tag", money: "real" },
-  { id: "company-deep", agent: "worko", section: "research", title: "Before I invest in or partner with a company", does: "Search results, news, complaints and rivals: five lookups, summed up", glyph: "case", money: "real" },
-  { id: "big-buy", agent: "worko", section: "research", title: "Buying something big. Right one, right price?", does: "Store prices, reviews, recalls and whether a new model is coming", glyph: "tag", money: "real" },
-  { id: "place-reviews", agent: "worko", section: "research", title: "Is this place any good?", does: "Its Google reviews and star ratings, read for you", glyph: "food", money: "real" },
-  { id: "city-weekend", agent: "worko", section: "plan", title: "Plan a weekend in a city I don't know", does: "What's on, what's in the news, and reviews of where to eat", glyph: "food", money: "real" },
+  { id: "company-deep", agent: "worko", section: "research", title: "Before I invest in or work with a company", does: "Finds its real site, reads it, checks who's behind it, then news and complaints", glyph: "case", money: "real", inputs: [{ name: "company", type: "company_name", label: "Company", example: "Rivian" }] },
+  { id: "place-reviews", agent: "worko", section: "research", title: "Is this place any good?", does: "Its Google reviews, then its own site and any news", glyph: "food", money: "real", inputs: [{ name: "place", type: "place", label: "Place and city", example: "Blue Bottle Coffee, Oakland" }] },
   { id: "road-trip", agent: "worko", section: "plan", title: "Plan my drive so no day is too long", does: "The route split into days, with places to sleep", glyph: "map", money: "any" },
   { id: "ev-trip", agent: "worko", section: "plan", title: "Will I find chargers on my EV trip?", does: "The route split into days, with chargers at each stop", glyph: "car", money: "any" },
   { id: "trip-gas", agent: "worko", section: "plan", title: "Road trip, and cover the gas", does: "Worko plans the drive, Inso covers an oil price jump", glyph: "map", money: "any" },
-  { id: "seller-check", agent: "worko", section: "verify", title: "Is this seller real?", does: "Phone line check and a reverse image search of the photo", glyph: "shield", money: "real" },
-  { id: "used-car", agent: "worko", section: "verify", title: "Buying a used car from a stranger", does: "Seller's phone, a fair price, recalls, common faults and scams", glyph: "car", money: "real" },
-  { id: "rental-check", agent: "worko", section: "verify", title: "Is this apartment listing real?", does: "Landlord's phone, the manager's reviews, usual rent and scams", glyph: "house", money: "real" },
-  { id: "business-check", agent: "worko", section: "verify", title: "Can I trust this contractor?", does: "Recent reviews plus any news about the business", glyph: "tool", money: "real" },
+  { id: "listing-check", agent: "worko", section: "verify", title: "Is this listing a fair deal?", does: "Reads the listing, prices that exact item in stores, checks the photo and seller", glyph: "tag", money: "real", inputs: [{ name: "listing", type: "listing_url", label: "Listing link", example: "https://www.ebay.com/itm/147285431158" }] },
+  { id: "seller-check", agent: "worko", section: "verify", title: "Is this seller real?", does: "Their phone line, the listing's photo and price, checked against each other", glyph: "shield", money: "real", inputs: [{ name: "listing", type: "listing_url", label: "Listing link", example: "https://www.ebay.com/itm/147285431158" }, { name: "phone", type: "phone", label: "Seller's phone", example: "+1 415 668 8000" }] },
+  { id: "business-check", agent: "worko", section: "verify", title: "Can I trust this contractor?", does: "Finds them on Google, checks the phone and site it lists, then news and complaints", glyph: "tool", money: "real", inputs: [{ name: "business", type: "company_name", label: "Business and city", example: "Bay Area Plumbing, San Francisco" }] },
   // ---------- Inso ----------
   { id: "news-crypto", agent: "inso", section: "news", title: "Bitcoin's in the headlines. Is it priced in?", does: "Reads today's Bitcoin news, then bets on a price line", glyph: "chart", money: "real" },
   { id: "news-oil", agent: "inso", section: "news", title: "Oil supply news could raise my fuel bill", does: "Reads the oil news, then covers a price jump", glyph: "coin", money: "real" },

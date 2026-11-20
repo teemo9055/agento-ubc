@@ -12,6 +12,8 @@ import { ACTIONS, FREE_TOOLS, PlanInput, ProposalInput, researchMenu, runFreeToo
 import { checksText, conditionText } from "./agents/toolbox";
 import { lessonLines, PLAYBOOKS, PRIMERS } from "./knowledge";
 import { diffMoves } from "./move-diff";
+import { hedgeSized } from "./edit-move";
+import { autoChain } from "./auto-chain";
 import { groundReply } from "./grounding";
 import { toProposalInput } from "./tools";
 /**
@@ -202,6 +204,12 @@ export interface TurnResult {
 function sameTarget(a: Proposal, b: Proposal) {
   const x = a.action;
   const y = b.action;
+  // Two checks are the same job only when they're about the same subject (they share an input).
+  if (!x && !y) {
+    const values = (p: Proposal) => new Set(p.research.flatMap((r) => Object.values(r.args).map((v) => String(v).toLowerCase())));
+    const seen = values(a);
+    return [...values(b)].some((v) => seen.has(v));
+  }
   if (!x || !y) return true;
   if (x.kind !== y.kind) return false;
   if (x.kind === "itinerary" || y.kind === "itinerary") return true;
@@ -276,7 +284,11 @@ export async function exploreTurn(agent: AgentId, chat: ChatMsg[], onTool: (note
   if (onScreen)
     messages.splice(1, 0, {
       role: "system",
-      content: `CURRENT MOVE ON SCREEN: ${JSON.stringify(toProposalInput(onScreen))}\nIf the user's message adds to or adjusts it ("add the odds history", "also check Chainlink", "make it $10", "only if it's under 40¢", "for it"), call propose_move with the WHOLE move: everything already in it plus the change. Start a fresh move only when they ask about a different market or a different goal.`,
+      content: [
+        `CURRENT MOVE ON SCREEN: ${JSON.stringify(toProposalInput(onScreen))}`,
+        `If the user's message adds to or adjusts it ("add the odds history", "also check Chainlink", "make it $10", "make it 50 contracts", "only if it's under 40¢", "for it"), call propose_move with the WHOLE move: everything already in it plus the change. Start a fresh move only when they ask about a different market or a different goal.`,
+        `A move with no order is a check about ONE subject (a product, listing, business, company, place or phone). When the user gives their OWN subject (pastes a link, names a different item, business, company, city or number), it REPLACES the example: rewrite every step's args for their subject (a pasted listing link goes in a read_listing step FIRST (it returns the title, price, seller and photo), and later steps search for what that listing sells), drop steps that only made sense for the old subject, and update title and ask. Never keep the old subject next to theirs.`,
+      ].join("\n"),
     });
   const tools: ToolCall[] = [];
   const usage: AiUsage[] = [];
@@ -340,7 +352,12 @@ export async function exploreTurn(agent: AgentId, chat: ChatMsg[], onTool: (note
         }
       } else if (c.name === "propose_move") {
         onTool("Drafting a move");
-        const v = await validateProposal(agent, onlyStatedBudget(c.args, chat), proposalId);
+        // "Make it 50 contracts" on a cover becomes the cover that sizes to 50, as in a card edit.
+        const asked = onlyStatedBudget(c.args, chat);
+        const sized = onScreen && asked && typeof asked === "object" ? hedgeSized(onScreen, asked as Record<string, unknown>) : asked;
+        // A lookup that needs what an earlier one finds is wired to it by code (listing → its title and photo).
+        const { move: wired, chained } = sized && typeof sized === "object" ? autoChain(sized as { research?: unknown }) : { move: sized, chained: false };
+        const v = await validateProposal(agent, wired, proposalId, chained ? { composed: true } : {});
         if ("error" in v) content = { ok: false, error: v.error, hint: "Fix the move using real data from the tools, or explain to the user why no move fits." };
         else {
           proposal = v.proposal;
