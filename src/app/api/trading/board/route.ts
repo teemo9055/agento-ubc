@@ -1,5 +1,5 @@
 import { NextResponse } from "next/server";
-import { positions, tradingStatus, VENUE_NAME } from "@/server/exchange";
+import { positions, predictionAccount, tradingStatus, VENUE_NAME } from "@/server/exchange";
 import { listRuns } from "@/server/orchestrator";
 import { doesLine } from "@/lib/plain";
 
@@ -28,6 +28,19 @@ export async function GET() {
       };
     })
     .sort((a, b) => (b.at ?? "").localeCompare(a.at ?? ""));
+  // Straight from Gemini's prediction-market API: what's waiting, what's held, what filled.
+  const runs = listRuns();
+  const symbols = runs.flatMap((r) => (r.proposal?.action?.kind === "prediction_order" ? [r.proposal.action.symbol] : []));
+  const jobOf = (orderId: string) => runs.find((r) => r.order?.orderId === orderId)?.id;
+  const account = await predictionAccount(symbols).catch((e) => ({ venue: status.venue, openOrders: [], positions: [], recent: [], error: (e as Error).message }));
+  const gemini = {
+    venue: account.venue,
+    venueName: VENUE_NAME[account.venue],
+    error: "error" in account ? account.error : undefined,
+    openOrders: account.openOrders.map((o) => ({ ...o, runId: jobOf(o.orderId) })),
+    positions: account.positions.map((p) => ({ symbol: p.symbol, label: p.label, event: p.event, outcome: p.outcome, quantity: p.quantity, avgPrice: p.avgPrice, sellPrice: p.sellPrice, runId: runs.find((r) => r.proposal?.action?.kind === "prediction_order" && r.proposal.action.symbol === p.symbol)?.id })),
+    recent: account.recent.map((o) => ({ ...o, runId: jobOf(o.orderId) })),
+  };
   const done = orders.filter((o) => o.status === "filled" || o.status === "simulated");
   const pending = orders.filter((o) => o.status === "open");
   return NextResponse.json({
@@ -39,6 +52,7 @@ export async function GET() {
     bought: done.filter((o) => o.side === "buy").slice(0, 6),
     sold: done.filter((o) => o.side === "sell").slice(0, 6),
     pending: pending.slice(0, 8),
+    gemini,
     holdings: held.positions.slice(0, 8).map((p) => ({ label: p.label, event: p.event, outcome: p.outcome, quantity: p.quantity, available: p.available, sellPrice: p.sellPrice })),
   });
 }

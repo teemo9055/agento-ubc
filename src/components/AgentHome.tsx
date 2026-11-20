@@ -14,6 +14,7 @@ import { Catalog } from "./JobCatalog";
 import { usePrefs } from "@/lib/prefs";
 import { THEMES } from "@/lib/themes";
 import type { AgentId } from "@/lib/types";
+import { GeminiAccount } from "./GeminiAccount";
 
 const HERO: Record<AgentId, { line: string; placeholder: string }> = {
   inso: { line: "Insure the things that could go wrong, with Gemini's prediction markets.", placeholder: "e.g. my rides cost double when it's freezing in Boston" },
@@ -105,6 +106,9 @@ export function AgentHome({ agent }: { agent: AgentId }) {
           {err}
         </p>
       )}
+
+      {/* Inso's orders and positions, read from Gemini itself. */}
+      {agent === "inso" && <GeminiAccount />}
 
       <Catalog agent={agent} venue={prefs.venue} onStart={(id, choice, inputs) => void startJob(id, choice, inputs)} busy={busy} />
 

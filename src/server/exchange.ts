@@ -383,6 +383,58 @@ export interface Position {
   expiry?: string;
 }
 
+export interface AccountOrder {
+  orderId: string;
+  symbol: string;
+  side: "buy" | "sell";
+  outcome: "yes" | "no";
+  price: number;
+  quantity: number;
+  filled: number;
+  status: string;
+  createdAt?: string;
+}
+
+/**
+ * The prediction-market side of the Gemini account, read from Gemini itself: orders waiting to
+ * fill, contracts held, and recent orders. `symbols` are contracts the app's own jobs traded, used
+ * when Gemini wants the order lists asked for one contract at a time.
+ */
+export async function predictionAccount(symbols: string[] = []): Promise<{ venue: Venue; openOrders: AccountOrder[]; positions: Position[]; recent: AccountOrder[]; error?: string }> {
+  const venue = tradingVenue();
+  if (venue === "paper") return { venue, openOrders: [], positions: [], recent: [] };
+  type Raw = { orderId: number | string; symbol?: string; side?: string; outcome?: string; price?: string; quantity?: string; filledQuantity?: string; status?: string; createdAt?: string };
+  const map = (o: Raw, symbol?: string): AccountOrder => ({
+    orderId: String(o.orderId),
+    symbol: o.symbol ?? symbol ?? "",
+    side: o.side === "sell" ? "sell" : "buy",
+    outcome: o.outcome === "no" ? "no" : "yes",
+    price: Number(o.price ?? 0),
+    quantity: Number(o.quantity ?? 0),
+    filled: Number(o.filledQuantity ?? 0),
+    status: o.status ?? "open",
+    createdAt: o.createdAt,
+  });
+  // All contracts at once when Gemini allows it; otherwise one contract at a time, from the app's own jobs.
+  const list = async (path: string, limit: number): Promise<AccountOrder[]> => {
+    try {
+      const r = await priv<{ orders?: Raw[] }>(path, { limit });
+      return (r.orders ?? []).map((o) => map(o));
+    } catch (e) {
+      if (!symbols.length) throw e;
+      const each = await Promise.all([...new Set(symbols)].slice(0, 12).map((sym) => priv<{ orders?: Raw[] }>(path, { symbol: sym, limit }).then((r) => (r.orders ?? []).map((o) => map(o, sym)), () => [] as AccountOrder[])));
+      return each.flat();
+    }
+  };
+  const byNewest = (a: AccountOrder, b: AccountOrder) => (b.createdAt ?? "").localeCompare(a.createdAt ?? "");
+  try {
+    const [open, held, history] = await Promise.all([list("/v1/prediction-markets/orders/active", 50), positions(), list("/v1/prediction-markets/orders/history", 20).catch(() => [] as AccountOrder[])]);
+    return { venue, openOrders: open.sort(byNewest), positions: held.positions, recent: history.filter((o) => o.filled > 0).sort(byNewest).slice(0, 10) };
+  } catch (e) {
+    return { venue, openOrders: [], positions: [], recent: [], error: (e as Error).message };
+  }
+}
+
 /** What the user holds on the connected exchange. Simulation holds nothing. */
 export async function positions(): Promise<{ venue: Venue; positions: Position[] }> {
   const venue = tradingVenue();
