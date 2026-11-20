@@ -106,7 +106,7 @@ export const VENDOR_TOOLS: Record<string, VendorTool> = {
     },
   },
   company_record: {
-    service: (a) => `Company record: ${a.site}`.slice(0, 80),
+    service: (a) => `Company record: ${a.site ?? "the website found earlier"}`.slice(0, 80),
     payeeName: () => "Tomba via Orthogonal (Agent Marketplace)",
     payee: () => TOMBA_PAYEE,
     price: () => WEB_PRICES.company,
@@ -123,7 +123,7 @@ export const VENDOR_TOOLS: Record<string, VendorTool> = {
     },
   },
   read_page: {
-    service: (a) => `Read page: ${a.url}`.slice(0, 80),
+    service: (a) => `Read page: ${a.url ?? "the page found earlier"}`.slice(0, 80),
     payeeName: () => "MrScraper (Agent Marketplace)",
     payee: () => MRSCRAPER_PAYEE,
     price: () => WEB_PRICES.page,
@@ -154,7 +154,7 @@ export const VENDOR_TOOLS: Record<string, VendorTool> = {
     stat: (d) => ({ query: (d as OtherOdds).query, markets: (d as OtherOdds).markets.slice(0, 8) }),
   },
   web_search: {
-    service: (a) => `Web search: ${a.query}`.slice(0, 80),
+    service: (a) => `Web search: ${a.query ?? "from an earlier step"}`.slice(0, 80),
     payeeName: () => ORTHOGONAL,
     payee: () => SERPER_PAYEE,
     price: () => WEB_PRICES.search,
@@ -180,7 +180,7 @@ export const VENDOR_TOOLS: Record<string, VendorTool> = {
     stat: (d) => ({ query: (d as WebResults).query, stories: (d as WebResults).results.slice(0, 5) }),
   },
   place_reviews: {
-    service: (a) => `Google reviews: ${a.place}`.slice(0, 80),
+    service: (a) => `Google reviews: ${a.place ?? "the place found earlier"}`.slice(0, 80),
     payeeName: () => ORTHOGONAL,
     payee: () => SERPER_PAYEE,
     // Two requests: find the place, then read its reviews.
@@ -230,7 +230,7 @@ export const VENDOR_TOOLS: Record<string, VendorTool> = {
     },
   },
   phone_check: {
-    service: (a) => `Phone check: ${a.phone}`.slice(0, 80),
+    service: (a) => `Phone check: ${a.phone ?? "the number found earlier"}`.slice(0, 80),
     payeeName: () => "Tomba via Orthogonal (Agent Marketplace)",
     payee: () => TOMBA_PAYEE,
     price: () => WEB_PRICES.phone,

@@ -15,6 +15,10 @@ export interface ReceiptLine {
   amount: string;
   networkFee: string;
   tx?: Hex;
+  /** Circle Gateway transfer ids, for lookups paid as nanopayments. */
+  transfer?: string;
+  /** Whose Gateway balance paid. */
+  payer?: Hex;
   time?: string;
 }
 
@@ -62,6 +66,8 @@ export function buildReceipt(run: Run): Receipt {
           amount: x.amount ?? "0",
           networkFee: x.networkFee ?? "0",
           tx: x.txHash,
+          transfer: x.transfer,
+          payer: x.payer,
           time: x.at,
         };
       }),
@@ -116,6 +122,6 @@ const csvCell = (v: string) => (/[",\n]/.test(v) ? `"${v.replace(/"/g, '""')}"` 
 
 export function receiptCsv(r: Receipt): string {
   const head = ["time", "step", "purpose", "service", "rail", "payee_name", "payee", "approved_usdc", "amount_usdc", "network_fee_usdc", "tx"];
-  const rows = r.lines.map((l) => [l.time ?? "", l.step, l.purpose, l.service, l.rail, l.payeeName, l.payee, fmt(l.approved), fmt(l.amount), fmtFee(l.networkFee), l.tx ?? ""]);
+  const rows = r.lines.map((l) => [l.time ?? "", l.step, l.purpose, l.service, l.rail, l.payeeName, l.payee, fmt(l.approved), fmt(l.amount), fmtFee(l.networkFee), l.tx ?? l.transfer ?? ""]);
   return [head, ...rows].map((row) => row.map(csvCell).join(",")).join("\n") + "\n";
 }

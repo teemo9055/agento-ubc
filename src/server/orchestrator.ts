@@ -1,4 +1,5 @@
 import { keccak256, toBytes, type Hex } from "viem";
+import { createWatch } from "./watches";
 import { randomUUID } from "node:crypto";
 import type { RunEvent, SeqEvent } from "@/lib/events";
 import { fmt, fmtFee, sum } from "@/lib/money";
@@ -689,6 +690,13 @@ async function finish(ctl: Ctl) {
   const report = built?.report;
   if (report?.headline && report.by === "ai") deliverable.summary = report.headline;
   emit(ctl, { type: "run.done", deliverable, refunded: refunded.toString(), refundTx: txHash, at: now(), report });
+  // The last stage: keep watching, as approved with the job.
+  const then = ctl.run.proposal?.then?.watch;
+  if (then) {
+    const w = createWatch(ctl.run, { condition: { ref: then.ref, op: then.op, value: then.value }, every: then.every, days: then.days, title: then.title });
+    if ("error" in w) log(ctl, { kind: "failure", what: "Couldn't start watching", why: w.error, outcome: "rejected", by: "system" });
+    else log(ctl, { kind: "failure", what: `Now watching: ${w.title}`, why: `${then.says} Checks ${then.every === "1d" ? "daily" : `every ${then.every}`} for ${then.days} days, up to $${w.totalCapUsd.toFixed(3)} in total.`, outcome: "approved", by: "system" });
+  }
 }
 
 /** Closes the vault and refunds what's left; nothing to do when no vault was opened. */
@@ -931,7 +939,7 @@ async function buyMarketplace<T>(
   lineId: string,
   key: string,
   product: string,
-  fetcher: () => Promise<T & { paid: { amountUsdc: number; payTo: string; via: string; tx?: Hex } }>,
+  fetcher: () => Promise<T & { paid: { amountUsdc: number; payTo: string; via: string; tx?: Hex; transfer?: string; payer?: Hex } }>,
   check: { promise?: DeliveryPromise; asked?: Record<string, string>; resource?: string } = {},
 ): Promise<T> {
   if (ctl.cache.has(key)) return ctl.cache.get(key) as T;
@@ -963,7 +971,7 @@ async function buyMarketplace<T>(
     if (check.resource) recordOutcome(check.resource, true);
     const fresh = ctl.run.lines.find((l) => l.id === lineId)!;
     emit(ctl, { type: "line.updated", line: { ...fresh, actual: (BigInt(fresh.actual) + paid).toString() } });
-    emit(ctl, { type: "payment.updated", phaseId, payment: { ...payment, txState: "settled", amount: paid.toString(), txHash: got.paid.tx, at: now() } });
+    emit(ctl, { type: "payment.updated", phaseId, payment: { ...payment, txState: "settled", amount: paid.toString(), txHash: got.paid.tx, transfer: got.paid.transfer, payer: got.paid.payer, at: now() } });
     ctl.cache.set(key, got);
     emit(ctl, { type: "data.received", key, product, data: got, phaseId });
     return got;

@@ -75,7 +75,19 @@ export function blueprintOf(p: Proposal): Blueprint {
   const a = p.action;
   const checks = [p.condition, ...(p.also ?? [])].filter((c): c is NonNullable<typeof c> => Boolean(c));
   const kind: WorkKind = p.hedge || (a?.kind === "prediction_order" && a.combo) ? "hedge" : a?.kind === "itinerary" ? "trip" : a ? (checks.length ? "conditional" : "order") : "lookup";
-  const reads: Block[] = p.research.map((r) => ({ label: r.label, detail: r.why, cost: lookupCost(r) }));
+  // A linked stage says what it takes from an earlier one, so the chain reads as a chain.
+  const chained = p.research.some((r) => r.bind);
+  const nameOf = (id: string) => {
+    const i = p.research.findIndex((x) => x.id === id);
+    return i >= 0 ? `${i + 1}. ${p.research[i].label}` : id;
+  };
+  const reads: Block[] = p.research.map((r, i) => {
+    const from = Object.entries(r.bind ?? {}).map(([field, ref]) => {
+      const m = /^\$([A-Za-z][\w-]*)/.exec(ref);
+      return m ? `Uses the ${field === "url" || field === "site" ? "website" : field} from ${nameOf(m[1])}` : "";
+    }).filter(Boolean);
+    return { label: chained ? `${i + 1}. ${r.label}` : r.label, detail: from.length ? `${from.join("; ")} · ${r.why}` : r.why, cost: lookupCost(r) };
+  });
   const does: Block[] = [];
   const gets: Block[] = [];
   if (a) {
@@ -83,6 +95,7 @@ export function blueprintOf(p: Proposal): Blueprint {
     does.push(doesLine(a));
     gets.push(getsLine(p));
   } else gets.push(getsLine(p));
+  if (p.then?.watch) does.push({ label: "Keep watching", detail: `${p.then.watch.says} ${p.then.watch.every === "1d" ? "Daily" : `Every ${p.then.watch.every}`} for ${p.then.watch.days} days.` });
   const isCombo = a?.kind === "prediction_order" && Boolean(a.combo);
   return {
     kind,
@@ -92,6 +105,8 @@ export function blueprintOf(p: Proposal): Blueprint {
         // The legs are what has to come true, so they sit where the conditions do.
         ...(a?.kind === "prediction_order" && a.combo ? a.combo.legs.map((l) => ({ label: legText(l), detail: `${l.event}${l.price != null ? ` · ${chance(l.price)} on its own` : ""}` })) : []),
         ...checks.map((c) => ({ label: conditionLabel(c), detail: "read fresh, right before" })),
+        // Linked jobs are judged by fixed rules in code, across the stages' answers.
+        ...(chained && !a ? [{ label: "Checked by fixed rules", detail: "Real phone line? The company's own number? How old is the site? Fair price? Trouble in the news?" }] : []),
       ],
       does,
       gets,

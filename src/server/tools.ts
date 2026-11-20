@@ -469,6 +469,9 @@ export const ComposedInput = ProposalInput.extend({
   compose: z.any().optional(),
   tier: z.enum(["quick", "thorough", "certain"]).optional(),
   gaps: z.array(z.object({ fact: z.string(), why: z.string() })).optional(),
+  then: z
+    .object({ watch: z.object({ ref: Ref, op: z.enum(["<=", ">=", "==", "!=", "changed"]), value: z.union([z.string(), z.number()]).optional(), every: z.enum(["15m", "1h", "6h", "1d"]), days: z.number().int().min(1).max(30), title: z.string().max(80), says: z.string().max(160) }) })
+    .optional(),
 });
 
 import { limits } from "./settings";
@@ -723,6 +726,13 @@ export async function validateProposal(agent: AgentId, input: unknown, id: strin
     if (r.lane) step.lane = r.lane;
     research.push(step);
   }
+  // The keep-watching stage reads from a step too: rename it like the others.
+  let then: Proposal["then"];
+  if (opts.composed && p.then?.watch) {
+    const to = reref(p.then.watch.ref, unique.length);
+    if (typeof to !== "string") return to;
+    then = { watch: { ...p.then.watch, ref: to } };
+  }
   for (const r of research.filter((x) => x.onConflict)) {
     const members = research.filter((x) => x.verify?.group === r.onConflict);
     if (members.length < 2) return { error: `The tie-breaker ${r.label} needs two steps that answer the same thing (group ${r.onConflict})` };
@@ -750,6 +760,7 @@ export async function validateProposal(agent: AgentId, input: unknown, id: strin
             compose: p.compose as Proposal["compose"],
             tier: p.tier,
             gaps: p.gaps?.length ? p.gaps : undefined,
+            then,
           }
         : {}),
     },
@@ -837,6 +848,7 @@ export function toComposedInput(p: Proposal): z.infer<typeof ComposedInput> {
   return {
     ...toProposalInput(p),
     research: p.research.map((r) => ({ id: r.id, tool: r.tool, args: r.args, label: r.label, why: r.why, bind: r.bind, when: r.when, verify: r.verify, onConflict: r.onConflict, resource: r.resource, lane: r.lane })),
+    then: p.then,
     givens: p.givens,
     compose: p.compose,
     tier: p.tier,

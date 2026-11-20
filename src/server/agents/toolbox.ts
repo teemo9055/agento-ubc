@@ -21,7 +21,11 @@ import { RESEARCH } from "../tools";
 import { isVendorTool, VENDOR_TOOLS } from "../vendor-tools";
 import { chainlinkPrice, type OraclePrice } from "../chainlink";
 import type { AgentCtx, AgentDef, EditResult, LineDraft, PhaseDraft, PlanDraft } from "./types";
+
+/** Lookups a job can do without: a failure skips the stage instead of pausing the job. */
+const OPTIONAL = new Set(["read_page"]);
 import { PhaseFailure } from "./types";
+import { PaymentError } from "../payments";
 
 /**
  * One agent runtime for every persona. The plan is whatever move was agreed in
@@ -471,11 +475,20 @@ export function toolboxAgent(id: AgentId): AgentDef {
           if (flowed.length) ctx.update?.(step.id, { inputs: flowed });
         }
         ctx.progress(0.2, step.label);
-        const got = await ctx.buyMarketplace!(step.id, t.key(args), t.product, () => v.run(args, v.price(args)), {
-          promise: VENDOR_PROMISES[step.tool],
-          asked: { ...(args.symbol ? { symbol: args.symbol } : {}), ...(args.address ? { address: args.address } : {}) },
-          resource: step.tool === "service" ? args.url : undefined,
-        });
+        const buy = () =>
+          ctx.buyMarketplace!(step.id, t.key(args), t.product, () => v.run(args, v.price(args)), {
+            promise: VENDOR_PROMISES[step.tool],
+            asked: { ...(args.symbol ? { symbol: args.symbol } : {}), ...(args.address ? { address: args.address } : {}) },
+            resource: step.tool === "service" ? args.url : undefined,
+          });
+        // Reading a website adds colour but the verdict doesn't depend on it: when the site can't be
+        // read, the stage is skipped with the reason and the job goes on, instead of waiting on you.
+        const got = OPTIONAL.has(step.tool)
+          ? await buy().catch((e) => {
+              if (e instanceof PaymentError || e instanceof PhaseFailure) ctx.skip!(`Couldn't read it: ${(e as Error).message.split(":")[0].slice(0, 80)}. The other checks go on without it.`);
+              throw e;
+            })
+          : await buy();
         mem.data[step.id] = got;
         const text = step.tool === "service" ? noteFor(cap, got) : v.note(got).slice(0, 48);
         const tone = step.tool === "service" ? await toneFor(cap, got, p.compose?.facts.find((f) => f.id === step.lane)?.question) : "neutral";

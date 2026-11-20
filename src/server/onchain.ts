@@ -16,7 +16,17 @@ export interface Paid {
   payTo: Hex;
   via: string;
   at: string;
+  /** Circle Gateway's id for this payment: look it up to see when it settles on Arc, and in which transaction. */
+  transfer?: string;
+  /** The wallet whose Gateway balance paid (the app's agent wallet). */
+  payer?: Hex;
 }
+
+/** What Circle says it settled: its transfer id and the paying wallet. */
+export const settledBy = (s: unknown): { transfer?: string; payer?: Hex } => {
+  const x = (s ?? {}) as { transaction?: unknown; payer?: unknown };
+  return { transfer: typeof x.transaction === "string" ? x.transaction : undefined, payer: typeof x.payer === "string" ? (x.payer as Hex) : undefined };
+};
 
 /** One paid JSON-RPC request. */
 async function rpc<T>(chain: string, method: string, params: unknown[]): Promise<{ result: T; paid: Paid }> {
@@ -24,7 +34,7 @@ async function rpc<T>(chain: string, method: string, params: unknown[]): Promise
   // Paid, but no result: the delivery check fails (the vendor gets a strike; you aren't charged).
   if (r.data.result === undefined || r.data.result === null)
     throw new DeliveryError({ ok: false, test: r.data.error ? "readable" : "answered", reason: `Quicknode ${chain}: ${r.data.error?.message ?? "no result"}` }, r.data);
-  return { result: r.data.result, paid: { amountUsdc: Number(r.amount) / 1e6, payTo: r.payTo, via: "Quicknode x402 · Circle Gateway nanopayment", at: r.at } };
+  return { result: r.data.result, paid: { amountUsdc: Number(r.amount) / 1e6, payTo: r.payTo, via: "Quicknode x402 · Circle Gateway nanopayment", at: r.at, ...settledBy(r.settlement) } };
 }
 
 const total = (a: Paid, b: Paid): Paid => ({ ...b, amountUsdc: Number((a.amountUsdc + b.amountUsdc).toFixed(6)) });

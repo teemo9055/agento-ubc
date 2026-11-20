@@ -241,10 +241,21 @@ type Stage = { id: string; tool: string; args?: Record<string, string>; bind?: R
 const priceOf = (steps: Stage[]) => steps.reduce((a, s) => a + VENDOR_TOOLS[s.tool].price(s.args ?? {}), 0n);
 const cash = (units: bigint) => `$${usd(units) < 0.01 ? usd(units).toFixed(3) : usd(units).toFixed(2)}`;
 /** A job whose stages feed each other; its price is worked out from its stages. */
-const chainCard = (c: { ask: string; title: string; why: string; question: string; intro: string; steps: Stage[] }): CardDef => ({
+type Then = NonNullable<Proposal["then"]>["watch"];
+/** What the keep-watching stage can cost at most: one check of the steps it reads, each time. */
+const watchCost = (steps: Stage[], w?: Then) => {
+  if (!w) return 0n;
+  const step = steps.find((s) => w.ref.startsWith(`$${s.id}.`) || w.ref === `$${s.id}`);
+  const checks = Math.ceil((w.days * 86_400_000) / { "15m": 900_000, "1h": 3_600_000, "6h": 21_600_000, "1d": 86_400_000 }[w.every]);
+  return step ? VENDOR_TOOLS[step.tool].price(step.args ?? {}) * BigInt(checks) : 0n;
+};
+const chainCard = (c: { ask: string; title: string; why: string; question: string; intro: string; steps: Stage[]; then?: Then }): CardDef => ({
   ask: () => c.ask,
-  cost: () => ({ usd: usd(priceOf(c.steps)), steps: c.steps.length }),
-  build: async () => ({ input: check(c.title, c.why, `${c.question} for up to ${cash(priceOf(c.steps))}?`, c.steps.map((s) => ({ args: {}, ...s })) as ProposalInput["research"]), intro: c.intro, venue: "paper" }),
+  cost: () => ({ usd: usd(priceOf(c.steps) + watchCost(c.steps, c.then)), steps: c.steps.length + (c.then ? 1 : 0) }),
+  build: async () => {
+    const input = check(c.title, c.why, `${c.question} for up to ${cash(priceOf(c.steps))}${c.then ? `, then keep watching for up to ${cash(watchCost(c.steps, c.then))} more` : ""}?`, c.steps.map((s) => ({ args: {}, ...s })) as ProposalInput["research"]);
+    return { input: (c.then ? { ...input, then: { watch: c.then } } : input) as ProposalInput, intro: c.intro, venue: "paper" };
+  },
 });
 
 const CARDS: Record<string, CardDef> = {
@@ -337,7 +348,7 @@ const CARDS: Record<string, CardDef> = {
     title: "Buy check: Sony WH-1000XM5",
     why: "Store prices, then the best review read in full, recalls, and whether a newer model is about to replace it.",
     question: "Check the Sony WH-1000XM5 in 5 stages",
-    intro: "Five stages: store prices, find the most cited review and read it in full, check recalls, and whether a new model is coming, then a written verdict. Change the product in the chat.",
+    intro: "Three phases. Find: what stores charge and the most-read review. Verify: that review read in full, recalls, and whether a newer model is about to replace it, judged against the prices. Act: a verdict on whether to buy now, then I keep watching the lowest price daily for 14 days and tell you when it moves. Change the product in the chat.",
     steps: [
       { id: "s1", tool: "shopping_prices", args: { product: "Sony WH-1000XM5" }, label: "Store prices", why: "What stores charge right now" },
       { id: "s2", tool: "web_search", args: { query: "Sony WH-1000XM5 review" }, label: "Find the top review", why: "The review most people read" },
@@ -345,6 +356,7 @@ const CARDS: Record<string, CardDef> = {
       { id: "s4", tool: "news_search", args: { query: "Sony WH-1000XM5 recall problem" }, label: "Recalls and problems", why: "Known faults" },
       { id: "s5", tool: "web_search", args: { query: "Sony WH-1000XM6 release" }, label: "Is a new model coming?", why: "Whether to wait" },
     ],
+    then: { ref: "$s1.lowest", op: "changed", every: "1d", days: 14, title: "Watch: lowest price for Sony WH-1000XM5", says: "Tells you when the lowest store price moves." },
   }),
   "place-reviews": chainCard({
     ask: "Is Blue Bottle Coffee in Oakland any good?",
@@ -406,7 +418,7 @@ const CARDS: Record<string, CardDef> = {
     title: "Check: Bay Area Plumbing",
     why: "Find them on Google, then check the phone and the website Google lists, the company behind it, and any complaints.",
     question: "Check Bay Area Plumbing in 6 stages",
-    intro: "Six stages, each using the last: find them on Google with their reviews, check the phone number Google lists, read their website, look up the company behind it, then news and complaints, and a verdict at the end. Change the business in the chat.",
+    intro: "Three phases. Find: their Google listing and reviews. Verify: the phone and website that listing gives are checked (is it a real line, is it the company's own number, how old is the site, who is behind it), plus news and complaints, judged by fixed rules. Act: a verdict with what to do, then I keep watching their news daily for 14 days and tell you if a new story appears. Change the business in the chat.",
     steps: [
       { id: "s1", tool: "place_reviews", args: { place: "Bay Area Plumbing San Francisco" }, label: "Find them on Google", why: "Their listing, phone, website and reviews" },
       { id: "s2", tool: "phone_check", bind: { phone: "$s1.found.phone" }, label: "Check their phone", why: "A real business line, or an internet number" },
@@ -415,6 +427,7 @@ const CARDS: Record<string, CardDef> = {
       { id: "s5", tool: "news_search", args: { query: "Bay Area Plumbing San Francisco" }, label: "In the news", why: "Complaints, lawsuits or closures" },
       { id: "s6", tool: "web_search", args: { query: "Bay Area Plumbing San Francisco complaints license BBB" }, label: "Complaints and licence", why: "Licence status and complaint records" },
     ],
+    then: { ref: "$s5.results[0].title", op: "changed", every: "1d", days: 14, title: "Watch: news about Bay Area Plumbing", says: "Tells you if a new top news story about them appears." },
   }),
   "seller-check": {
     ask: () => "I'm about to pay a stranger $400 for a bike. Their number is +1 415 555 0134 and here's the listing photo.",

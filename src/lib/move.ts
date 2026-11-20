@@ -1,7 +1,26 @@
 import type { MoveAction, MoveCondition, Proposal } from "./types";
 
 /** How a move reads in words and what it can cost. Shared by the chat, the workspace and the plan board. */
-const RESEARCH_PRICE: Record<string, number> = { odds_history: 0.02, trade_tape: 0.1, spot_candles: 0.02, drive_route: 0.03, oracle_price: 0.0001, gas_price: 0.0001, btc_network: 0.0002, wallet_balance: 0.0001 };
+/** What each paid lookup costs, in USD, as shown before you approve. A test keeps it equal to what the server pays. */
+export const RESEARCH_PRICE: Record<string, number> = {
+  odds_history: 0.02,
+  trade_tape: 0.1,
+  spot_candles: 0.02,
+  drive_route: 0.03,
+  oracle_price: 0.0001,
+  gas_price: 0.0001,
+  btc_network: 0.0002,
+  wallet_balance: 0.0001,
+  web_search: 0.002,
+  news_search: 0.002,
+  place_reviews: 0.004,
+  shopping_prices: 0.004,
+  image_check: 0.006,
+  phone_check: 0.01,
+  company_record: 0.01,
+  read_page: 0.001,
+  market_odds: 0.002,
+};
 /** What a paid lookup costs; a marketplace service carries the price its seller quoted. */
 export const lookupCost = (r: Proposal["research"][number]) => (r.tool === "service" ? Number(r.args.price ?? 0) / 1e6 : (RESEARCH_PRICE[r.tool] ?? 0));
 export const usdc = (x: number) => (x < 0.01 ? x.toFixed(4) : x.toFixed(2));

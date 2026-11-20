@@ -45,4 +45,28 @@ describe("rules that judge the answers", () => {
   it("only judges stages that answered", () => {
     expect(signalsOf(run("x", [{ id: "b", tool: "phone_check" }], {}))).toEqual([]);
   });
+
+  it("compares the order with the same outcome on Kalshi, and the price with the line", () => {
+    const r = {
+      task: "x",
+      proposal: {
+        ask: "",
+        action: { kind: "prediction_order", label: "Hike >25bps", maxPrice: 0.09, symbol: "GEMI-FED", side: "yes" },
+        research: [
+          { id: "k", tool: "market_odds", args: {}, label: "k", why: "" },
+        ],
+      },
+      results: { k: { query: "fed", markets: [{ source: "Kalshi", title: "Will the Federal Reserve Hike rates by >25bps at their December 2026 meeting?", yes: 0.045 }], paid } },
+    } as unknown as Run;
+    const s = signalsOf(r);
+    expect(s[0]).toMatchObject({ level: "warn" });
+    expect(s[0].text).toMatch(/Kalshi prices the same outcome at 5¢; Gemini's 9¢ is 5¢ dearer/);
+
+    const btc = {
+      task: "x",
+      proposal: { ask: "", action: { kind: "prediction_order", label: "$67,500 or above", maxPrice: 0.11 }, research: [{ id: "o", tool: "oracle_price", args: {}, label: "o", why: "" }] },
+      results: { o: { description: "BTC / USD", price: 66000, paid } },
+    } as unknown as Run;
+    expect(signalsOf(btc)[0].text).toMatch(/2\.3% short of the \$67,500 line/);
+  });
 });

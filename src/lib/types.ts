@@ -59,6 +59,10 @@ export interface Payment {
   at?: string;
   /** How it was paid when not a direct onchain transaction, e.g. a batched Gateway nanopayment. */
   via?: string;
+  /** Circle Gateway transfer ids (comma-separated when a lookup took two requests). */
+  transfer?: string;
+  /** The wallet whose Gateway balance paid. */
+  payer?: Hex;
   /** The answer failed a published delivery check. */
   delivery?: { test: string; reason: string };
   /**
@@ -379,6 +383,8 @@ export interface Proposal {
   tier?: "quick" | "thorough" | "certain";
   /** Facts the composer couldn't cover, with the plain reason. */
   gaps?: { fact: string; why: string }[];
+  /** The last stage: what the job keeps doing after it finishes, approved with the job. */
+  then?: { watch: { ref: string; op: "<=" | ">=" | "==" | "!=" | "changed"; value?: string | number; every: "15m" | "1h" | "6h" | "1d"; days: number; title: string; says: string } };
 }
 
 /** gemini: real money · gemini-sandbox: Gemini's test exchange · paper: simulation, nothing is sent. */

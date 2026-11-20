@@ -1,6 +1,7 @@
 import type { Run } from "@/lib/types";
 import { answerOf } from "./dataflow";
-import type { CompanyRecord, PageRead, PhoneCheck, PlaceReviews, ShoppingPrices, WebResults } from "./web-tools";
+import type { CompanyRecord, OtherOdds, PageRead, PhoneCheck, PlaceReviews, ShoppingPrices, WebResults } from "./web-tools";
+import type { OraclePrice } from "./onchain";
 
 /**
  * What the answers mean, decided by code. Each rule reads one or two stages' answers and says, the
@@ -85,6 +86,40 @@ export function signalsOf(run: Run): Signal[] {
     const hits = n.data.results.filter((x) => RED_WORDS.test(`${x.title} ${x.snippet ?? ""}`));
     if (hits.length) out.push({ level: "warn", text: `${hits.length} recent ${hits.length === 1 ? "story mentions" : "stories mention"} trouble, e.g. “${hits[0].title.slice(0, 90)}”.`, evidence: [n.id] });
     else if (n.data.results.length) out.push({ level: "good", text: `None of the ${n.data.results.length} recent stories mention lawsuits, recalls, layoffs or fraud.`, evidence: [n.id] });
+  }
+
+  // Before an order: is the same outcome cheaper elsewhere, and how far is the price from the line?
+  const order = run.proposal?.action?.kind === "prediction_order" ? run.proposal.action : undefined;
+  if (order) {
+    const label = order.label ?? "";
+    const strike = Number((/\$?([\d,]+(?:\.\d+)?)/.exec(label)?.[1] ?? "").replace(/,/g, ""));
+    const words = label.toLowerCase().match(/[><]?\d+\s*bps|hike|cut|maintain\w*/g) ?? [];
+    const same = (title: string) => {
+      const t = title.toLowerCase().replace(/,/g, "");
+      if (Number.isFinite(strike) && strike > 0 && t.includes(String(strike))) return true;
+      return words.length > 0 && words.every((w) => t.includes(w.replace(/\s+/g, "")));
+    };
+    const ours = order.maxPrice;
+    for (const o of of<OtherOdds>("market_odds")) {
+      const match = o.data.markets.find((m) => same(m.title));
+      if (!match || ours == null) continue;
+      const gap = Math.round((ours - match.yes) * 100);
+      out.push(
+        gap > 3
+          ? { level: "warn", text: `${match.source} prices the same outcome at ${Math.round(match.yes * 100)}¢; Gemini's ${Math.round(ours * 100)}¢ is ${gap}¢ dearer (“${match.title.slice(0, 70)}”).`, evidence: [o.id] }
+          : gap < -3
+            ? { level: "good", text: `Gemini's ${Math.round(ours * 100)}¢ is ${-gap}¢ cheaper than ${match.source}'s ${Math.round(match.yes * 100)}¢ for the same outcome.`, evidence: [o.id] }
+            : { level: "good", text: `${match.source} prices the same outcome at ${Math.round(match.yes * 100)}¢, in line with Gemini's ${Math.round(ours * 100)}¢.`, evidence: [o.id] },
+      );
+    }
+    for (const p of of<OraclePrice>("oracle_price")) {
+      if (!Number.isFinite(strike) || strike <= 0 || !p.data.price) continue;
+      const away = (strike - p.data.price) / p.data.price;
+      const where = `${p.data.description ?? "The price"} is $${Math.round(p.data.price).toLocaleString()} on Chainlink`;
+      if (away > 0.1) out.push({ level: "warn", text: `${where}, ${Math.round(away * 100)}% short of the $${strike.toLocaleString()} line: a long shot.`, evidence: [p.id] });
+      else if (away > 0) out.push({ level: "good", text: `${where}, ${(away * 100).toFixed(1)}% short of the $${strike.toLocaleString()} line.`, evidence: [p.id] });
+      else out.push({ level: "good", text: `${where}, already above the $${strike.toLocaleString()} line.`, evidence: [p.id] });
+    }
   }
 
   // A website with almost nothing on it.

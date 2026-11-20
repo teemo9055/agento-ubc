@@ -1,5 +1,5 @@
 import type { Hex } from "viem";
-import type { Paid } from "./onchain";
+import { settledBy, type Paid } from "./onchain";
 import { payRequest } from "./nanopay";
 import { normalizePhone } from "./dataflow";
 
@@ -23,8 +23,9 @@ const VIA = "Orthogonal x402 · Circle Gateway nanopayment";
 /** Listed prices, in USDC base units. The seller's own quote is checked against these before paying. */
 export const WEB_PRICES = { search: 2_000n, news: 2_000n, places: 2_000n, reviews: 2_000n, shopping: 4_000n, lens: 6_000n, phone: 10_000n, company: 10_000n, page: 1_000n, odds: 1_000n } as const;
 
-const paidOf = (r: { amount: bigint; payTo: Hex; at: string }): Paid => ({ amountUsdc: Number(r.amount) / 1e6, payTo: r.payTo, via: VIA, at: r.at });
-const sum = (a: Paid, b: Paid): Paid => ({ ...b, amountUsdc: Number((a.amountUsdc + b.amountUsdc).toFixed(6)) });
+const paidOf = (r: { amount: bigint; payTo: Hex; at: string; settlement?: unknown }): Paid => ({ amountUsdc: Number(r.amount) / 1e6, payTo: r.payTo, via: VIA, at: r.at, ...settledBy(r.settlement) });
+/** Two requests for one lookup: both transfers are kept, joined, so each can be looked up. */
+const sum = (a: Paid, b: Paid): Paid => ({ ...b, amountUsdc: Number((a.amountUsdc + b.amountUsdc).toFixed(6)), transfer: [a.transfer, b.transfer].filter(Boolean).join(",") || undefined });
 const clip = (s: unknown, n: number) => (typeof s === "string" ? s.replace(/\s+/g, " ").trim().slice(0, n) : undefined);
 
 async function serper<T>(path: string, body: Record<string, unknown>, price: bigint) {

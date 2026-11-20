@@ -4,7 +4,7 @@ import { fmt, fmtFee } from "@/lib/money";
 import { addrUrl, dateTime, time, txUrl } from "@/lib/format";
 import { buildReceipt, receiptCsv } from "@/lib/receipt";
 import type { Run } from "@/lib/types";
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { motion } from "framer-motion";
 import { Button } from "./ui";
 import { AgentIcon } from "./AgentIcon";
@@ -61,6 +61,41 @@ export function Check() {
 }
 
 /**
+ * A Gateway payment's proof, from Circle: its transfer id and status, and once Circle settles its
+ * batch on Arc, the transaction that did it, linked on the explorer.
+ */
+function GatewayProof({ ids, net }: { ids: string; net: "testnet" | "mainnet" }) {
+  const [proofs, setProofs] = useState<{ id: string; status: string; txHash: string | null }[] | null>(null);
+  useEffect(() => {
+    let live = true;
+    fetch(`/api/gateway/transfers?ids=${encodeURIComponent(ids)}&net=${net}`)
+      .then((r) => r.json())
+      .then((d) => live && setProofs(d.transfers ?? []))
+      .catch(() => live && setProofs([]));
+    return () => {
+      live = false;
+    };
+  }, [ids, net]);
+  const list = proofs ?? ids.split(",").map((id) => ({ id, status: "…", txHash: null }));
+  return (
+    <div className="mt-1 grid gap-0.5" data-testid="gateway-proof">
+      {list.map((p) => (
+        <div key={p.id} className="flex flex-wrap items-center gap-x-1.5 text-[11px] text-ink-3">
+          <span>Circle transfer</span>
+          <span className="font-mono">{p.id.slice(0, 8)}</span>
+          <span className={`rounded px-1 font-medium ${p.txHash ? "bg-good/10 text-good" : "bg-[#f1f0ec] text-ink-2"}`}>{p.txHash ? "settled on Arc" : p.status === "…" ? "checking" : `${p.status}, waiting for Circle's batch`}</span>
+          {p.txHash && (
+            <a href={txUrl(p.txHash, net)} target="_blank" rel="noreferrer" className="font-mono underline decoration-line">
+              {p.txHash.slice(0, 10)}…
+            </a>
+          )}
+        </div>
+      ))}
+    </div>
+  );
+}
+
+/**
  * Where each part of the job can be checked outside this app. Not everything is an Arc transaction:
  * marketplace lookups are Gateway nanopayments Circle settles in batches, and orders live on Gemini.
  */
@@ -70,7 +105,7 @@ function CheckIt({ run, vendorsPaid }: { run: Run; vendorsPaid: boolean }) {
   if (run.mode === "demo") tiles.push({ key: "arc", label: "Arc", title: "Nothing on Arc", body: "This job ran in practice mode: its vault was simulated, so there's no Arc transaction to find." });
   else if (run.vault) tiles.push({ key: "arc", label: `Arc ${net}`, title: "The job's vault", body: "Opening, each payment from it, and the refund when it closed are transactions on this address.", href: addrUrl(run.vault, net), link: "Open on the Arc explorer" });
   if (vendorsPaid)
-    tiles.push({ key: "gw", label: "Circle Gateway", title: "Marketplace lookups", body: "Paid as signed nanopayments from the app's Gateway balance. Circle settles them on Arc in batches, so a single lookup has no transaction of its own." });
+    tiles.push({ key: "gw", label: "Circle Gateway", title: "Marketplace lookups", body: "Paid from the app's Gateway balance, not your wallet. Each lookup below shows its Circle transfer id and status, and the Arc transaction once Circle settles its batch." });
   const o = run.order;
   if (o && o.venue !== "paper")
     tiles.push({ key: "gem", label: o.venue === "gemini" ? "Gemini" : "Gemini test exchange", title: "Your order", body: `${o.orderId ? `Order ${o.orderId}: ` : ""}it's in the Gemini account's orders, not on Arc.`, href: o.venue === "gemini" ? "https://exchange.gemini.com" : "https://exchange.sandbox.gemini.com", link: "Open Gemini" });
@@ -105,6 +140,8 @@ export function ReceiptView({ run }: { run: Run }) {
   const vendorsPaid = r.lines.some((l) => l.rail === "gateway" && BigInt(l.amount) > 0n);
   // Sample services (tests and the compose demo) answer from recordings: nothing was paid to anyone.
   const samples = JSON.stringify(r.lines).includes("(sample)");
+  // Marketplace lookups are paid from the app's Gateway balance, not your wallet: say whose, with the address.
+  const appPaid = r.lines.length > 0 && r.lines.every((l) => l.rail === "gateway") ? r.lines.find((l) => l.payer)?.payer : undefined;
   return (
     <section id="receipt" className="paper relative rounded-2xl border border-line bg-panel p-5 sm:p-8" aria-label="Receipt">
       <div className="flex flex-wrap items-start justify-between gap-4 border-b border-line pb-5">
@@ -147,9 +184,15 @@ export function ReceiptView({ run }: { run: Run }) {
 
       <div className="mt-5 grid gap-4 text-[12.5px] sm:grid-cols-3">
         <div>
-          <div className="text-[11.5px] font-semibold uppercase tracking-wide text-ink-3">Billed to</div>
-          <div className="mt-1">Your wallet</div>
-          <div className="break-all font-mono text-[10.5px] text-ink-3">{r.client.wallet}</div>
+          <div className="text-[11.5px] font-semibold uppercase tracking-wide text-ink-3">{appPaid ? "Paid from" : "Billed to"}</div>
+          <div className="mt-1">{appPaid ? "The app's Circle Gateway balance" : "Your wallet"}</div>
+          {appPaid ? (
+            <a href={addrUrl(appPaid, run.network)} target="_blank" rel="noreferrer" className="break-all font-mono text-[10.5px] text-ink-3 underline decoration-line">
+              {appPaid}
+            </a>
+          ) : (
+            <div className="break-all font-mono text-[10.5px] text-ink-3">{r.client.wallet}</div>
+          )}
         </div>
         <div>
           <div className="text-[11.5px] font-semibold uppercase tracking-wide text-ink-3">Work done by</div>
@@ -219,6 +262,7 @@ export function ReceiptView({ run }: { run: Run }) {
                   {l.service} · {time(l.time)}
                 </div>
                 <Hash h={l.tx} />
+                {l.transfer && <GatewayProof ids={l.transfer} net={run.network ?? "testnet"} />}
               </td>
               <td className="py-2 pr-2">
                 {l.payeeName}
