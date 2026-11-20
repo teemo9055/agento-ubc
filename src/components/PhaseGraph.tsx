@@ -189,7 +189,9 @@ export function PhaseGraph({
             ? `At most $${fmt(lines.filter((l) => l.rail !== "exchange").reduce((a, l) => a + BigInt(l.approved), 0n).toString())} · nothing is spent until you approve`
             : finished
               ? `Done · spent $${fmt(spend.spent.toString())} of $${fmt(spend.cap.toString())}${run.refunded && BigInt(run.refunded) > 0n ? ` · $${fmt(run.refunded)} returned to you` : spend.cap > spend.spent ? ` · $${fmt((spend.cap - spend.spent).toString())} never spent` : ""}`
-              : `Spent $${fmt(spend.spent.toString())} of $${fmt(spend.cap.toString())} · ${spend.sellers} seller${spend.sellers === 1 ? "" : "s"} paid`}
+              : spend.cap === 0n
+                ? "No paid lookups in this job · the order is placed on the exchange, not paid from the vault"
+                : `Spent $${fmt(spend.spent.toString())} of $${fmt(spend.cap.toString())} · ${spend.sellers} seller${spend.sellers === 1 ? "" : "s"} paid`}
         </p>
       )}
       <div className={scrolls ? "overflow-x-auto pb-2" : undefined} tabIndex={scrolls ? 0 : undefined} aria-label={scrolls ? "Steps, scroll sideways for more" : undefined}>

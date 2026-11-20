@@ -481,6 +481,10 @@ function Progress({ run }: { run: Run }) {
   // The same "up to" the job map shows: what the approved steps can cost, not the vault's small buffer.
   const most = sum(paid.map((l) => l.approved));
   const practice = run.mode === "demo";
+  // A job that only places an order has nothing to spend on data: say what the order can cost and where it went.
+  const order = run.lines.find((l) => l.rail === "exchange");
+  const venue = run.proposal?.venue;
+  const where = venue === "gemini-sandbox" ? "Gemini's test exchange · test money" : venue === "gemini" ? "Gemini · real money" : "Practice: never sent";
   return (
     <div className="mt-3" data-testid="status-progress">
       <ol className="flex gap-1.5" aria-label={`${done} of ${n} steps done`}>
@@ -492,10 +496,17 @@ function Progress({ run }: { run: Run }) {
         <span className="rounded-lg border border-line bg-surface px-2.5 py-1">
           <span className="font-semibold">{done}</span> of {n} steps done
         </span>
-        <span className="num rounded-lg border border-line bg-surface px-2.5 py-1">
-          Spent <span className="font-semibold">${fmt(spent)}</span> of up to ${fmt(most)}
-        </span>
-        <span className="rounded-lg border border-agent/30 bg-agent-soft/60 px-2.5 py-1 text-agent-ink">{practice ? "Practice: no real money moves" : "Anything unused comes back to you"}</span>
+        {paid.length > 0 && (
+          <span className="num rounded-lg border border-line bg-surface px-2.5 py-1">
+            Spent <span className="font-semibold">${fmt(spent)}</span> of up to ${fmt(most)}
+          </span>
+        )}
+        {order && (
+          <span className="num rounded-lg border border-line bg-surface px-2.5 py-1">
+            Order up to <span className="font-semibold">${fmt(order.approved)}</span>
+          </span>
+        )}
+        <span className="rounded-lg border border-agent/30 bg-agent-soft/60 px-2.5 py-1 text-agent-ink">{order && !paid.length ? where : practice ? "Practice: no real money moves" : "Anything unused comes back to you"}</span>
       </div>
     </div>
   );
