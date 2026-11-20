@@ -1,5 +1,6 @@
 "use client";
 import { useEffect, useRef, useState } from "react";
+import { Tidy } from "./Tidy";
 import type { Report as ReportT, Run } from "@/lib/types";
 import { fmt } from "@/lib/money";
 import { txUrl } from "@/lib/format";
@@ -92,7 +93,9 @@ export function Report({ run, id }: { run: Run; /** Set on the page made for pri
       {r.recommendation && (
         <div className="mx-4 mb-3 rounded-xl border-[1.5px] border-ink bg-agent-soft/60 px-3.5 py-3" data-testid="report-recommendation">
           <span className="text-[11px] font-semibold uppercase tracking-wide text-agent-ink">What to do</span>
-          <p className="mt-1 text-[14.5px] font-medium leading-snug">{r.recommendation}</p>
+          <div className="mt-1">
+            <Tidy text={r.recommendation} figures={false} />
+          </div>
           {r.nextSteps && r.nextSteps.length > 0 && (
             <ol className="mt-2.5 grid gap-1.5">
               {r.nextSteps.map((n, i) => (

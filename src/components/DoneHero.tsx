@@ -6,11 +6,13 @@ import { toast } from "./Toaster";
 import { Spinner } from "./ui";
 import { VERDICT } from "./Report";
 import { outcomeOf } from "@/lib/outcome";
+import { Tidy } from "./Tidy";
+import { Icon } from "./Icon";
 
 const ANSWER = {
-  answered: { text: "Answered", cls: "bg-good/10 text-good" },
-  partly: { text: "Partly", cls: "bg-warn/15 text-warn-ink" },
-  not_found: { text: "Not found", cls: "bg-ink/5 text-ink-3" },
+  answered: { text: "Answered", cls: "text-good", dot: "bg-good" },
+  partly: { text: "Partly", cls: "text-warn-ink", dot: "bg-warn" },
+  not_found: { text: "Not found", cls: "text-ink-3", dot: "bg-ink/25" },
 } as const;
 
 /**
@@ -26,11 +28,12 @@ export function DoneHero({ run }: { run: Run }) {
   return (
     <section aria-label="The answer" className="rounded-[22px] border-[1.5px] border-ink bg-panel p-5 shadow-[6px_6px_0_0_var(--agent)] sm:p-7" data-testid="done-hero">
       {v && (
-        <span className={`inline-flex h-[26px] items-center rounded-lg border px-2.5 text-[12.5px] font-bold uppercase tracking-wide ${v.cls}`} data-testid="report-verdict" data-verdict={r.verdict}>
+        <span className={`inline-flex items-center gap-2 text-[13px] font-bold ${v.cls.split(" ").find((c) => c.startsWith("text-"))}`} data-testid="report-verdict" data-verdict={r.verdict}>
+          <span className="h-2.5 w-2.5 rounded-[3px] bg-current" aria-hidden />
           {v.text}
         </span>
       )}
-      <h1 className="mt-2.5 text-[24px] font-bold leading-tight tracking-tight sm:text-[28px]" data-testid="report-headline">
+      <h1 className="mt-2.5 max-w-[46ch] text-[21px] font-bold leading-snug tracking-tight sm:text-[24px]" data-testid="report-headline">
         {r.headline}
       </h1>
       {/* For an order or a trip, how it ended is part of the answer: one line. */}
@@ -41,27 +44,35 @@ export function DoneHero({ run }: { run: Run }) {
       )}
       {/* The questions the job set out to answer, each answered or plainly marked not found. */}
       {r.answers && r.answers.length > 0 && (
-        <div className="mt-5 grid gap-2.5 sm:grid-cols-2" data-testid="answers">
+        <div className="mt-5 grid gap-3 sm:grid-cols-2" data-testid="answers">
           {r.answers.map((a, i) => (
-            <div key={a.id} className={`rounded-xl border-[1.5px] bg-surface px-3.5 py-3 ${a.status === "not_found" ? "border-dashed border-line" : "border-ink/80"}`} data-testid={`answer-${a.id}`} data-status={a.status}>
-              <div className="flex items-center justify-between gap-2">
-                <span className="text-[11.5px] font-semibold tracking-wide text-ink-3">QUESTION {i + 1}</span>
-                <span className={`rounded-full px-2 py-[1px] text-[11.5px] font-semibold ${ANSWER[a.status].cls}`}>
+            <div key={a.id} className={`flex flex-col rounded-xl border-[1.5px] bg-surface ${a.status === "not_found" ? "border-dashed border-line" : "border-ink/80"}`} data-testid={`answer-${a.id}`} data-status={a.status}>
+              <div className="flex items-start gap-2.5 border-b-[1.5px] border-ink/10 px-3.5 py-2.5">
+                <span className="num mt-px inline-flex h-6 w-6 shrink-0 items-center justify-center rounded-[7px] border-[1.5px] border-ink bg-panel text-[11.5px] font-bold">{i + 1}</span>
+                <span className="min-w-0 flex-1 text-[14px] font-semibold leading-snug">{a.ask}</span>
+                <span className={`mt-0.5 inline-flex shrink-0 items-center gap-1.5 text-[11.5px] font-semibold ${ANSWER[a.status].cls}`}>
+                  <span className={`h-2 w-2 rounded-[2px] ${ANSWER[a.status].dot}`} aria-hidden />
                   {ANSWER[a.status].text}
-                  {a.confidence && a.status !== "not_found" ? ` · ${a.confidence}` : ""}
+                  {a.confidence && a.status !== "not_found" ? <span className="font-normal text-ink-3">· {a.confidence}</span> : null}
                 </span>
               </div>
-              <div className="mt-1 text-[14px] font-semibold leading-snug">{a.ask}</div>
-              <p className="mt-1 text-[14px] leading-snug text-ink-2">{a.text}</p>
-              {a.soWhat && <p className="mt-1.5 text-[13px] font-medium text-agent-ink">{a.soWhat}</p>}
+              <div className="px-3.5 py-3">
+                <Tidy text={a.text} size="sm" />
+              </div>
+              {a.soWhat && (
+                <div className="mt-auto flex items-start gap-2 border-t-[1.5px] border-dashed border-ink/15 px-3.5 py-2.5 text-[13px] font-medium leading-snug text-agent-ink">
+                  <Icon name="arrow" size={14} stroke={2.2} className="mt-0.5 shrink-0" />
+                  <span>{a.soWhat}</span>
+                </div>
+              )}
             </div>
           ))}
         </div>
       )}
       {r.beyondSearch && (
-        <div className="mt-3 flex items-start gap-2.5 rounded-xl bg-agent-soft px-3.5 py-2.5 text-[14px] leading-snug" data-testid="beyond-search">
-          <span className="shrink-0 font-pixel text-[10px] leading-5 text-agent-ink">PAID DATA</span>
-          <span>{r.beyondSearch}</span>
+        <div className="mt-3 rounded-xl border-[1.5px] border-agent/40 bg-agent-soft/60 px-3.5 py-3" data-testid="beyond-search">
+          <div className="mb-1.5 text-[12px] font-semibold text-agent-ink">What the paid data added</div>
+          <Tidy text={r.beyondSearch} figures={false} size="sm" />
         </div>
       )}
       {warnings.length > 0 && (
