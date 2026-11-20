@@ -47,7 +47,7 @@ test("add money: network switch, address check, balance", async ({ page }) => {
   // Mainnet: plainly real money, labels flip, no faucet.
   await net.getByRole("radio", { name: /Mainnet/ }).click();
   await expect(net.getByRole("radio", { name: /Mainnet/ })).toHaveAttribute("aria-checked", "true");
-  await expect(page.getByTestId("real-money")).toContainText("real money");
+  await expect(page.getByTestId("withdraw-card")).toBeVisible();
   await expect(page.getByRole("heading", { name: "Your address on Arc mainnet" })).toBeVisible();
   await expect(page.getByTestId("faucet-card")).toHaveCount(0);
   await expect(page.getByTestId("send-card")).toContainText("Send USDC on the Arc network");

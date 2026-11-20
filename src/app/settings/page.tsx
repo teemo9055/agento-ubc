@@ -116,15 +116,10 @@ export default function Settings() {
     <div className="mx-auto flex max-w-2xl flex-col gap-5">
       <div>
         <h1 className="text-[24px] font-semibold tracking-tight">Settings</h1>
-        <p className="mt-1 text-sm text-ink-2">
-          Set these once. Every job follows them, whatever an agent proposes.{" "}
-          <Link href="/safety" className="font-medium underline underline-offset-2">
-            How it stays safe
-          </Link>
-        </p>
+        <p className="mt-1 text-sm text-ink-2">Set these once. Every job follows them.</p>
       </div>
 
-      <Block id="s-limits" title="Spending limits" sub="Checked in code on every job. Nothing is ever spent without your approval either way.">
+      <Block id="s-limits" title="Spending limits" sub="Checked on every job.">
         {!limits ? (
           <Spinner />
         ) : (
@@ -158,7 +153,7 @@ export default function Settings() {
         )}
       </Block>
 
-      <Block id="s-pay" title="Paying" sub="Where the USDC for data and services comes from.">
+      <Block id="s-pay" title="Paying" sub="Where jobs are paid from.">
         <div className="flex flex-wrap gap-2" role="radiogroup" aria-label="Network">
           {RAILS.filter((r) => r.mode === "live" || cfg?.practice || !cfg?.live).map((r) => {
             const net = r.network ? cfg?.networks?.[r.network] : undefined;
@@ -205,7 +200,7 @@ export default function Settings() {
                 </button>
               ))}
             </div>
-            {prefs.payFrom === "passkey" ? <WalletPanel /> : <p className="text-[12.5px] text-ink-3">The app&apos;s own Circle wallet funds each job&apos;s vault. Needed for plans, which approve each step for you.</p>}
+            {prefs.payFrom === "passkey" ? <WalletPanel /> : null}
           </div>
         )}
         {mode === "live" && prefs.payFrom !== "passkey" && cfg?.liveNeedsCode && (
@@ -217,11 +212,6 @@ export default function Settings() {
             aria-label="Access code"
             className="mt-3 h-10 w-full rounded-lg border border-line bg-surface px-3 text-sm outline-none focus:border-ink/40"
           />
-        )}
-        {cfg?.gateway && (
-          <p className="num mt-3 text-[12.5px] text-ink-3">
-            Marketplace balance (Circle Gateway): {cfg.gateway.balance.toFixed(4)} USDC · topped up {cfg.gateway.depositedToday} of {cfg.gateway.dailyCap} USDC today
-          </p>
         )}
         {cfg?.setup && cfg.setup.length > 0 && (
           <div className="mt-3 rounded-lg border border-warn bg-warn/10 px-3 py-2 text-[12.5px] text-warn-ink" data-testid="setup-problems">
@@ -237,13 +227,7 @@ export default function Settings() {
         )}
       </Block>
 
-      <Block id="s-money" title="Add money" sub="Get USDC onto Arc: free test USDC on testnet, or send USDC to your address on mainnet.">
-        <Link href="/wallet" className="pix-press inline-flex h-10 items-center gap-2 rounded-lg border-[1.5px] border-ink bg-ink px-4 text-sm font-semibold text-white" data-testid="settings-add-money">
-          <Icon name="wallet" size={16} /> Add money
-        </Link>
-      </Block>
-
-      <Block id="s-exchange" title="Exchange" sub="Where Inso's approved orders are placed. Weather, sports and Fed markets only exist on Gemini's real exchange, so those orders always go there.">
+      <Block id="s-exchange" title="Exchange" sub="Where Inso's orders go.">
         <div className="grid grid-cols-1 gap-2 sm:grid-cols-3" role="radiogroup" aria-label="Where orders go" data-testid="venue-choice">
           {(
             [
@@ -275,21 +259,12 @@ export default function Settings() {
             );
           })}
         </div>
-        {cfg?.venues && !cfg.venues.some((v) => v.id === "gemini") && (
-          <div className="mt-3 rounded-xl border-[1.5px] border-ink bg-agent-soft/50 p-3 shadow-[3px_3px_0_0_var(--agent)]" data-testid="connect-gemini">
-            <span className="text-[11px] font-semibold uppercase tracking-wide text-agent-ink">Connect the real exchange</span>
-            <p className="mt-1 text-[13px] leading-snug text-ink-2">
-              Weather, sports and Fed markets are only on Gemini&apos;s real exchange. Create an API key with trading access on gemini.com, add it to <code className="rounded bg-panel px-1">.env.local</code> as{" "}
-              <code className="rounded bg-panel px-1">GEMINI_LIVE_KEY</code> and <code className="rounded bg-panel px-1">GEMINI_LIVE_SECRET</code>, then restart the app. Orders there use real money, always shown before you approve.
-            </p>
-          </div>
-        )}
         <div className="mt-3">
           <ExchangePanel />
         </div>
       </Block>
 
-      <Block id="s-notify" title="Notifications" sub="Hear about it when a job needs you or an order fills.">
+      <Block id="s-notify" title="Notifications" sub="When a job needs you or an order fills.">
         <NotifyToggle />
       </Block>
 

@@ -36,9 +36,6 @@ export function OrderChips({ run }: { run: Run }) {
               See it under Predictions on Gemini&apos;s test exchange <Icon name="external" size={11} />
             </a>
             <div className="mt-0.5 text-[11.5px] text-ink-3">Waiting orders are in ActiveTrader → Open orders; filled ones under Predictions. </div>
-            <a href="/inso" className="mt-1 inline-flex items-center gap-1 text-[12.5px] font-medium text-agent-ink underline decoration-line underline-offset-2" data-testid="all-gemini-orders">
-              See all your Gemini prediction orders in Agento
-            </a>
           </>
         )}
       </div>

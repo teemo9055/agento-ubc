@@ -59,7 +59,7 @@ export default function AddMoney() {
       <Band />
       <header className="max-w-2xl">
         <h1 className="font-pixel text-[30px] leading-tight sm:text-[34px]">Add money</h1>
-        <p className="mt-1.5 text-[15px] leading-relaxed text-ink-2">Get USDC onto Arc, where your agents pay for things. Pick a network, check the address it goes to, then add USDC.</p>
+        <p className="mt-1.5 text-[15px] leading-relaxed text-ink-2">USDC on Arc pays for your jobs. Deposit to your address, or withdraw to any Arc address.</p>
       </header>
 
       <div role="radiogroup" aria-label="Network" className="grid grid-cols-2 gap-2 sm:max-w-xl" data-testid="network-switch">
@@ -82,16 +82,7 @@ export default function AddMoney() {
         })}
       </div>
 
-      {n.realMoney && (
-        <div className="flex items-start gap-3 rounded-2xl border-[1.5px] border-bad bg-bad/5 px-4 py-3 text-bad" role="note" data-testid="real-money">
-          <Icon name="shield" size={20} className="mt-0.5 shrink-0" />
-          <p className="text-[14px] leading-relaxed">
-            <b>Arc mainnet: this is real money.</b> USDC you send here is real, and transfers can&apos;t be undone. Check the address below is one you control.
-          </p>
-        </div>
-      )}
-
-      <section aria-labelledby="addr-title" className={`rounded-2xl border bg-panel p-4 ${n.realMoney ? "border-bad/40" : "border-line"}`}>
+      <section aria-labelledby="addr-title" className="rounded-2xl border border-line bg-panel p-4">
         <h2 id="addr-title" className="text-[15px] font-semibold">
           Your address on {n.name}
         </h2>
@@ -168,11 +159,11 @@ export default function AddMoney() {
 
       <section aria-labelledby="ways-title">
         <h2 id="ways-title" className="mb-3 text-[12px] font-semibold uppercase tracking-wide text-ink-3">
-          How to add it
+          Deposit and withdraw
         </h2>
         <ul className="grid grid-cols-1 gap-4 md:grid-cols-2">
           {n.realMoney ? (
-            <WayCard testId="send-card" icon="send" title="Send USDC on Arc" who="Anyone who holds USDC on Arc in a wallet app or an exchange that supports Arc." cost="Only Arc's network fee, a fraction of a cent, paid in USDC.">
+            <WayCard testId="send-card" icon="send" title="Deposit: send USDC on Arc" who="Anyone who holds USDC on Arc in a wallet app or an exchange that supports Arc." cost="Only Arc's network fee, a fraction of a cent, paid in USDC.">
               <p className="text-[13px] text-ink-2">Send USDC on the Arc network to the address above. Check the network is Arc before you send: money sent on another network won&apos;t arrive here.</p>
               <Button variant="ghost" onClick={startWatch} disabled={!address} data-testid="watch-arrival">
                 <Icon name="send" size={16} /> I&apos;ve sent it
@@ -181,6 +172,7 @@ export default function AddMoney() {
           ) : (
             <FaucetCard address={address} onSent={() => { startWatch(); void bal.refresh(); }} />
           )}
+          <WithdrawCard net={net} onSent={() => void bal.refresh()} />
         </ul>
         {!address && <p className="mt-3 text-[13px] text-ink-3">Add an address above first; that&apos;s where the USDC goes.</p>}
         {watch && !arrived && address && <p className="mt-3 text-[13px] text-ink-3" role="status">Watching your balance. It updates here as soon as the USDC lands.</p>}
@@ -257,6 +249,58 @@ function FaucetCard({ address, onSent }: { address: string | null; onSent: () =>
           )}
         </p>
       )}
+    </WayCard>
+  );
+}
+
+/** Withdraw: USDC from the Agento wallet to an address you give. You confirm the amount first. */
+function WithdrawCard({ net, onSent }: { net: Net; onSent: () => void }) {
+  const [from, setFrom] = useState<string | null>(null);
+  const [to, setTo] = useState("");
+  const [amount, setAmount] = useState("");
+  const [busy, setBusy] = useState(false);
+  const [done, setDone] = useState<{ tx?: string; error?: string } | null>(null);
+  useEffect(() => {
+    fetch(`/api/wallet/withdraw?network=${net}`)
+      .then((r) => r.json())
+      .then((x: { address: string | null }) => setFrom(x.address))
+      .catch(() => setFrom(null));
+    setDone(null);
+  }, [net]);
+  const ok = isAddress(to.trim()) && /^\d+(\.\d{1,6})?$/.test(amount.trim()) && Number(amount) > 0;
+  return (
+    <WayCard testId="withdraw-card" icon="send" title="Withdraw" who={from ? `From your Agento wallet ${from.slice(0, 6)}…${from.slice(-4)}.` : "From your Agento wallet."} cost="Only Arc's network fee, a fraction of a cent, paid in USDC.">
+      <input value={to} onChange={(e) => setTo(e.target.value)} placeholder="To: 0x…" spellCheck={false} autoComplete="off" className="num h-10 w-full rounded-lg border border-line bg-surface px-3 text-[13.5px] outline-none focus:border-ink/40" data-testid="withdraw-to" />
+      <div className="flex items-center gap-2">
+        <input value={amount} onChange={(e) => setAmount(e.target.value)} placeholder="Amount" inputMode="decimal" className="num h-10 w-32 rounded-lg border border-line bg-surface px-3 text-[13.5px] outline-none focus:border-ink/40" data-testid="withdraw-amount" />
+        <span className="text-[13px] text-ink-3">USDC</span>
+        <Button
+          variant="ghost"
+          disabled={!ok || busy || !from}
+          onClick={async () => {
+            if (!window.confirm(`Send ${amount.trim()} USDC on ${NETWORKS[net].name} to ${to.trim()}? This can't be undone.`)) return;
+            setBusy(true);
+            setDone(null);
+            try {
+              const r = await fetch("/api/wallet/withdraw", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ network: net, to: to.trim(), amount: amount.trim() }) });
+              const j = (await r.json()) as { txHash?: string; error?: string };
+              setDone(r.ok ? { tx: j.txHash } : { error: j.error ?? "It didn't go through." });
+              if (r.ok) onSent();
+            } finally {
+              setBusy(false);
+            }
+          }}
+          data-testid="withdraw-send"
+        >
+          {busy ? <Spinner /> : "Withdraw"}
+        </Button>
+      </div>
+      {done?.tx && (
+        <a href={txLink(net, done.tx as `0x${string}`)} target="_blank" rel="noreferrer" className="inline-flex items-center gap-1 text-[13px] font-medium text-good underline underline-offset-2" data-testid="withdraw-tx">
+          Sent · see it on the explorer <Icon name="external" size={12} />
+        </a>
+      )}
+      {done?.error && <p className="text-[13px] text-bad">{done.error}</p>}
     </WayCard>
   );
 }
