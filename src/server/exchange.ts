@@ -504,7 +504,9 @@ export async function predictionAccount(symbols: string[] = []): Promise<{ venue
   const byNewest = (a: AccountOrder, b: AccountOrder) => (b.createdAt ?? "").localeCompare(a.createdAt ?? "");
   try {
     const [open, held, history] = await Promise.all([list("/v1/prediction-markets/orders/active", 50), positions(), list("/v1/prediction-markets/orders/history", 20).catch(() => [] as AccountOrder[])]);
-    return { venue, openOrders: open.sort(byNewest), positions: held.positions, recent: history.filter((o) => o.filled > 0).sort(byNewest).slice(0, 10) };
+    // Only orders still on the book: open, with something left to fill. The active list can carry others.
+    const waiting = open.filter((o) => (o.status === "open" || !o.status) && o.quantity - o.filled > 0);
+    return { venue, openOrders: waiting.sort(byNewest), positions: held.positions, recent: history.filter((o) => o.filled > 0).sort(byNewest).slice(0, 10) };
   } catch (e) {
     return { venue, openOrders: [], positions: [], recent: [], error: (e as Error).message };
   }
