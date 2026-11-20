@@ -177,7 +177,7 @@ export function PhaseGraph({
   const finished = run && (run.status === "done" || run.status === "cancelled");
 
   return (
-    <div ref={box} className="w-full" aria-label="Steps of this job" data-testid="phase-graph" data-layout={layout.vertical ? "vertical" : layout.bands ? "lanes" : "horizontal"}>
+    <div ref={box} className={`w-full rounded-xl ${!draft && phases.length > 0 && phases.every((p) => p.status === "done" || p.status === "skipped") ? "graph-complete" : ""}`} aria-label="Steps of this job" data-testid="phase-graph" data-layout={layout.vertical ? "vertical" : layout.bands ? "lanes" : "horizontal"}>
       {draft && run?.proposal?.changes?.length ? (
         <p className="mb-2 rounded-lg bg-agent-soft px-2.5 py-1.5 text-[12.5px] text-agent-ink" data-testid="graph-changes">
           {run.proposal.changes.join(" · ")}
@@ -217,7 +217,7 @@ export function PhaseGraph({
                 d={e.d}
                 fill="none"
                 strokeLinecap="round"
-                className={e.state === "running" ? "edge-march" : undefined}
+                className={e.state === "running" ? "edge-march edge-live" : e.state === "done" ? "edge-done" : undefined}
                 style={{
                   stroke: e.state === "done" ? "var(--color-ink)" : e.state === "running" ? "var(--agent)" : "#cfcec8",
                   strokeWidth: e.state === "waiting" ? 1.5 : 2,

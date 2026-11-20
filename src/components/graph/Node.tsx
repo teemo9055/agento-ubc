@@ -48,7 +48,7 @@ function Mark({ tone, step }: { tone: Tone; step: number }) {
   const base = "inline-flex h-[22px] w-[22px] shrink-0 items-center justify-center rounded-[5px] text-[11px] font-semibold";
   if (tone === "done")
     return (
-      <span className={`${base} bg-good text-white`}>
+      <span className={`${base} check-draw bg-good text-white`}>
         <Icon name="check" size={13} stroke={3} />
       </span>
     );
@@ -90,7 +90,7 @@ export function Node({ p, line, step, simulated, onEdit, focused, dim, x, y, onG
       onClick={onEdit}
       aria-pressed={onEdit ? Boolean(focused) : undefined}
       aria-label={onEdit ? `${label}. Edit in chat` : label}
-      className={`node-in group absolute flex flex-col overflow-hidden rounded-xl px-3.5 pb-2.5 pt-3 text-left transition-[box-shadow,border-color,opacity,transform,background-color] duration-300 motion-reduce:transition-none ${frame} ${red ? "!shadow-[3px_3px_0_0_var(--color-bad)]" : ""} ${diff?.isNew ? "!border-good !border-2" : ""} ${focused ? "!border-ink shadow-[3px_3px_0_0_var(--agent)]" : ""} ${
+      className={`node-in ${tone === "running" && !focused ? "node-running" : ""} ${tone === "done" && !red ? "node-done" : ""} ${focused ? "node-focus" : ""} ${diff?.isNew || diff?.priceFrom || diff?.providerFrom ? "node-diff" : ""} group absolute flex flex-col overflow-hidden rounded-xl px-3.5 pb-2.5 pt-3 text-left transition-[box-shadow,border-color,opacity,transform,background-color] duration-300 motion-reduce:transition-none ${frame} ${red ? "!shadow-[3px_3px_0_0_var(--color-bad)]" : ""} ${diff?.isNew ? "!border-good !border-2" : ""} ${focused ? "!border-ink shadow-[3px_3px_0_0_var(--agent)]" : ""} ${
         onEdit && !focused ? "cursor-pointer hover:-translate-y-0.5 hover:border-ink" : ""
       } ${dim ? "opacity-55" : ""}`}
       style={{ left: x, top: y, width: NODE_W, height: NODE_H, animationDelay: `${(step - 1) * 60}ms` }}

@@ -529,7 +529,7 @@ export function Chat({
             )}
           </AnimatePresence>
           <form
-            className={`flex items-end gap-2 rounded-xl border bg-panel p-1.5 transition-[border-color,box-shadow] ${editing ? "border-ink shadow-[3px_3px_0_0_var(--agent)]" : "border-line focus-within:border-ink/40"}`}
+            className={`flex items-end gap-2 rounded-xl border bg-panel p-1.5 transition-[border-color,box-shadow] ${editing ? "composer-editing border-ink shadow-[3px_3px_0_0_var(--agent)]" : "border-line focus-within:border-ink/40"}`}
             onSubmit={(e) => {
               e.preventDefault();
               void send(text);
