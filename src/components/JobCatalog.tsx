@@ -10,12 +10,6 @@ import type { AgentId } from "@/lib/types";
 
 type Catalog = { venue: string; sections: typeof SECTIONS; jobs: JobCardInfo[]; previews: JobPreview[] };
 
-const VENUE_CHIP: Record<string, { text: string; cls: string }> = {
-  paper: { text: "Practice", cls: "border-line bg-[#f4f3ef] text-ink-2" },
-  "gemini-sandbox": { text: "Test exchange", cls: "border-agent/40 bg-agent-soft text-agent-ink" },
-  gemini: { text: "Real money", cls: "border-bad/40 bg-bad/10 text-bad" },
-};
-
 const money = (x?: number) => (x == null ? "–" : x > 0 && x < 0.01 ? `$${x.toFixed(4).replace(/0+$/, "")}` : `$${x.toFixed(2)}`);
 const pct = (p?: number) => (p == null ? "–" : p < 0.01 ? "<1%" : `${Math.round(p * 100)}%`);
 function closesIn(iso?: string) {
@@ -100,7 +94,6 @@ export function JobRow({ section, jobs, previews, onStart, busy, loading }: { se
  * that matters (the market's odds, or what the checks cost), and one button to start.
  */
 function JobTile({ job, p, i, onStart, busy, disabled, loading }: { job: JobCardInfo; p?: JobPreview; i: number; onStart: (id: string, choice?: string, inputs?: Record<string, string>) => void; busy: boolean; disabled: boolean; loading: boolean }) {
-  const cover = job.agent === "inso" || job.id === "trip-gas";
   const off = Boolean(p?.unavailable);
   // What the person picked on the card (their city, team or price line); the card's numbers follow it.
   const [picked, setPicked] = useState<string>();
@@ -108,8 +101,6 @@ function JobTile({ job, p, i, onStart, busy, disabled, loading }: { job: JobCard
   const [typed, setTyped] = useState<Record<string, string>>({});
   const choice = p?.choices?.find((c) => c.id === picked) ?? p?.choices?.find((c) => c.id === p?.choice);
   const shown = p && choice ? { ...p, market: choice.market, line: choice.line, chance: choice.chance, pay: choice.pay, get: choice.get, closes: choice.closes } : p;
-  const venue = p?.venue ?? "paper";
-  const chip = job.money === "real" ? { text: "Real USDC", cls: "border-bad/40 bg-bad/10 text-bad" } : cover && job.agent === "inso" ? VENUE_CHIP[venue] : { text: "Test money", cls: "border-line bg-[#f4f3ef] text-ink-2" };
   return (
     <motion.article
       initial={{ opacity: 0, y: 14 }}
@@ -124,10 +115,8 @@ function JobTile({ job, p, i, onStart, busy, disabled, loading }: { job: JobCard
         <span className="inline-flex shrink-0 rounded-[14px] border-[1.5px] border-ink bg-agent-soft p-2 shadow-[2px_2px_0_0_var(--color-ink)] transition-transform duration-200 group-hover:-rotate-3">
           <Glyph name={job.glyph} size={30} />
         </span>
-        <span className={`inline-flex h-6 items-center rounded-full border px-2 text-[11px] font-semibold ${chip.cls}`}>{chip.text}</span>
       </div>
       <h3 className="mt-3 text-[16px] font-semibold leading-snug">{job.title}</h3>
-      <p className="mt-1 text-[13px] leading-snug text-ink-2">{job.does}</p>
 
       <div className="mt-auto pt-4">
         {job.inputs && !off && (
@@ -157,6 +146,7 @@ function JobTile({ job, p, i, onStart, busy, disabled, loading }: { job: JobCard
           onClick={() => onStart(job.id, choice?.id, Object.fromEntries(Object.entries(typed).filter(([, v]) => v.trim())))}
           disabled={disabled || off || (loading && !p)}
           className="pressable mt-3 inline-flex h-11 w-full items-center justify-center gap-2 rounded-full border-[1.5px] border-ink bg-ink text-[14px] font-semibold text-white transition-colors hover:bg-agent hover:text-agent-on disabled:cursor-not-allowed disabled:opacity-50"
+          title={p?.unavailable}
           data-testid="job-start"
         >
           {busy ? (
@@ -225,7 +215,7 @@ function Picker({ label, choices, value, onChange, disabled }: { label: string; 
         className={`pressable flex h-11 w-full items-center gap-2.5 rounded-xl border-[1.5px] border-ink bg-panel px-3 text-left transition-shadow ${open ? "shadow-[3px_3px_0_0_var(--agent)]" : "hover:shadow-[3px_3px_0_0_var(--agent)]"}`}
         data-testid="job-pick"
       >
-        <span className="shrink-0 rounded-md bg-agent-soft px-1.5 py-0.5 text-[10.5px] font-semibold uppercase tracking-wide text-agent-ink">{label}</span>
+        <span className="shrink-0 text-[10.5px] font-semibold uppercase tracking-wide text-agent-ink">{label}</span>
         <span className="min-w-0 flex-1 truncate text-[14px] font-semibold">{current?.label}</span>
         <Icon name="chevron" size={14} className={`shrink-0 transition-transform ${open ? "-rotate-90" : "rotate-90"}`} />
       </button>
@@ -287,7 +277,7 @@ function Picker({ label, choices, value, onChange, disabled }: { label: string; 
 /** Inso: the market behind the cover, its odds as a bar, and what the cover costs and pays. */
 function Odds({ p, loading }: { p?: JobPreview; loading: boolean }) {
   if (!p) return <Shimmer lines={3} on={loading} />;
-  if (p.unavailable) return <p className="rounded-2xl bg-[#f6f5f1] p-3 text-[12.5px] text-ink-2">{p.unavailable}</p>;
+  if (p.unavailable) return null;
   return (
     <div className="rounded-2xl bg-[#f6f5f1] p-3" data-testid="job-odds">
       <div className="truncate text-[11.5px] text-ink-3" title={p.market}>
@@ -323,7 +313,7 @@ function Odds({ p, loading }: { p?: JobPreview; loading: boolean }) {
 /** Worko: how many paid steps and the most they cost. */
 function Cost({ job, p, loading }: { job: JobCardInfo; p?: JobPreview; loading: boolean }) {
   if (!p) return <Shimmer lines={2} on={loading} />;
-  if (p.unavailable) return <p className="rounded-2xl bg-[#f6f5f1] p-3 text-[12.5px] leading-snug text-ink-2">{p.unavailable}</p>;
+  if (p.unavailable) return null;
   return (
     <div className="flex items-center justify-between rounded-2xl bg-[#f6f5f1] px-3 py-2.5" data-testid="job-cost">
       <span className="text-[12.5px] text-ink-2">

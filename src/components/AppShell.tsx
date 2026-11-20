@@ -98,7 +98,7 @@ export function MainNav() {
     { href: "/home", label: "Jobs", icon: "jobs", active: path === "/home" || path.startsWith("/runs") || path.startsWith("/projects") },
     { href: "/inso", label: "Inso", icon: "agents", active: path.startsWith("/inso") },
     { href: "/worko", label: "Worko", icon: "agents", active: path.startsWith("/worko") },
-    { href: "/wallet", label: "Add money", icon: "wallet", active: path.startsWith("/wallet") },
+    { href: "/wallet", label: "Wallet", icon: "wallet", active: path.startsWith("/wallet") },
     { href: "/settings", label: "Settings", icon: "shield", active: path.startsWith("/settings") },
   ];
   return (

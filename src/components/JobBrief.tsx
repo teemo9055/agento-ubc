@@ -51,7 +51,7 @@ function StepRow({ p, run, n, as = "li", price = true }: { p: Phase; run: Run; n
       <span className="min-w-0 flex-1">
         <span className={`text-[14px] ${p.status === "skipped" ? "text-ink-3 line-through" : "font-medium"}`}>{p.label}</span>
         {line?.bigSpend && paid && (run.status === "draft" || run.status === "funding") && (
-          <span className="ml-2 rounded-md bg-warn/20 px-1.5 py-0.5 text-[10.5px] font-medium text-warn-ink" title="Above your big-purchase threshold in Settings; approving covers it">
+          <span className="ml-2 text-[12px] font-medium text-warn-ink" title="Above your big-purchase threshold in Settings; approving covers it">
             Big purchase
           </span>
         )}

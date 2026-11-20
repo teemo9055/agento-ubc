@@ -49,13 +49,13 @@ export function Marketplace() {
   }
 
   return (
-    <section className="rounded-2xl border border-line bg-panel" aria-labelledby="mk-title" data-testid="marketplace">
+    <section className="rounded-2xl border-[1.5px] border-ink bg-panel" aria-labelledby="mk-title" data-testid="marketplace">
       <div className="border-b border-[#f1f0ec] px-4 py-3.5 sm:px-5">
         <h2 id="mk-title" className="text-[16px] font-semibold">
           What agents can buy
         </h2>
         <p className="mt-0.5 text-[13.5px] text-ink-2">
-          Agents pay other services per request in USDC, through Circle&apos;s Agent Marketplace. You approve each purchase with its price before anything is paid.
+          Paid per request in USDC through Circle&apos;s Agent Marketplace, always with your approval.
         </p>
         {stats && (
           <p className="num mt-2 text-[13px] text-ink-2" data-testid="mk-stats">

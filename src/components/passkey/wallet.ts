@@ -85,7 +85,7 @@ export async function sendCalls(calls: Call[], net: Net = "testnet"): Promise<He
 
 // ---------- the three things a user signs ----------
 
-const usdcAbi = parseAbi(["function approve(address,uint256) returns (bool)", "function balanceOf(address) view returns (uint256)"]);
+const usdcAbi = parseAbi(["function approve(address,uint256) returns (bool)", "function transfer(address,uint256) returns (bool)", "function balanceOf(address) view returns (uint256)"]);
 const factoryAbi = parseAbi(["function open(address agent, bytes32 planRoot, bytes32 orderId, uint256 amount) returns (address)"]);
 const vaultAbi = parseAbi(["function setPlan(bytes32 newRoot)", "function topUp(uint256 amount)"]);
 
@@ -94,6 +94,11 @@ export function fundCalls(f: { factory: Hex; usdc: Hex; agent: Hex; planRoot: He
     { to: f.usdc, data: encodeFunctionData({ abi: usdcAbi, functionName: "approve", args: [f.factory, BigInt(f.cap)] }) },
     { to: f.factory, data: encodeFunctionData({ abi: factoryAbi, functionName: "open", args: [f.agent, f.planRoot, f.orderId, BigInt(f.cap)] }) },
   ];
+}
+
+/** Send USDC from the passkey wallet to another address. */
+export function withdrawCalls(usdc: Hex, to: Hex, amount: bigint): Call[] {
+  return [{ to: usdc, data: encodeFunctionData({ abi: usdcAbi, functionName: "transfer", args: [to, amount] }) }];
 }
 
 export function topUpCalls(usdc: Hex, vault: Hex, amount: bigint): Call[] {

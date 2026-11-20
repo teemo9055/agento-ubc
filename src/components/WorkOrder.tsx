@@ -89,7 +89,7 @@ export function Cards({ run, onEdit, focused }: { run: Run; onEdit?: (k: Card["k
                 <span className={`text-[12px] font-semibold ${price ? "text-agent-ink" : "text-ink-3"}`}>{CARD_LABEL[c.kind]}</span>
                 {onEdit &&
                   (on ? (
-                    <span className="inline-flex shrink-0 items-center gap-1 rounded-md bg-ink px-1.5 py-0.5 text-[11px] font-semibold text-white">
+                    <span className="inline-flex shrink-0 items-center gap-1 text-[12px] font-semibold text-agent-ink">
                       <Icon name="chat" size={11} /> In chat
                     </span>
                   ) : (
@@ -197,7 +197,7 @@ export function CostTable({ run, compact = false }: { run: Run; compact?: boolea
                 >
                   <td className="px-4 py-2.5">
                     <div className="font-medium">{l.purpose}</div>
-                    {l.bigSpend && l.rail !== "exchange" && <span className="mt-0.5 inline-block rounded-md bg-warn/20 px-1.5 py-px text-[10.5px] font-medium text-warn-ink">Big spend · approved up front</span>}
+                    {l.bigSpend && l.rail !== "exchange" && <span className="mt-0.5 block text-[12px] font-medium text-warn-ink">Big spend · approved up front</span>}
                   </td>
                   <td className="px-2 py-2.5 text-ink-2">
                     {l.payeeName}
@@ -323,7 +323,7 @@ export function ApproveModal({ run, open, onClose }: { run: Run; open: boolean; 
             <span>
               {l.purpose}
               <span className="text-ink-3"> · {l.payeeName}</span>
-              {l.bigSpend && <span className="ml-2 rounded-md bg-warn/20 px-1.5 py-0.5 text-[10.5px] font-medium text-warn-ink">Big spend</span>}
+              {l.bigSpend && <span className="ml-2 text-[12px] font-medium text-warn-ink">Big spend</span>}
             </span>
             <span className="num">{fmt(l.approved)}</span>
           </motion.li>

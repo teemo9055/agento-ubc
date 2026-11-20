@@ -1,7 +1,6 @@
 "use client";
 import { useEffect, useState } from "react";
 import type { Venue } from "@/lib/types";
-import { VenueBadge } from "./Chat";
 import { Button, Spinner } from "./ui";
 import { toast } from "./Toaster";
 import { Icon } from "./Icon";
@@ -61,16 +60,14 @@ export function ExchangePanel() {
   }
 
   return (
-    <div className="mt-3 rounded-xl border border-line bg-panel px-3.5 py-3 text-[13px]" data-testid="exchange-panel">
+    <div className="mt-3 rounded-xl border-[1.5px] border-ink/15 bg-panel px-3.5 py-3 text-[13px]" data-testid="exchange-panel">
       <div className="flex flex-wrap items-center justify-between gap-2">
-        <span className="font-medium">Orders go to</span>
-        <VenueBadge venue={s.venue} />
+        <span className="font-medium">Orders go to {s.venue === "paper" ? "practice" : s.venue === "gemini" ? "Gemini" : "Gemini's test exchange"}</span>
       </div>
       <p className="mt-1 text-ink-3">{s.note}.</p>
       {s.venue === "paper" && (
-        <p className="mt-1 text-ink-2">
-          Agents can still research and propose moves. To place real test orders, add Gemini sandbox API keys (<code>GEMINI_TRADING_KEY</code>, <code>GEMINI_TRADING_SECRET</code>) to
-          <code> .env.local</code> and restart.
+        <p className="mt-1 text-ink-3">
+          For test orders, add <code>GEMINI_TRADING_KEY</code> and <code>GEMINI_TRADING_SECRET</code> to <code>.env.local</code>.
         </p>
       )}
       {s.venue !== "paper" && !s.connected && <p className="mt-1 text-bad">Couldn&apos;t reach your Gemini account: {s.error}</p>}

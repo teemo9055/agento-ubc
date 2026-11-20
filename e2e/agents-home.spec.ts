@@ -20,8 +20,6 @@ test("Worko's home groups jobs into researching, planning and verifying; a card 
   await page.goto("/travo"); // the old name still lands on Worko
   await expect(page).toHaveURL(/\/worko$/);
   for (const s of ["research", "plan", "verify"]) await expect(page.getByTestId(`section-${s}`)).toBeVisible();
-  // Checks paid in real USDC say so on the card.
-  await expect(page.locator('[data-job="seller-check"]')).toContainText("Real USDC");
   await expect(page.locator('[data-job="road-trip"]')).toContainText("$0.03");
   await page.locator('[data-job="road-trip"]').getByTestId("job-start").click();
   await expect(page).toHaveURL(/\/runs\//, { timeout: 30_000 });

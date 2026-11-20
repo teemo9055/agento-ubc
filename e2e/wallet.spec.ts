@@ -26,7 +26,7 @@ test.beforeEach(async ({ page }) => {
 
 test("add money: network switch, address check, balance", async ({ page }) => {
   await page.goto("/wallet");
-  await expect(page.getByRole("heading", { name: "Add money" })).toBeVisible();
+  await expect(page.getByRole("heading", { name: "Wallet", exact: true })).toBeVisible();
   const net = page.getByRole("radiogroup", { name: "Network" });
   await expect(net.getByRole("radio", { name: /Testnet/ })).toHaveAttribute("aria-checked", "true");
   await expect(page.getByRole("heading", { name: "Your address on Arc testnet" })).toBeVisible();
@@ -58,5 +58,12 @@ test("add money: network switch, address check, balance", async ({ page }) => {
   expect(stored.walletNetwork).toBe("mainnet");
   expect(stored.network).toBeUndefined();
   await net.getByRole("radio", { name: /Testnet/ }).click();
+  await expect(page.getByTestId("faucet-card")).toBeVisible();
+
+  // Withdraw: a pasted address is moved from the wallet app that holds it; nothing is sent from here.
+  await page.getByTestId("tab-withdraw").click();
+  await expect(page.getByTestId("withdraw-elsewhere")).toBeVisible();
+  await expect(page.getByTestId("withdraw-send")).toHaveCount(0);
+  await page.getByTestId("tab-deposit").click();
   await expect(page.getByTestId("faucet-card")).toBeVisible();
 });

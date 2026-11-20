@@ -12,7 +12,7 @@ import { useTransitionNav } from "@/components/transitions";
 import { toast } from "@/components/Toaster";
 import { AGENT_LIST, THEMES } from "@/lib/themes";
 import { openedMap } from "@/lib/opened";
-import { Band, Card } from "@/components/JobCard";
+import { Card } from "@/components/JobCard";
 import type { RunSummary } from "@/lib/summary";
 import type { AgentId } from "@/lib/types";
 import { moodFor } from "@/lib/outfit";
@@ -85,13 +85,6 @@ function AgentDoors() {
             <span className="min-w-0 flex-1">
               <span className="block font-pixel text-[22px] leading-none text-agent-ink">{THEMES[a].name}</span>
               <span className="mt-1.5 block text-[14px] leading-snug text-ink-2">{DOOR[a].line}</span>
-              <span className="mt-2.5 flex flex-wrap gap-1.5">
-                {DOOR[a].kinds.map((k) => (
-                  <span key={k} className="rounded-full border border-agent/30 bg-agent-soft px-2 py-0.5 text-[11.5px] font-semibold text-agent-ink">
-                    {k}
-                  </span>
-                ))}
-              </span>
             </span>
             <span className="inline-flex h-10 w-10 shrink-0 items-center justify-center rounded-full border-[1.5px] border-ink transition-colors group-hover:bg-ink group-hover:text-white">
               <Icon name="arrow" size={16} />
@@ -156,7 +149,6 @@ function Dashboard() {
 
   return (
     <div className="flex flex-col gap-6">
-      <Band />
       {folder === "all" && <AgentDoors />}
       <div className="flex flex-wrap items-end justify-between gap-4">
         <div>

@@ -48,32 +48,32 @@ interface Config {
   networks?: Record<"testnet" | "mainnet", { name: string; live: boolean; setup: string[]; maxJobUsd: number | null }>;
 }
 
-function Block({ title, sub, children, id }: { title: string; sub: string; children: React.ReactNode; id: string }) {
+function Block({ title, sub, children, id }: { title: string; sub?: string; children: React.ReactNode; id: string }) {
   return (
-    <section className="rounded-2xl border border-line bg-panel" aria-labelledby={id}>
-      <div className="border-b border-[#f1f0ec] px-4 py-3">
-        <h2 id={id} className="text-[15px] font-semibold">
+    <section className="rounded-2xl border-[1.5px] border-ink bg-panel" aria-labelledby={id}>
+      <div className="border-b-[1.5px] border-ink/10 px-5 py-3.5">
+        <h2 id={id} className="text-[16px] font-semibold">
           {title}
         </h2>
-        <p className="mt-0.5 text-[13px] text-ink-3">{sub}</p>
+        {sub && <p className="mt-0.5 text-[13px] text-ink-3">{sub}</p>}
       </div>
-      <div className="p-4">{children}</div>
+      <div className="px-5 py-4">{children}</div>
     </section>
   );
 }
 
 const LIMIT_FIELDS: { key: keyof Limits; label: string; help: string; unit: string; step: number }[] = [
-  { key: "maxOrderUsd", label: "Largest single order", help: "An agent can never place an order above this.", unit: "USD", step: 1 },
-  { key: "maxJobUsdc", label: "Most a job can spend on data", help: "The vault for one job never holds more than this.", unit: "USDC", step: 0.5 },
-  { key: "maxPlanUsd", label: "Most a plan can cost in total", help: "Starting a plan approves its steps one by one; together they never go past this.", unit: "USD", step: 5 },
-  { key: "bigSpendUsdc", label: "Flag purchases above", help: "Bigger purchases are pointed out before you approve.", unit: "USDC", step: 0.05 },
+  { key: "maxOrderUsd", label: "Largest single order", help: "Never placed above this", unit: "USD", step: 1 },
+  { key: "maxJobUsdc", label: "Most a job spends on data", help: "Per job", unit: "USDC", step: 0.5 },
+  { key: "maxPlanUsd", label: "Most a plan costs in total", help: "All its steps together", unit: "USD", step: 5 },
+  { key: "bigSpendUsdc", label: "Point out purchases above", help: "Before you approve", unit: "USDC", step: 0.05 },
 ];
 
 /** Where jobs pay: practice (nothing settles), Arc testnet (test USDC) or Arc mainnet (real USDC). */
 const RAILS: { label: string; sub: string; mode: "demo" | "live"; network?: "testnet" | "mainnet" }[] = [
-  { label: "Practice", sub: "Real data; vault and orders simulated", mode: "demo" },
-  { label: "Arc testnet", sub: "Test USDC, onchain", mode: "live", network: "testnet" },
-  { label: "Arc mainnet", sub: "Real USDC, onchain", mode: "live", network: "mainnet" },
+  { label: "Practice", sub: "Nothing settles", mode: "demo" },
+  { label: "Arc testnet", sub: "Test USDC", mode: "live", network: "testnet" },
+  { label: "Arc mainnet", sub: "USDC", mode: "live", network: "mainnet" },
 ];
 
 export default function Settings() {
@@ -115,16 +115,16 @@ export default function Settings() {
   return (
     <div className="mx-auto flex max-w-2xl flex-col gap-5">
       <div>
-        <h1 className="text-[24px] font-semibold tracking-tight">Settings</h1>
-        <p className="mt-1 text-sm text-ink-2">
-          Set these once. Every job follows them, whatever an agent proposes.{" "}
+        <h1 className="font-pixel text-[30px] leading-tight">Settings</h1>
+        <p className="mt-1 text-[15px] text-ink-2">
+          Every job follows these.{" "}
           <Link href="/safety" className="font-medium underline underline-offset-2">
             How it stays safe
           </Link>
         </p>
       </div>
 
-      <Block id="s-limits" title="Spending limits" sub="Checked in code on every job. Nothing is ever spent without your approval either way.">
+      <Block id="s-limits" title="Spending limits">
         {!limits ? (
           <Spinner />
         ) : (
@@ -142,7 +142,7 @@ export default function Settings() {
                     step={f.step}
                     value={limits[f.key]}
                     onChange={(e) => setLimits({ ...limits, [f.key]: Number(e.target.value) })}
-                    className="num h-10 w-24 rounded-lg border border-line bg-surface px-3 text-right text-sm outline-none focus:border-ink/40"
+                    className="num h-10 w-24 rounded-lg border-[1.5px] border-line bg-surface px-3 text-right text-sm outline-none focus:border-ink"
                     data-testid={`limit-${f.key}`}
                   />
                   <span className="w-10 text-[12.5px] text-ink-3">{f.unit}</span>
@@ -158,7 +158,7 @@ export default function Settings() {
         )}
       </Block>
 
-      <Block id="s-pay" title="Paying" sub="Where the USDC for data and services comes from.">
+      <Block id="s-pay" title="Paying">
         <div className="flex flex-wrap gap-2" role="radiogroup" aria-label="Network">
           {RAILS.filter((r) => r.mode === "live" || cfg?.practice || !cfg?.live).map((r) => {
             const net = r.network ? cfg?.networks?.[r.network] : undefined;
@@ -186,7 +186,7 @@ export default function Settings() {
         </div>
         {cfg?.networks?.mainnet && !cfg.networks.mainnet.live && (
           <p className="mt-2 text-[12.5px] text-ink-3" data-testid="mainnet-setup">
-            Arc mainnet is ready in the app but not switched on here yet: {cfg.networks.mainnet.setup[0]}.
+            Mainnet isn&apos;t switched on here yet: {cfg.networks.mainnet.setup[0]}.
           </p>
         )}
         {mode === "live" && pk.supported && (
@@ -205,7 +205,7 @@ export default function Settings() {
                 </button>
               ))}
             </div>
-            {prefs.payFrom === "passkey" ? <WalletPanel /> : <p className="text-[12.5px] text-ink-3">The app&apos;s own Circle wallet funds each job&apos;s vault. Needed for plans, which approve each step for you.</p>}
+            {prefs.payFrom === "passkey" ? <WalletPanel /> : <p className="text-[12.5px] text-ink-3">The app&apos;s wallet funds each job. Plans need it.</p>}
           </div>
         )}
         {mode === "live" && prefs.payFrom !== "passkey" && cfg?.liveNeedsCode && (
@@ -220,12 +220,14 @@ export default function Settings() {
         )}
         {cfg?.gateway && (
           <p className="num mt-3 text-[12.5px] text-ink-3">
-            Marketplace balance (Circle Gateway): {cfg.gateway.balance.toFixed(4)} USDC · topped up {cfg.gateway.depositedToday} of {cfg.gateway.dailyCap} USDC today
+            Marketplace balance {cfg.gateway.balance.toFixed(4)} USDC · {cfg.gateway.depositedToday} of {cfg.gateway.dailyCap} topped up today
           </p>
         )}
         {cfg?.setup && cfg.setup.length > 0 && (
-          <div className="mt-3 rounded-lg border border-warn bg-warn/10 px-3 py-2 text-[12.5px] text-warn-ink" data-testid="setup-problems">
-            <b>Setup on this machine:</b>
+          <details className="group mt-3 rounded-lg border-[1.5px] border-warn bg-warn/10 px-3 py-2 text-[12.5px] text-warn-ink" data-testid="setup-problems">
+            <summary className="cursor-pointer list-none font-semibold">
+              {cfg.setup.length} {cfg.setup.length === 1 ? "thing isn't" : "things aren't"} set up on this machine <span className="font-normal underline underline-offset-2 group-open:hidden">Show</span>
+            </summary>
             <Points as="ul" layout="stack" className="mt-1.5">
               {cfg.setup.map((x) => (
                 <Point as="li" key={x} size="sm" tone="warn">
@@ -233,17 +235,11 @@ export default function Settings() {
                 </Point>
               ))}
             </Points>
-          </div>
+          </details>
         )}
       </Block>
 
-      <Block id="s-money" title="Add money" sub="Get USDC onto Arc: free test USDC on testnet, or send USDC to your address on mainnet.">
-        <Link href="/wallet" className="pix-press inline-flex h-10 items-center gap-2 rounded-lg border-[1.5px] border-ink bg-ink px-4 text-sm font-semibold text-white" data-testid="settings-add-money">
-          <Icon name="wallet" size={16} /> Add money
-        </Link>
-      </Block>
-
-      <Block id="s-exchange" title="Exchange" sub="Where Inso's approved orders are placed. Weather, sports and Fed markets only exist on Gemini's real exchange, so those orders always go there.">
+      <Block id="s-exchange" title="Exchange">
         <div className="grid grid-cols-1 gap-2 sm:grid-cols-3" role="radiogroup" aria-label="Where orders go" data-testid="venue-choice">
           {(
             [
@@ -277,10 +273,9 @@ export default function Settings() {
         </div>
         {cfg?.venues && !cfg.venues.some((v) => v.id === "gemini") && (
           <div className="mt-3 rounded-xl border-[1.5px] border-ink bg-agent-soft/50 p-3 shadow-[3px_3px_0_0_var(--agent)]" data-testid="connect-gemini">
-            <span className="text-[11px] font-semibold uppercase tracking-wide text-agent-ink">Connect the real exchange</span>
-            <p className="mt-1 text-[13px] leading-snug text-ink-2">
-              Weather, sports and Fed markets are only on Gemini&apos;s real exchange. Create an API key with trading access on gemini.com, add it to <code className="rounded bg-panel px-1">.env.local</code> as{" "}
-              <code className="rounded bg-panel px-1">GEMINI_LIVE_KEY</code> and <code className="rounded bg-panel px-1">GEMINI_LIVE_SECRET</code>, then restart the app. Orders there use real money, always shown before you approve.
+            <p className="text-[13.5px] font-semibold">Connect Gemini to place real orders</p>
+            <p className="mt-1 text-[12.5px] leading-snug text-ink-2">
+              Add <code className="rounded bg-panel px-1">GEMINI_LIVE_KEY</code> and <code className="rounded bg-panel px-1">GEMINI_LIVE_SECRET</code> to <code className="rounded bg-panel px-1">.env.local</code>, then restart.
             </p>
           </div>
         )}
@@ -289,12 +284,12 @@ export default function Settings() {
         </div>
       </Block>
 
-      <Block id="s-notify" title="Notifications" sub="Hear about it when a job needs you or an order fills.">
+      <Block id="s-notify" title="Notifications">
         <NotifyToggle />
       </Block>
 
       {cfg?.faultsEnabled && (
-        <Block id="s-test" title="Test mode" sub="Make things go wrong on purpose and watch the agent ask before anything changes. Applies to new jobs until you clear it.">
+        <Block id="s-test" title="Test mode" sub="Make things go wrong on purpose in new jobs.">
           <div className="flex flex-wrap gap-2">
             {FAULTS.map((f) => {
               const on = prefs.faults.includes(f.code);

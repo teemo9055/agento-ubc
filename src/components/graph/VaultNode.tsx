@@ -33,7 +33,7 @@ export function VaultNode({ run, x, y, draft }: { run: Run; x: number; y: number
     >
       <div className="flex items-center justify-between gap-1">
         <span className="text-[12.5px] font-semibold">{run.mode === "demo" ? "Practice vault" : "Your vault"}</span>
-        {run.network === "mainnet" && run.mode === "live" && <span className="rounded bg-warn/25 px-1 text-[10px] font-semibold text-warn-ink">Real USDC</span>}
+        {run.network === "mainnet" && run.mode === "live" && <span className="text-[11px] font-semibold text-warn-ink">USDC</span>}
       </div>
       <span className="num mt-0.5 text-[12px] text-ink-2">{draft ? `At most $${fmt(most.toString())}` : `$${fmt(spent.toString())} spent`}</span>
       <div className="mt-auto h-[5px] overflow-hidden rounded-full bg-[#ecebe6]" aria-hidden>

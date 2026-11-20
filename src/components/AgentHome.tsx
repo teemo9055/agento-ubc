@@ -9,7 +9,7 @@ import { Button, Spinner } from "./ui";
 import { useAgentTheme } from "./useRun";
 import { useRuns } from "./runsStore";
 import { useStartJob } from "./useStartJob";
-import { Band, Card } from "./JobCard";
+import { Card } from "./JobCard";
 import { Catalog } from "./JobCatalog";
 import { usePrefs } from "@/lib/prefs";
 import { THEMES } from "@/lib/themes";
@@ -40,7 +40,6 @@ export function AgentHome({ agent }: { agent: AgentId }) {
 
   return (
     <div className="flex flex-col gap-8" data-agent={agent} data-testid={`agent-home-${agent}`}>
-      <Band single />
       <header className="flex flex-col gap-5 sm:flex-row sm:items-end sm:justify-between">
         <div className="flex items-center gap-4">
           <motion.span initial={{ scale: 0.85, rotate: -6, opacity: 0 }} animate={{ scale: 1, rotate: 0, opacity: 1 }} transition={{ type: "spring", stiffness: 300, damping: 18 }} className="pix-shadow inline-flex rounded-2xl border-[1.5px] border-ink bg-agent-soft p-1.5">

@@ -118,7 +118,7 @@ function CheckIt({ run, vendorsPaid }: { run: Run; vendorsPaid: boolean }) {
       <div className="mt-2 grid gap-2.5 sm:grid-cols-3">
         {tiles.map((t) => (
           <div key={t.key} className="rounded-xl border-[1.5px] border-ink bg-panel p-3 shadow-[2px_2px_0_0_var(--agent)]">
-            <span className="rounded-md bg-agent-soft px-1.5 py-0.5 text-[10.5px] font-semibold uppercase tracking-wide text-agent-ink">{t.label}</span>
+            <span className="text-[12px] font-semibold text-agent-ink">{t.label}</span>
             <div className="mt-1.5 text-[13.5px] font-semibold">{t.title}</div>
             <p className="mt-0.5 text-[12.5px] leading-snug text-ink-2">{t.body}</p>
             {t.href && (

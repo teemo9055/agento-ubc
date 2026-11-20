@@ -41,13 +41,12 @@ export function Selling() {
   if (!c) return null;
   const s = c.sales;
   return (
-    <section className="rounded-2xl border border-line bg-panel" aria-label="What Agento sells" data-testid="selling">
+    <section className="rounded-2xl border-[1.5px] border-ink bg-panel" aria-label="What Agento sells" data-testid="selling">
       <div className="flex flex-wrap items-start justify-between gap-3 px-4 py-3.5 sm:px-5">
         <div className="min-w-0">
-          <div className="font-pixel text-[12px] text-agent-ink">Selling</div>
-          <h2 className="mt-0.5 text-[17px] font-semibold leading-snug">Other agents can pay Agento, too</h2>
+          <h2 className="text-[16px] font-semibold leading-snug">Other agents can pay Agento, too</h2>
           <p className="mt-0.5 max-w-[62ch] text-[13.5px] text-ink-2">
-            {c.resources.length} answers are for sale per request in USDC on Arc, with no account or API key: an agent asks, gets the price, pays, and gets the answer.
+            {c.resources.length} answers for sale, paid per request in USDC on Arc.
           </p>
         </div>
         <div className="flex gap-5 text-right">
