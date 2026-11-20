@@ -167,8 +167,8 @@ export function ReceiptView({ run }: { run: Run }) {
             <th className="py-2 font-medium">Description</th>
             <th className="py-2 font-medium">Payee</th>
             <th className="hidden py-2 font-medium sm:table-cell">Rail</th>
-            <th className="py-2 text-right font-medium">Approved</th>
-            <th className="py-2 text-right font-medium">Paid</th>
+            <th className="whitespace-nowrap py-2 pl-4 text-right font-medium">Approved</th>
+            <th className="whitespace-nowrap py-2 pl-4 text-right font-medium">Paid</th>
           </tr>
         </thead>
         <tbody>
@@ -188,8 +188,8 @@ export function ReceiptView({ run }: { run: Run }) {
                 </a>
               </td>
               <td className="hidden py-2 sm:table-cell">{l.rail === "gateway" ? "Gateway nanopayment" : l.rail === "x402" ? "x402 from vault" : l.rail}</td>
-              <td className="num py-2 text-right text-ink-2">{fmt(l.approved)}</td>
-              <td className="num py-2 text-right font-medium">{fmt(l.amount)}</td>
+              <td className="num whitespace-nowrap py-2 pl-4 text-right text-ink-2">{fmt(l.approved)}</td>
+              <td className="num whitespace-nowrap py-2 pl-4 text-right font-medium">{fmt(l.amount)}</td>
             </tr>
           ))}
           {r.lines.length === 0 && (
