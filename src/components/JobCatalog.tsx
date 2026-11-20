@@ -289,7 +289,7 @@ function Odds({ p, loading }: { p?: JobPreview; loading: boolean }) {
       {p.cost != null && (
         <div className="mt-2.5 flex items-center justify-between gap-2 border-t border-dashed border-line pt-2 text-[12px] text-ink-2" data-testid="job-news-cost">
           <span className="inline-flex items-center gap-1.5">
-            <Icon name="search" size={12} /> Today's headlines first
+            <Icon name="search" size={12} /> {p.steps ?? 1} check{(p.steps ?? 1) === 1 ? "" : "s"} first, from other sellers
           </span>
           <span className="num font-semibold">{money(p.cost)}</span>
         </div>

@@ -166,6 +166,12 @@ export interface Report {
   spent: { total: string; sources: number; sellers: number };
   /** Who worded it: code alone, or the model checked by code. */
   by: "code" | "ai";
+  /** What the answers mean, decided by fixed rules in code (red flags and reassurances). */
+  signals?: { level: "good" | "warn" | "bad"; text: string; evidence: string[] }[];
+  /** What to do now, in one or two sentences. */
+  recommendation?: string;
+  /** Concrete things to do next. */
+  nextSteps?: string[];
 }
 
 export interface AiStats {

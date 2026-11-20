@@ -62,11 +62,18 @@ function Evidence({ run, phaseId, n }: { run: Run; phaseId: string; n: number })
  * The write-up: one sentence, a verdict, what was found with the evidence behind each claim, where
  * sources disagreed and how that was settled, and what this didn't cover.
  */
+const SIGNAL = {
+  bad: { text: "Red flag", cls: "border-bad/50 bg-bad/5", label: "text-bad" },
+  warn: { text: "Look closer", cls: "border-warn bg-warn/10", label: "text-warn-ink" },
+  good: { text: "Reassuring", cls: "border-good/40 bg-good/5", label: "text-good" },
+} as const;
+const SIGNAL_ORDER = { bad: 0, warn: 1, good: 2 } as const;
+
 export function Report({ run, id }: { run: Run; /** Set on the page made for printing. */ id?: string }) {
   const r = run.report;
   if (!r) return null;
   const v = r.verdict ? VERDICT[r.verdict] : null;
-  const order = [...new Set(r.claims.flatMap((c) => c.evidence))];
+  const order = [...new Set([...r.claims.flatMap((c) => c.evidence), ...(r.signals ?? []).flatMap((x) => x.evidence)])];
   return (
     <section id={id} className="rounded-2xl border-[1.5px] border-ink bg-panel shadow-[4px_4px_0_0_var(--agent)]" aria-label="Report" data-testid="report">
       <div className="px-4 pb-3 pt-3.5">
@@ -82,6 +89,40 @@ export function Report({ run, id }: { run: Run; /** Set on the page made for pri
           {r.headline}
         </h2>
       </div>
+      {r.recommendation && (
+        <div className="mx-4 mb-3 rounded-xl border-[1.5px] border-ink bg-agent-soft/60 px-3.5 py-3" data-testid="report-recommendation">
+          <span className="text-[11px] font-semibold uppercase tracking-wide text-agent-ink">What to do</span>
+          <p className="mt-1 text-[14.5px] font-medium leading-snug">{r.recommendation}</p>
+          {r.nextSteps && r.nextSteps.length > 0 && (
+            <ol className="mt-2.5 grid gap-1.5">
+              {r.nextSteps.map((n, i) => (
+                <li key={n} className="flex items-start gap-2 text-[13px] leading-snug text-ink-2">
+                  <span className="mt-px inline-flex h-5 w-5 shrink-0 items-center justify-center rounded-md border-[1.5px] border-ink bg-panel text-[11px] font-semibold text-ink">{i + 1}</span>
+                  {n}
+                </li>
+              ))}
+            </ol>
+          )}
+        </div>
+      )}
+      {r.signals && r.signals.length > 0 && (
+        <div className="border-t border-[#f1f0ec] px-4 py-3" data-testid="report-signals">
+          <div className="text-[11.5px] font-semibold uppercase tracking-wide text-ink-3">Checked by fixed rules</div>
+          <div className="mt-2 grid gap-2 sm:grid-cols-2">
+            {[...r.signals].sort((a, b) => SIGNAL_ORDER[a.level] - SIGNAL_ORDER[b.level]).map((x) => (
+              <div key={x.text} className={`rounded-xl border-[1.5px] px-3 py-2.5 ${SIGNAL[x.level].cls}`} data-testid="report-signal" data-level={x.level}>
+                <span className={`text-[10.5px] font-semibold uppercase tracking-wide ${SIGNAL[x.level].label}`}>{SIGNAL[x.level].text}</span>
+                <p className="mt-0.5 text-[13px] leading-snug">
+                  {x.text}
+                  {x.evidence.map((e) => (
+                    <Evidence key={e} run={run} phaseId={e} n={order.indexOf(e) + 1 || order.length + 1} />
+                  ))}
+                </p>
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
       {r.claims.length > 0 && (
         <div className="border-t border-[#f1f0ec] px-4 py-3">
           <Points as="ul" layout="stack" aria-label="What was found">

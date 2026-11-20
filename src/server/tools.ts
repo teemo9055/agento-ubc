@@ -317,6 +317,27 @@ export const RESEARCH: Record<string, ResearchTool> = {
     key: (a) => `web:phone:${a.phone?.replace(/\D/g, "")}`,
     params: (a) => ({ phone: a.phone }),
   },
+  company_record: {
+    product: "web.company",
+    description: "The company behind a website (Tomba): official phones and emails, founding year, how old its domain is, location, social accounts (args: site, a domain or link). Real USDC on Arc mainnet only",
+    args: ["site"],
+    key: (a) => `web:company:${a.site?.toLowerCase()}`,
+    params: (a) => ({ site: a.site }),
+  },
+  read_page: {
+    product: "web.page",
+    description: "Read a public web page as text (MrScraper): title, headings and its opening text (args: url, a full https link). Real USDC on Arc mainnet only",
+    args: ["url"],
+    key: (a) => `web:page:${a.url}`,
+    params: (a) => ({ url: a.url }),
+  },
+  market_odds: {
+    product: "web.odds",
+    description: "What Polymarket and Kalshi price for the same question, as a second opinion on Gemini's odds (args: query, 1-3 words like 'bitcoin' or 'fed'). Real USDC on Arc mainnet only",
+    args: ["query"],
+    key: (a) => `web:odds:${a.query?.toLowerCase()}`,
+    params: (a) => ({ query: a.query }),
+  },
   service: {
     product: "marketplace.service",
     description: "One paid request to a payableHere service from search_services (args: url as listed; input, a JSON string: query fields for GET, the body for POST, or {\"method\",\"params\"} for JSON-RPC; what, 3-6 words). Code reads the seller's price and payee. Reads only",
@@ -341,10 +362,10 @@ export const MAX_SERVICE = BigInt(process.env.MARKETPLACE_MAX_PER_REQUEST ?? 10_
 
 /** Each agent's own harness: what it can look up for free, what it can buy, and what it can do. */
 export const TOOLKIT: Record<AgentId, { free: string[]; research: string[] }> = {
-  inso: { free: ["search_markets", "get_market", "browse_markets", "combo_quote", "my_positions", "spot_price", "search_services", "read_arc"], research: ["odds_history", "trade_tape", "oracle_price", "news_search", "web_search", "service"] },
+  inso: { free: ["search_markets", "get_market", "browse_markets", "combo_quote", "my_positions", "spot_price", "search_services", "read_arc"], research: ["odds_history", "trade_tape", "oracle_price", "news_search", "web_search", "market_odds", "read_page", "service"] },
   trado: { free: ["spot_price", "search_markets", "get_market", "browse_markets", "my_positions", "search_services", "read_arc"], research: ["spot_candles", "oracle_price", "odds_history", "gas_price", "btc_network", "wallet_balance", "service"] },
   // The trip agent can look at markets too, so a brief about a trip can name the fuel cover Inso would build.
-  worko: { free: ["find_place", "find_nearby", "search_markets", "my_positions", "search_services", "read_arc"], research: ["drive_route", "oracle_price", "web_search", "news_search", "place_reviews", "shopping_prices", "image_check", "phone_check", "service"] },
+  worko: { free: ["find_place", "find_nearby", "search_markets", "my_positions", "search_services", "read_arc"], research: ["drive_route", "oracle_price", "web_search", "news_search", "place_reviews", "shopping_prices", "image_check", "phone_check", "company_record", "read_page", "market_odds", "service"] },
 };
 
 export const researchMenu = (agent?: AgentId) =>
@@ -566,13 +587,15 @@ export async function validateProposal(agent: AgentId, input: unknown, id: strin
     const t = RESEARCH[r.tool];
     if (!TOOLKIT[agent].research.includes(r.tool)) return { error: `This agent can't buy ${r.tool}. It can buy: ${TOOLKIT[agent].research.join(", ")}` };
     if (r.tool === "oracle_price" && !FEEDS[r.args.symbol?.toLowerCase()]) return { error: `No Chainlink feed for ${r.args.symbol}. Available: ${Object.keys(FEEDS).join(", ")}` };
-    const missing = t.args.filter((x) => x !== "tf" && !r.args[x]);
+    // A field filled from an earlier step's answer ("bind") is known only when the job runs.
+    const bound = (x: string) => Boolean((r as { bind?: Record<string, string> }).bind?.[x]);
+    const missing = t.args.filter((x) => x !== "tf" && !r.args[x] && !bound(x));
     if (missing.length) return { error: `${r.tool} needs ${missing.join(", ")}` };
     // Checks that only take real USDC on Arc mainnet can't run on a test-money job.
     const nets = isVendorTool(r.tool) ? VENDOR_TOOLS[r.tool].nets : undefined;
     if (nets && !nets.includes(currentNet())) return { error: `“${r.label}” is paid with real USDC on Arc mainnet, so it can't run on a practice or testnet job. Switch the job to mainnet, or drop that step.` };
-    if (r.tool === "image_check" && !/^https:\/\//.test(r.args.imageUrl ?? "")) return { error: "The photo check needs a public https link to the photo" };
-    if (r.tool === "phone_check" && (r.args.phone ?? "").replace(/\D/g, "").length < 7) return { error: "The phone check needs a full phone number with its country code" };
+    if (r.tool === "image_check" && !bound("imageUrl") && !/^https:\/\//.test(r.args.imageUrl ?? "")) return { error: "The photo check needs a public https link to the photo" };
+    if (r.tool === "phone_check" && !bound("phone") && (r.args.phone ?? "").replace(/\D/g, "").length < 7) return { error: "The phone check needs a full phone number with its country code" };
     // Paid lookups read live Gemini data. Don't charge the user for a symbol that has none.
     if (r.tool === "odds_history" || r.tool === "trade_tape") {
       const known = await gemini.recentTrades(r.args.symbol, 1).then(() => true, () => false);

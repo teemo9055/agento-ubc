@@ -60,8 +60,21 @@ describe("every check job in the catalog", () => {
     it(`${id} builds and passes the checks on mainnet`, async () => {
       const b = await buildJob(id, "paper");
       if ("error" in b || !("input" in b)) throw new Error("error" in b ? b.error : "not a single move");
-      const r = await withNet("mainnet", () => validateProposal("worko", b.input, `t-${id}`));
+      const r = await withNet("mainnet", () => validateProposal("worko", b.input, `t-${id}`, { composed: true }));
       if ("error" in r) throw new Error(`${id}: ${r.error}`);
       expect(r.proposal.research.length).toBe(b.input.research.length);
     });
+});
+
+describe("chained jobs", () => {
+  it("keep their links: the phone and website checks read what the Google stage found", async () => {
+    const b = await buildJob("business-check", "paper");
+    if ("error" in b || !("input" in b)) throw new Error("not a single move");
+    const r = await withNet("mainnet", () => validateProposal("worko", b.input, "t-chain", { composed: true }));
+    if ("error" in r) throw new Error(r.error);
+    const [google, phone, site, company] = r.proposal.research;
+    expect(phone.bind?.phone).toBe(`$${google.id}.found.phone`);
+    expect(site.bind?.url).toBe(`$${google.id}.found.website`);
+    expect(company.bind?.site).toBe(`$${google.id}.found.website`);
+  });
 });

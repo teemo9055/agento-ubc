@@ -43,7 +43,7 @@ export async function POST(req: NextRequest) {
     // The request reads with the market it's built on ("I have tickets for Portland vs New York…").
     const ask = (await withVenue(venue, () => askOf(card.id, venue, b.data.choice)).catch(() => undefined)) ?? card.title;
     const run = await createRun({ agent: card.id === "trip-gas" ? "inso" : card.agent, task: ask, mode, network, venue }, { quiet: true });
-    const built = await withNet(run.network, () => withVenue(run.venue, () => buildChecked(card.id, want, (input) => validateProposal(card.agent, input, `${run.id}-m`), b.data.choice)));
+    const built = await withNet(run.network, () => withVenue(run.venue, () => buildChecked(card.id, want, (input) => validateProposal(card.agent, input, `${run.id}-m`, { composed: true }), b.data.choice)));
     if ("error" in built) {
       discard(run.id);
       return NextResponse.json({ error: built.error }, { status: 503 });

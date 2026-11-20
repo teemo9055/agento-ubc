@@ -234,7 +234,10 @@ export async function payRequest<T>(url: string, init: RequestInit = {}, maxAmou
     throw new MaybeChargedError(`No answer from ${new URL(url).host} after paying (${(e as Error).message.slice(0, 80)})`);
   }
   if (res.status === 402) throw new Error(`Payment to ${new URL(url).host} was refused: ${(await res.text()).slice(0, 160)}`);
-  if (!res.ok) throw new MaybeChargedError(`${new URL(url).host} answered ${res.status} after payment`);
+  if (!res.ok) {
+    const why = (await res.text().catch(() => "")).replace(/\s+/g, " ").slice(0, 140);
+    throw new MaybeChargedError(`${new URL(url).host} answered ${res.status} after payment${why ? `: ${why}` : ""}`);
+  }
   const settleHeader = res.headers.get("payment-response");
   const data = (await res.json().catch(() => undefined)) as T | undefined;
   if (data === undefined) throw new MaybeChargedError(`${new URL(url).host} sent an unreadable answer after payment`);

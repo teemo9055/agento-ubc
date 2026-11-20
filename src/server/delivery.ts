@@ -96,4 +96,7 @@ export const VENDOR_PROMISES: Record<string, DeliveryPromise> = {
   shopping_prices: { fields: ["offers"] },
   image_check: { fields: ["matches"] },
   phone_check: { fields: ["valid"] },
+  company_record: { fields: ["domain"] },
+  read_page: { fields: ["text"] },
+  market_odds: { fields: ["markets"] },
 };

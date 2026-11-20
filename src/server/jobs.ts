@@ -5,6 +5,7 @@ import { jobById, JOBS, type JobCardInfo, type JobPreview } from "@/lib/jobs";
 import * as gemini from "./gemini";
 import { PROD_BASE, SANDBOX_BASE, type MarketContract, type MarketEvent } from "./gemini";
 import { WEB_PRICES } from "./web-tools";
+import { VENDOR_TOOLS } from "./vendor-tools";
 import { PRODUCTS } from "./x402";
 import type { ProposalInput } from "./tools";
 
@@ -113,11 +114,23 @@ async function choose(o: Options, venue: Venue, skip: Set<string>, choice?: stri
   if (venue !== "gemini-sandbox") return { ...c, venue };
   // The test exchange lists its own lines: take the one nearest the pick, at the live market's odds for it.
   const test = await gemini.getEvent(c.event.ticker, SANDBOX_BASE).catch(() => null);
-  const nearest = test?.contracts.filter((x) => x.strike != null && /above/i.test(x.label) && !skip.has(x.symbol)).sort((a, b) => Math.abs(a.strike! - (c.contract.strike ?? 0)) - Math.abs(b.strike! - (c.contract.strike ?? 0)))[0];
-  if (!test || !nearest) return { ...c, venue: "paper", note: "This market isn't on Gemini's test exchange, so this one is practice." };
+  const lines = test?.contracts.filter((x) => x.strike != null && /above/i.test(x.label) && !skip.has(x.symbol)) ?? [];
+  const byDistance = (a: MarketContract, b: MarketContract) => Math.abs(a.strike! - (c.contract.strike ?? 0)) - Math.abs(b.strike! - (c.contract.strike ?? 0));
+  const nearest = [...lines].sort(byDistance)[0];
+  if (!test || !nearest) {
+    if (!venueReady("paper")) return { error: "This market isn't on Gemini's test exchange. Pick another line, or connect the real exchange in Settings." };
+    return { ...c, venue: "paper", note: "This market isn't on Gemini's test exchange, so this one is practice." };
+  }
+  // The test exchange has few traders: a buy only fills if someone there is selling. When a line has a
+  // seller, use it at the seller's price so the order fills now; otherwise say plainly it will wait.
+  const selling = lines.filter((x) => x.ask != null && x.ask > 0 && x.ask <= 0.9).sort(byDistance)[0];
+  if (selling) {
+    const moved = selling.symbol !== nearest.symbol;
+    return { ...c, event: test, contract: selling, price: selling.ask!, venue: "gemini-sandbox", note: `On Gemini's test exchange${moved ? `, “${selling.label}” is the line with a seller right now, so I used it` : ""}: buying at the seller's ${Math.round(selling.ask! * 100)}¢ fills straight away (test money).` };
+  }
   const ref = c.event.contracts.filter((x) => x.strike != null && yesPrice(x) != null).sort((a, b) => Math.abs(a.strike! - nearest.strike!) - Math.abs(b.strike! - nearest.strike!))[0];
   const p = Math.min(0.9, Math.max(0.03, ref ? yesPrice(ref)! : c.price));
-  return { ...c, event: test, contract: nearest, price: p, venue: "gemini-sandbox", note: "Priced from Gemini's live market; the order goes to Gemini's test exchange, where it waits for a seller." };
+  return { ...c, event: test, contract: nearest, price: p, venue: "gemini-sandbox", note: "Heads up: nobody is selling this on Gemini's test exchange right now (few people trade there), so the order is priced from the live market and will wait until a seller shows up. On the real exchange, market makers sell all day." };
 }
 
 // ---------- cards ----------
@@ -183,21 +196,56 @@ const driveInput = (stops: string[], hoursPerDay: number, lookFor: "hotel" | "ch
   }) as ProposalInput;
 
 /** A cover card: built on the picked option, sized by code to what's at stake; news cards read the headlines first. */
-const coverCard = (title: string, loss: { protects: string; usd: number }, options: () => Promise<Options>, ask: (c: Cover) => string, news?: string): CardDef => ({
+/**
+ * What a cover checks before it buys, from other sellers: the price from Chainlink (Quicknode),
+ * today's headlines (Serper), and what Polymarket and Kalshi price for the same thing (BlockRun).
+ * With a price feed, the order only goes in if the price is within 10% of the line picked.
+ */
+type Before = { oracle?: string; news?: string; odds?: string };
+const beforeSteps = (b: Before): ProposalInput["research"] => [
+  ...(b.oracle ? [{ tool: "oracle_price", args: { symbol: b.oracle }, label: "Price right now (Chainlink)", why: "How far the price is from the line" }] : []),
+  ...(b.news ? [{ tool: "news_search", args: { query: b.news }, label: "Today's headlines", why: "What the news says before you buy" }] : []),
+  ...(b.odds ? [{ tool: "market_odds", args: { query: b.odds }, label: "Polymarket and Kalshi odds", why: "Whether other markets price it the same" }] : []),
+];
+const beforeCost = (b: Before) => {
+  const steps = beforeSteps(b);
+  return steps.length ? { usd: usd(steps.reduce((a, s) => a + VENDOR_TOOLS[s.tool].price(s.args), 0n)), steps: steps.length } : undefined;
+};
+
+const coverCard = (title: string, loss: { protects: string; usd: number }, options: () => Promise<Options>, ask: (c: Cover) => string, before: Before = {}): CardDef => ({
   options,
   loss,
-  cost: news ? () => ({ usd: usd(WEB_PRICES.news), steps: 1 }) : undefined,
+  cost: beforeCost(before) ? () => beforeCost(before)! : undefined,
   ask: (c) => (c ? ask(c) : title),
   build: async (venue, skip, choice) => {
     const c = await choose(await options(), venue, skip ?? new Set(), choice);
     if ("error" in c) return c;
     const input = coverInput(c, loss, title);
-    if (news) input.research = [{ tool: "news_search", args: { query: news }, label: "Today's headlines", why: "What the news says before you buy" }, ...input.research];
-    return { input, intro: `${news ? "I'll read today's headlines first. " : ""}${c.event.title.replace(/\?$/, "")}: “${c.contract.label}” is at ${cents(c.price)}. Buying YES pays $1 a contract if it happens, so I sized it to cover about $${loss.usd} of ${loss.protects}.${c.note ? ` ${c.note}` : ""} Pick another option on the card, or change it here.`, venue: c.venue };
+    input.research = [...beforeSteps(before), ...input.research];
+    // Don't pay for a long shot: the price must be within 10% of the line when the order goes in.
+    const gate = before.oracle && c.contract.strike ? Math.round(c.contract.strike * 0.9) : undefined;
+    if (gate) input.condition = { metric: "oracle_price", symbol: before.oracle!, op: ">=", value: gate };
+    const checks = [before.oracle && "the price from Chainlink", before.news && "today's headlines", before.odds && "what Polymarket and Kalshi price"].filter(Boolean).join(", ");
+    return {
+      input,
+      intro: `${checks ? `First I'll check ${checks}. ` : ""}${c.event.title.replace(/\?$/, "")}: “${c.contract.label}” is at ${cents(c.price)}. Buying YES pays $1 a contract if it happens, so I sized it to cover about $${loss.usd} of ${loss.protects}.${gate ? ` The order only goes in if the price is at least $${gate.toLocaleString()} (within 10% of the line) right before buying.` : ""}${c.note ? ` ${c.note}` : ""} Pick another option on the card, or change it here.`,
+      venue: c.venue,
+    };
   },
 });
 
 const ROUTE = PRODUCTS["routes.drive"]?.price ?? 30_000n;
+
+/** One stage of a chained job: fixed inputs, or inputs taken from an earlier stage's answer. */
+type Stage = { id: string; tool: string; args?: Record<string, string>; bind?: Record<string, string>; label: string; why: string };
+const priceOf = (steps: Stage[]) => steps.reduce((a, s) => a + VENDOR_TOOLS[s.tool].price(s.args ?? {}), 0n);
+const cash = (units: bigint) => `$${usd(units) < 0.01 ? usd(units).toFixed(3) : usd(units).toFixed(2)}`;
+/** A job whose stages feed each other; its price is worked out from its stages. */
+const chainCard = (c: { ask: string; title: string; why: string; question: string; intro: string; steps: Stage[] }): CardDef => ({
+  ask: () => c.ask,
+  cost: () => ({ usd: usd(priceOf(c.steps)), steps: c.steps.length }),
+  build: async () => ({ input: check(c.title, c.why, `${c.question} for up to ${cash(priceOf(c.steps))}?`, c.steps.map((s) => ({ args: {}, ...s })) as ProposalInput["research"]), intro: c.intro, venue: "paper" }),
+});
 
 const CARDS: Record<string, CardDef> = {
   // Worko: researching (real USDC on Arc mainnet)
@@ -219,87 +267,6 @@ const CARDS: Record<string, CardDef> = {
     build: async () => ({
       input: check("Fair price: iPhone 15 128GB", "What stores charge right now, to compare with the $500 you were offered.", "Check store prices for an iPhone 15 128GB for $0.004?", [{ tool: "shopping_prices", args: { product: "iPhone 15 128GB unlocked" }, label: "Store prices now", why: "Lowest, typical and highest price" }]),
       intro: "I'll pull what stores charge for an iPhone 15 128GB right now, so you can compare it with $500. Change the product in the chat.",
-      venue: "paper",
-    }),
-  },
-  "company-deep": {
-    ask: () => "I'm thinking of investing in Rivian. Give me the full picture first.",
-    cost: () => ({ usd: usd(WEB_PRICES.search * 4n + WEB_PRICES.news), steps: 5 }),
-    build: async () => ({
-      input: check("Brief: Rivian", "What the web says, the latest news, complaints, money trouble and who it competes with, in one brief.", "Run five lookups on Rivian for $0.01?", [
-        { tool: "web_search", args: { query: "Rivian" }, label: "What it is and does", why: "The company in its own words and others'" },
-        { tool: "news_search", args: { query: "Rivian" }, label: "Latest news", why: "What changed recently" },
-        { tool: "web_search", args: { query: "Rivian complaints problems" }, label: "Complaints", why: "What customers and staff say goes wrong" },
-        { tool: "web_search", args: { query: "Rivian earnings cash debt layoffs" }, label: "Money health", why: "Earnings, cash and layoffs" },
-        { tool: "web_search", args: { query: "Rivian competitors vs" }, label: "Who it competes with", why: "Its rivals and how it compares" },
-      ]),
-      intro: "Five lookups on Rivian: what it is, the latest news, complaints, money health and rivals, then one brief with the sources. Change the company in the chat, or add or drop a lookup.",
-      venue: "paper",
-    }),
-  },
-  "big-buy": {
-    ask: () => "I want to buy Sony WH-1000XM5 headphones. Is it the right pick, at the right price, right now?",
-    cost: () => ({ usd: usd(WEB_PRICES.shopping + WEB_PRICES.search * 2n + WEB_PRICES.news), steps: 4 }),
-    build: async () => ({
-      input: check("Buy check: Sony WH-1000XM5", "Prices across stores, what reviewers say, any recall, and whether a newer model is about to replace it.", "Run four lookups on the Sony WH-1000XM5 for $0.01?", [
-        { tool: "shopping_prices", args: { product: "Sony WH-1000XM5" }, label: "Store prices", why: "What stores charge right now" },
-        { tool: "web_search", args: { query: "Sony WH-1000XM5 review" }, label: "Reviews", why: "What reviewers like and dislike" },
-        { tool: "news_search", args: { query: "Sony WH-1000XM5 recall problem" }, label: "Recalls and problems", why: "Known faults or recalls" },
-        { tool: "web_search", args: { query: "Sony WH-1000XM6 release date" }, label: "Is a new model coming?", why: "Whether to wait for the next one" },
-      ]),
-      intro: "Four lookups on the Sony WH-1000XM5: store prices, reviews, recalls, and whether a new model is coming. Change the product in the chat.",
-      venue: "paper",
-    }),
-  },
-  "city-weekend": {
-    ask: () => "I'm spending this weekend in Portland, Oregon. What's on, and where should I eat?",
-    cost: () => ({ usd: usd(WEB_PRICES.search + WEB_PRICES.news + (WEB_PRICES.places + WEB_PRICES.reviews) * 2n), steps: 4 }),
-    build: async () => ({
-      input: check("Weekend: Portland", "Events this weekend, anything in the news to plan around, and real reviews of two places to eat.", "Plan your Portland weekend with four lookups for $0.012?", [
-        { tool: "web_search", args: { query: "things to do in Portland Oregon this weekend" }, label: "What's on", why: "Events and things to do" },
-        { tool: "news_search", args: { query: "Portland Oregon this weekend" }, label: "In the news", why: "Closures, weather or crowds to plan around" },
-        { tool: "place_reviews", args: { place: "Pine State Biscuits Portland" }, label: "Breakfast: reviews", why: "Is it worth the line" },
-        { tool: "place_reviews", args: { place: "Ox Restaurant Portland" }, label: "Dinner: reviews", why: "Recent ratings and what people order" },
-      ]),
-      intro: "Four lookups for a Portland weekend: what's on, what's in the news, and reviews of a breakfast and a dinner spot. Change the city or the places in the chat.",
-      venue: "paper",
-    }),
-  },
-  "used-car": {
-    ask: () => "I'm buying a 2018 Honda Civic for $14,000 from a private seller. Their number is +1 415 555 0134. Check everything first.",
-    cost: () => ({ usd: usd(WEB_PRICES.phone + WEB_PRICES.shopping + WEB_PRICES.news + WEB_PRICES.search * 2n), steps: 5 }),
-    build: async () => ({
-      input: check("Check: 2018 Honda Civic sale", "The seller's phone, what the car really sells for, recalls, common problems and known scams.", "Run five checks before you pay $14,000, for $0.02?", [
-        { tool: "phone_check", args: { phone: "+1 415 555 0134" }, label: "Seller's phone line", why: "Internet-only numbers are common in scams" },
-        { tool: "web_search", args: { query: "2018 Honda Civic common problems" }, label: "Common problems", why: "What to look at on the test drive" },
-        { tool: "shopping_prices", args: { product: "2018 Honda Civic used" }, label: "What it sells for", why: "Whether $14,000 is fair" },
-        { tool: "news_search", args: { query: "2018 Honda Civic recall" }, label: "Recalls", why: "Faults to ask the seller about" },
-        { tool: "web_search", args: { query: "private seller used car scam deposit" }, label: "Known scams", why: "The tricks to watch for" },
-      ]),
-      intro: "Five checks before you pay: the seller's phone, a fair price, recalls, common problems and known scams. Paste their number in the chat to check yours, and a link to the listing photo to also check whether it was copied.",
-      venue: "paper",
-    }),
-  },
-  "rental-check": {
-    ask: () => "I found an apartment managed by Greystar in Austin. The landlord's number is +1 512 555 0199. Is the listing real?",
-    cost: () => ({ usd: usd(WEB_PRICES.phone + WEB_PRICES.places + WEB_PRICES.reviews + WEB_PRICES.search * 2n), steps: 4 }),
-    build: async () => ({
-      input: check("Check: Austin apartment listing", "The landlord's phone, the manager's reviews, what rent usually is there, and how rental scams work.", "Run four checks before you send a deposit, for $0.018?", [
-        { tool: "phone_check", args: { phone: "+1 512 555 0199" }, label: "Landlord's phone line", why: "Internet-only numbers are common in rental scams" },
-        { tool: "web_search", args: { query: "average rent 1 bedroom apartment Austin" }, label: "What rent usually is", why: "A price far below it is a warning sign" },
-        { tool: "place_reviews", args: { place: "Greystar Austin" }, label: "Manager's reviews", why: "How tenants rate the manager" },
-        { tool: "web_search", args: { query: "rental listing scam deposit wire" }, label: "How rental scams work", why: "The signs to watch for" },
-      ]),
-      intro: "Four checks before you send a deposit: the landlord's phone, the manager's reviews, what rent usually is, and how rental scams work. Paste the real number in the chat, and a link to a listing photo to also check whether it was copied.",
-      venue: "paper",
-    }),
-  },
-  "place-reviews": {
-    ask: () => "Is Blue Bottle Coffee in Oakland any good?",
-    cost: () => ({ usd: usd(WEB_PRICES.places + WEB_PRICES.reviews), steps: 1 }),
-    build: async () => ({
-      input: check("Reviews: Blue Bottle Coffee", "Its recent Google reviews and ratings, read for you.", "Read the recent Google reviews of Blue Bottle Coffee in Oakland for $0.004?", [{ tool: "place_reviews", args: { place: "Blue Bottle Coffee Oakland" }, label: "Recent Google reviews", why: "What people say and how they rate it" }]),
-      intro: "I'll find Blue Bottle Coffee in Oakland on Google and read its recent reviews. Change the place in the chat.",
       venue: "paper",
     }),
   },
@@ -349,6 +316,106 @@ const CARDS: Record<string, CardDef> = {
     }),
   },
   // Worko: verifying (real USDC on Arc mainnet)
+  // Worko: chains. Each stage uses what the one before found, across several sellers.
+  "company-deep": chainCard({
+    ask: "I'm thinking of investing in Rivian. Give me the full picture first.",
+    title: "Brief: Rivian",
+    why: "Find its real website, read what it says, check the company record behind it, then the news and the risks.",
+    question: "Build the Rivian brief in 6 stages",
+    intro: "Six stages, each using the last: find Rivian's official site, read it, look up the company record behind that site (age, official phones, location), then the latest news, complaints and money health, and a written analysis at the end. Change the company in the chat.",
+    steps: [
+      { id: "s1", tool: "web_search", args: { query: "Rivian official website" }, label: "Find the official site", why: "Everything after starts from the real website" },
+      { id: "s2", tool: "read_page", bind: { url: "$s1.results[0].link" }, label: "Read the site", why: "What the company says about itself right now" },
+      { id: "s3", tool: "company_record", bind: { site: "$s1.results[0].link" }, label: "Company record", why: "Who is behind that site: age, official phones, location" },
+      { id: "s4", tool: "news_search", args: { query: "Rivian" }, label: "Latest news", why: "What changed recently" },
+      { id: "s5", tool: "web_search", args: { query: "Rivian complaints lawsuit recall" }, label: "Complaints and lawsuits", why: "What goes wrong, from outside the company" },
+      { id: "s6", tool: "web_search", args: { query: "Rivian earnings cash burn layoffs" }, label: "Money health", why: "Earnings, cash and layoffs" },
+    ],
+  }),
+  "big-buy": chainCard({
+    ask: "I want to buy Sony WH-1000XM5 headphones. Is it the right pick, at the right price, right now?",
+    title: "Buy check: Sony WH-1000XM5",
+    why: "Store prices, then the best review read in full, recalls, and whether a newer model is about to replace it.",
+    question: "Check the Sony WH-1000XM5 in 5 stages",
+    intro: "Five stages: store prices, find the most cited review and read it in full, check recalls, and whether a new model is coming, then a written verdict. Change the product in the chat.",
+    steps: [
+      { id: "s1", tool: "shopping_prices", args: { product: "Sony WH-1000XM5" }, label: "Store prices", why: "What stores charge right now" },
+      { id: "s2", tool: "web_search", args: { query: "Sony WH-1000XM5 review" }, label: "Find the top review", why: "The review most people read" },
+      { id: "s3", tool: "read_page", bind: { url: "$s2.results[0].link" }, label: "Read that review", why: "The full verdict, not a snippet" },
+      { id: "s4", tool: "news_search", args: { query: "Sony WH-1000XM5 recall problem" }, label: "Recalls and problems", why: "Known faults" },
+      { id: "s5", tool: "web_search", args: { query: "Sony WH-1000XM6 release" }, label: "Is a new model coming?", why: "Whether to wait" },
+    ],
+  }),
+  "place-reviews": chainCard({
+    ask: "Is Blue Bottle Coffee in Oakland any good?",
+    title: "Check: Blue Bottle Coffee, Oakland",
+    why: "Find it on Google with its reviews, then read its own site and any news.",
+    question: "Check Blue Bottle Coffee in 3 stages",
+    intro: "Three stages: find it on Google and read its recent reviews, then read the website Google lists for it, and look for news. Change the place in the chat.",
+    steps: [
+      { id: "s1", tool: "place_reviews", args: { place: "Blue Bottle Coffee Oakland" }, label: "Google reviews", why: "How people rate it lately" },
+      { id: "s2", tool: "read_page", bind: { url: "$s1.found.website" }, label: "Read its website", why: "Menu, hours and what it offers" },
+      { id: "s3", tool: "news_search", args: { query: "Blue Bottle Coffee Oakland" }, label: "In the news", why: "Openings, closures, changes" },
+    ],
+  }),
+  "city-weekend": chainCard({
+    ask: "I'm spending this weekend in Portland, Oregon. What's on, and where should I eat?",
+    title: "Weekend: Portland",
+    why: "Find this weekend's guide and read it, check the news, then reviews of where to eat.",
+    question: "Plan the Portland weekend in 5 stages",
+    intro: "Five stages: find this weekend's events guide and read it in full, check the news for closures or crowds, then real reviews of a breakfast and a dinner spot, and a plan at the end. Change the city or the places in the chat.",
+    steps: [
+      { id: "s1", tool: "web_search", args: { query: "things to do in Portland Oregon this weekend" }, label: "Find the weekend guide", why: "Where the events are listed" },
+      { id: "s2", tool: "read_page", bind: { url: "$s1.results[0].link" }, label: "Read the guide", why: "The actual events, dates and places" },
+      { id: "s3", tool: "news_search", args: { query: "Portland Oregon this weekend" }, label: "In the news", why: "Closures, weather or crowds to plan around" },
+      { id: "s4", tool: "place_reviews", args: { place: "Pine State Biscuits Portland" }, label: "Breakfast: reviews", why: "Is it worth the line" },
+      { id: "s5", tool: "place_reviews", args: { place: "Ox Restaurant Portland" }, label: "Dinner: reviews", why: "Recent ratings" },
+    ],
+  }),
+  "used-car": chainCard({
+    ask: "I'm buying a 2018 Honda Civic for $14,000 from a private seller. Their number is +1 415 555 0134. Check everything first.",
+    title: "Check: 2018 Honda Civic sale",
+    why: "The seller's phone, what the car really sells for, recalls, the common faults read in full, and known scams.",
+    question: "Check the sale in 6 stages before you pay $14,000",
+    intro: "Six stages: the seller's phone line, what the car really sells for, recalls, find the best guide to its common faults and read it, and known scams, then a verdict. Paste their number in the chat to check yours.",
+    steps: [
+      { id: "s1", tool: "phone_check", args: { phone: "+1 415 555 0134" }, label: "Seller's phone line", why: "Internet-only numbers are common in scams" },
+      { id: "s2", tool: "shopping_prices", args: { product: "2018 Honda Civic used" }, label: "What it sells for", why: "Whether $14,000 is fair" },
+      { id: "s3", tool: "news_search", args: { query: "2018 Honda Civic recall" }, label: "Recalls", why: "Faults to ask the seller about" },
+      { id: "s4", tool: "web_search", args: { query: "2018 Honda Civic common problems" }, label: "Find a faults guide", why: "What to check on the test drive" },
+      { id: "s5", tool: "read_page", bind: { url: "$s4.results[0].link" }, label: "Read the faults guide", why: "The full list, not a snippet" },
+      { id: "s6", tool: "web_search", args: { query: "private seller used car scam deposit" }, label: "Known scams", why: "The tricks to watch for" },
+    ],
+  }),
+  "rental-check": chainCard({
+    ask: "I found an apartment managed by Greystar in Austin. The landlord's number is +1 512 555 0199. Is the listing real?",
+    title: "Check: Austin apartment listing",
+    why: "The landlord's phone, the manager's reviews and the company behind their website, what rent usually is, and how rental scams work.",
+    question: "Check the listing in 5 stages before you send a deposit",
+    intro: "Five stages: the landlord's phone, find the manager on Google with its reviews, then check the company behind the website Google lists, what rent usually is there, and how rental scams work. Paste the real number in the chat.",
+    steps: [
+      { id: "s1", tool: "phone_check", args: { phone: "+1 512 555 0199" }, label: "Landlord's phone line", why: "Internet-only numbers are common in rental scams" },
+      { id: "s2", tool: "place_reviews", args: { place: "Greystar Austin" }, label: "Manager's reviews", why: "How tenants rate them" },
+      { id: "s3", tool: "company_record", bind: { site: "$s2.found.website" }, label: "Company behind the site", why: "Official phones to compare with the landlord's" },
+      { id: "s4", tool: "web_search", args: { query: "average rent 1 bedroom apartment Austin" }, label: "What rent usually is", why: "A price far below it is a warning sign" },
+      { id: "s5", tool: "web_search", args: { query: "rental listing scam deposit wire" }, label: "How rental scams work", why: "The signs to watch for" },
+    ],
+  }),
+  "business-check": chainCard({
+    ask: "Can I trust Bay Area Plumbing in San Francisco before I hire them?",
+    title: "Check: Bay Area Plumbing",
+    why: "Find them on Google, then check the phone and the website Google lists, the company behind it, and any complaints.",
+    question: "Check Bay Area Plumbing in 6 stages",
+    intro: "Six stages, each using the last: find them on Google with their reviews, check the phone number Google lists, read their website, look up the company behind it, then news and complaints, and a verdict at the end. Change the business in the chat.",
+    steps: [
+      { id: "s1", tool: "place_reviews", args: { place: "Bay Area Plumbing San Francisco" }, label: "Find them on Google", why: "Their listing, phone, website and reviews" },
+      { id: "s2", tool: "phone_check", bind: { phone: "$s1.found.phone" }, label: "Check their phone", why: "A real business line, or an internet number" },
+      { id: "s3", tool: "read_page", bind: { url: "$s1.found.website" }, label: "Read their website", why: "Licence, services and address they claim" },
+      { id: "s4", tool: "company_record", bind: { site: "$s1.found.website" }, label: "Company behind the site", why: "How old the site is and its official contacts" },
+      { id: "s5", tool: "news_search", args: { query: "Bay Area Plumbing San Francisco" }, label: "In the news", why: "Complaints, lawsuits or closures" },
+      { id: "s6", tool: "web_search", args: { query: "Bay Area Plumbing San Francisco complaints license BBB" }, label: "Complaints and licence", why: "Licence status and complaint records" },
+    ],
+  }),
   "seller-check": {
     ask: () => "I'm about to pay a stranger $400 for a bike. Their number is +1 415 555 0134 and here's the listing photo.",
     cost: () => ({ usd: usd(WEB_PRICES.phone + WEB_PRICES.lens), steps: 2 }),
@@ -361,22 +428,10 @@ const CARDS: Record<string, CardDef> = {
       venue: "paper",
     }),
   },
-  "business-check": {
-    ask: () => "Can I trust Bay Area Plumbing in San Francisco before I hire them?",
-    cost: () => ({ usd: usd(WEB_PRICES.places + WEB_PRICES.reviews + WEB_PRICES.news), steps: 2 }),
-    build: async () => ({
-      input: check("Check: Bay Area Plumbing", "Recent reviews and any news, before you hire them.", "Read their reviews and any news for $0.006?", [
-        { tool: "place_reviews", args: { place: "Bay Area Plumbing San Francisco" }, label: "Recent Google reviews", why: "How recent customers rate them" },
-        { tool: "news_search", args: { query: "Bay Area Plumbing San Francisco" }, label: "Any news about them", why: "Complaints, lawsuits or closures" },
-      ]),
-      intro: "I'll read their recent Google reviews and look for any news about them. Change the business in the chat.",
-      venue: "paper",
-    }),
-  },
   // Inso: news + markets (headlines bought in real USDC on Arc mainnet, then the market)
-  "news-crypto": coverCard("Bet: Bitcoin moves up", { protects: "missing a Bitcoin rally", usd: 15 }, () => lineOptions(["BTC2"], "BTC price"), (c) => `Bitcoin's in the news. Read the headlines, then bet on “${c.contract.label}” by ${day(c.event)}.`, "Bitcoin price"),
-  "news-oil": coverCard("Cover: oil jumps on the news", { protects: "a higher fuel bill", usd: 25 }, () => lineOptions(["WTI", "BRENT"], "Oil"), (c) => `Oil supply is in the news. Read it, then cover me if oil reaches ${c.contract.label} by ${day(c.event)}.`, "OPEC oil supply"),
-  "news-fed": coverCard("Cover: a bigger rate hike", { protects: "a bigger mortgage payment", usd: 40 }, fedOptions, (c) => `Rate news could raise my mortgage. Read it, then cover me if the Fed says “${c.contract.label}”.`, "Federal Reserve rate decision"),
+  "news-crypto": coverCard("Bet: Bitcoin moves up", { protects: "missing a Bitcoin rally", usd: 15 }, () => lineOptions(["BTC2"], "BTC price"), (c) => `Bitcoin's in the news. Read the headlines, then bet on “${c.contract.label}” by ${day(c.event)}.`, { oracle: "btcusd", news: "Bitcoin price", odds: "bitcoin" }),
+  "news-oil": coverCard("Cover: oil jumps on the news", { protects: "a higher fuel bill", usd: 25 }, () => lineOptions(["WTI", "BRENT"], "Oil"), (c) => `Oil supply is in the news. Read it, then cover me if oil reaches ${c.contract.label} by ${day(c.event)}.`, { news: "OPEC oil supply", odds: "oil price" }),
+  "news-fed": coverCard("Cover: a bigger rate hike", { protects: "a bigger mortgage payment", usd: 40 }, fedOptions, (c) => `Rate news could raise my mortgage. Read it, then cover me if the Fed says “${c.contract.label}”.`, { news: "Federal Reserve rate decision", odds: "fed decision" }),
   // Inso: weather (the order goes to Gemini's real exchange; practice without it)
   "wedding-cold": coverCard("Cover: a cold wedding day", { protects: "a cold wedding day", usd: 40 }, () => weatherOptions(["CHI", "BOS", "DEN", "PHL"], "cold"), (c) => `My outdoor wedding in ${cityOf(c.event.title)} is ${day(c.event)}. Cover me if it's cold.`),
   "rides-cold": coverCard("Cover: rides on a freezing day", { protects: "pricey rides on a freezing day", usd: 20 }, () => weatherOptions(["BOS", "PHL", "DCA", "CHI"], "cold"), (c) => `Rides in ${cityOf(c.event.title)} cost me about $20 more on a cold day. Cover me if it's cold ${day(c.event)}.`),
@@ -386,7 +441,7 @@ const CARDS: Record<string, CardDef> = {
   "bar-night": coverCard("Cover: a slow night at the bar", { protects: "a slow night at the bar", usd: 30 }, () => sportsOptions("NFL-"), (c) => `My bar is slow when the home team loses. ${c.event.title}: cover me.`),
   // Inso: commodities (real orders on Gemini's test exchange)
   "heating-gas": coverCard("Cover: a natural gas spike", { protects: "a higher heating bill", usd: 20 }, () => lineOptions(["NGAS"], "Natural Gas"), (c) => `My heating bill jumps if natural gas spikes. Cover me if it reaches ${c.contract.label}.`),
-  "ring-gold": coverCard("Cover: a gold price jump", { protects: "a pricier gold ring", usd: 25 }, () => lineOptions(["XAU"], "Gold"), (c) => `I'm buying a gold ring soon. Cover me if gold reaches ${c.contract.label}.`),
+  "ring-gold": coverCard("Cover: a gold price jump", { protects: "a pricier gold ring", usd: 25 }, () => lineOptions(["XAU"], "Gold"), (c) => `I'm buying a gold ring soon. Cover me if gold reaches ${c.contract.label}.`, { oracle: "xauusd" }),
   "copper-quote": coverCard("Cover: a copper price jump", { protects: "a thinner margin on the job", usd: 25 }, () => lineOptions(["COPPER"], "Copper"), (c) => `I quoted a wiring job at a fixed price. Cover me if copper reaches ${c.contract.label}.`),
   "fuel-costs": coverCard("Cover: an oil price jump", { protects: "higher fuel costs", usd: 30 }, () => lineOptions(["WTI", "BRENT"], "Oil"), (c) => `Fuel is my biggest cost. Cover me if oil reaches ${c.contract.label}.`),
 };

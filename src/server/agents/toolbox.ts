@@ -1,4 +1,4 @@
-import { BadInput, checkWhen, compareGroup, fillInput, parseRef, refsOf, UnresolvedRef, whenText, type Results } from "../dataflow";
+import { BadInput, checkWhen, compareGroup, fillInput, parseRef, refsOf, resolveRef, UnresolvedRef, whenText, type Results } from "../dataflow";
 import { getCapability } from "../catalog/store";
 import { noteFor } from "../catalog/notes";
 import { toneFor } from "../catalog/tone";
@@ -431,6 +431,28 @@ export function toolboxAgent(id: AgentId): AgentDef {
           ctx.decide?.("Sources disagreed, bought a third", cmp.note);
         }
         let args = step.args;
+        // A named lookup fed by an earlier step: "check the phone the reviews step found".
+        // A value an earlier step didn't find means there's nothing to check, not a failure.
+        if (step.tool !== "service" && step.bind && Object.keys(step.bind).length) {
+          const filled: Record<string, string> = { ...step.args };
+          const flowed: { from: string; field: string; preview: string }[] = [];
+          for (const [field, ref] of Object.entries(step.bind)) {
+            let v: unknown;
+            try {
+              v = resolveRef(ref, known, givens);
+            } catch (e) {
+              if (e instanceof UnresolvedRef) ctx.skip!(`Nothing to check: ${e.message.replace(/^Step (\w+)/, "step $1")}`);
+              throw e;
+            }
+            const one = Array.isArray(v) ? v[0] : v;
+            if (one == null || typeof one === "object") ctx.skip!(`Nothing to check: no ${field} was found earlier`);
+            filled[field] = String(one).replace(/\s+/g, " ").trim().slice(0, 300);
+            const r = parseRef(ref);
+            flowed.push({ from: r?.kind === "step" ? r.id : "you", field, preview: filled[field].slice(0, 40) });
+          }
+          args = filled;
+          ctx.update?.(step.id, { inputs: flowed });
+        }
         const cap = step.tool === "service" ? getCapability(step.args.url) : undefined;
         if (step.tool === "service" && step.bind && Object.keys(step.bind).length) {
           let input: Record<string, unknown>;

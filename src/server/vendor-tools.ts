@@ -4,7 +4,7 @@ import { chainlinkPrice } from "./chainlink";
 import { QUICKNODE_PAYEE, bitcoinNetwork, gasPrice, walletBalance, type BitcoinNetwork, type GasPrice, type OraclePrice, type Paid, type WalletBalance } from "./onchain";
 import { callService, findService, type ServiceResult } from "./marketplace";
 import type { Net } from "@/lib/networks";
-import { imageCheck, newsSearch, phoneCheck, placeReviews, SERPER_PAYEE, shoppingPrices, TOMBA_PAYEE, WEB_PRICES, webSearch, type ImageCheck, type PhoneCheck, type PlaceReviews, type ShoppingPrices, type WebResults } from "./web-tools";
+import { BLOCKRUN_PAYEE, companyRecord, imageCheck, MRSCRAPER_PAYEE, newsSearch, otherOdds, phoneCheck, placeReviews, readPage, SERPER_PAYEE, shoppingPrices, TOMBA_PAYEE, WEB_PRICES, webSearch, type CompanyRecord, type ImageCheck, type OtherOdds, type PageRead, type PhoneCheck, type PlaceReviews, type ShoppingPrices, type WebResults } from "./web-tools";
 
 /**
  * Paid lookups bought from vendors on Circle's Agent Marketplace with Gateway nanopayments.
@@ -104,6 +104,54 @@ export const VENDOR_TOOLS: Record<string, VendorTool> = {
       const w = d as WalletBalance;
       return { chain: w.chain, address: w.address, usdc: w.usdc, native: w.native, coin: w.coin };
     },
+  },
+  company_record: {
+    service: (a) => `Company record: ${a.site}`.slice(0, 80),
+    payeeName: () => "Tomba via Orthogonal (Agent Marketplace)",
+    payee: () => TOMBA_PAYEE,
+    price: () => WEB_PRICES.company,
+    nets: ["mainnet"],
+    run: (a) => companyRecord(a.site),
+    note: (d) => {
+      const c = d as CompanyRecord;
+      if (!c.found) return `No company record for ${c.domain}`;
+      return `${c.name ?? c.domain}${c.founded ? ` · founded ${c.founded}` : ""}${c.domainAgeYears != null ? ` · site ${c.domainAgeYears} years old` : ""}${c.phones.length ? ` · ${c.phones.length} official phone${c.phones.length > 1 ? "s" : ""}` : ""}`;
+    },
+    stat: (d) => {
+      const { paid: _p, ...rest } = d as CompanyRecord;
+      return rest;
+    },
+  },
+  read_page: {
+    service: (a) => `Read page: ${a.url}`.slice(0, 80),
+    payeeName: () => "MrScraper (Agent Marketplace)",
+    payee: () => MRSCRAPER_PAYEE,
+    price: () => WEB_PRICES.page,
+    nets: ["mainnet"],
+    run: (a) => readPage(a.url),
+    note: (d) => {
+      const r = d as PageRead;
+      return `${r.title ? `“${r.title.slice(0, 60)}” · ` : ""}${r.words.toLocaleString()} words read`;
+    },
+    stat: (d) => {
+      const r = d as PageRead;
+      return { url: r.url, title: r.title, headings: r.headings, text: r.text.slice(0, 1600) };
+    },
+  },
+  market_odds: {
+    service: (a) => `Polymarket and Kalshi odds: ${a.query}`.slice(0, 80),
+    payeeName: () => "BlockRun (Agent Marketplace)",
+    payee: () => BLOCKRUN_PAYEE,
+    // One request to each market.
+    price: () => WEB_PRICES.odds * 2n,
+    nets: ["mainnet"],
+    run: (a) => otherOdds(a.query),
+    note: (d) => {
+      const r = d as OtherOdds;
+      const top = r.markets[0];
+      return r.markets.length ? `${r.markets.length} markets · e.g. ${top.source}: “${top.title.slice(0, 50)}” at ${Math.round(top.yes * 100)}%` : "No matching markets on Polymarket or Kalshi";
+    },
+    stat: (d) => ({ query: (d as OtherOdds).query, markets: (d as OtherOdds).markets.slice(0, 8) }),
   },
   web_search: {
     service: (a) => `Web search: ${a.query}`.slice(0, 80),
