@@ -7,6 +7,9 @@ export interface AgentTheme {
   copy: Record<RunStatus, string>;
 }
 
+/** The agents people see and pick: Trado's jobs still open, but it isn't offered any more. */
+export const AGENT_LIST: AgentId[] = ["inso", "worko"];
+
 export const THEMES: Record<AgentId, AgentTheme> = {
   inso: {
     name: "Inso",

@@ -8,7 +8,7 @@ import { RecipeCard, RecipeKey } from "@/components/Recipes";
 import { useAgentTheme } from "@/components/useRun";
 import { useStartJob } from "@/components/useStartJob";
 import { matchRecipes, MOMENTS, RECIPES, type Moment } from "@/lib/recipes";
-import { THEMES } from "@/lib/themes";
+import { AGENT_LIST, THEMES } from "@/lib/themes";
 import type { AgentId } from "@/lib/types";
 
 /**
@@ -82,7 +82,7 @@ function Book() {
           <button type="button" onClick={() => set("agent", null)} className={chip(!agent)}>
             Every agent
           </button>
-          {(Object.keys(THEMES) as AgentId[]).map((a) => (
+          {AGENT_LIST.map((a) => (
             <button key={a} type="button" data-agent={a} onClick={() => set("agent", agent === a ? null : a)} className={chip(agent === a)}>
               <span aria-hidden className="h-2 w-2 rounded-[2px] bg-agent" /> {THEMES[a].name}
               <span className="text-[12px] opacity-70">{THEMES[a].domain}</span>

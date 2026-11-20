@@ -31,6 +31,8 @@ interface Limits {
   maxPlanUsd: number;
 }
 interface Config {
+  venues?: { id: "paper" | "gemini-sandbox" | "gemini"; name: string }[];
+  defaultVenue?: "paper" | "gemini-sandbox" | "gemini";
   live: boolean;
   faultsEnabled: boolean;
   liveNeedsCode?: boolean;
@@ -229,14 +231,42 @@ export default function Settings() {
         )}
       </Block>
 
-      <Block id="s-money" title="Add money" sub="Get USDC onto Arc testnet or mainnet: buy it with a card or bank, bring it from another chain, or get free test USDC.">
+      <Block id="s-money" title="Add money" sub="Get USDC onto Arc: free test USDC on testnet, or send USDC to your address on mainnet.">
         <Link href="/wallet" className="pix-press inline-flex h-10 items-center gap-2 rounded-lg border-[1.5px] border-ink bg-ink px-4 text-sm font-semibold text-white" data-testid="settings-add-money">
           <Icon name="wallet" size={16} /> Add money
         </Link>
       </Block>
 
-      <Block id="s-exchange" title="Exchange" sub="Where approved orders are placed.">
-        <div className="-mt-3">
+      <Block id="s-exchange" title="Exchange" sub="Where Inso's approved orders are placed. Weather and sports markets trade only on Gemini's real exchange; anywhere else they're practice.">
+        <div className="grid grid-cols-1 gap-2 sm:grid-cols-3" role="radiogroup" aria-label="Where orders go" data-testid="venue-choice">
+          {(
+            [
+              { id: "paper", label: "Practice", sub: "Priced live, never sent" },
+              { id: "gemini-sandbox", label: "Gemini test exchange", sub: "Real orders, test money" },
+              { id: "gemini", label: "Gemini", sub: "Real orders, real money" },
+            ] as const
+          ).map((v) => {
+            const ok = !cfg?.venues || cfg.venues.some((x) => x.id === v.id);
+            const on = ready && (prefs.venue ?? cfg?.defaultVenue ?? "paper") === v.id;
+            return (
+              <button
+                key={v.id}
+                type="button"
+                role="radio"
+                aria-checked={on}
+                disabled={!ok}
+                onClick={() => setPrefs({ venue: v.id })}
+                title={ok ? undefined : "Not connected on this server: add its Gemini API key"}
+                className={`pressable tap rounded-lg border px-3 py-2 text-left text-[13px] disabled:opacity-45 ${on ? (v.id === "gemini" ? "border-ink bg-bad text-white shadow-[2px_2px_0_0_var(--color-ink)]" : "border-ink bg-ink text-white") : "border-line bg-panel text-ink-2"}`}
+                data-testid={`venue-${v.id}`}
+              >
+                <span className="block font-semibold">{v.label}</span>
+                <span className={`block text-[12px] ${on ? "text-white/75" : "text-ink-3"}`}>{ok ? v.sub : "Not connected here yet"}</span>
+              </button>
+            );
+          })}
+        </div>
+        <div className="mt-3">
           <ExchangePanel />
         </div>
       </Block>

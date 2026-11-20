@@ -90,4 +90,10 @@ export const VENDOR_PROMISES: Record<string, DeliveryPromise> = {
   gas_price: { fields: ["gwei"] },
   btc_network: { fields: ["feeSatVb"] },
   wallet_balance: { fields: ["address"] },
+  web_search: { fields: ["results"] },
+  news_search: { fields: ["results"] },
+  place_reviews: { fields: ["reviews"] },
+  shopping_prices: { fields: ["offers"] },
+  image_check: { fields: ["matches"] },
+  phone_check: { fields: ["valid"] },
 };

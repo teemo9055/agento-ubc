@@ -24,6 +24,8 @@ const Body = z.object({
   payerAddress: z.string().regex(/^0x[0-9a-fA-F]{40}$/).optional(),
   /** Which Arc network a live job's money moves on. */
   network: z.enum(["testnet", "mainnet"]).default("testnet"),
+  /** Where orders go: practice, Gemini's test exchange, or Gemini with real money. */
+  venue: z.enum(["paper", "gemini-sandbox", "gemini"]).optional(),
 });
 
 export async function GET(req: NextRequest) {
@@ -40,7 +42,7 @@ export async function POST(req: NextRequest) {
   // A plan (the showcase included) is always paid from the app's wallet, so it always needs the code.
   if (body.mode === "live" && (!body.payerAddress || body.template) && !liveAllowed(body.accessCode)) return NextResponse.json({ error: `${body.network === "mainnet" ? "Arc mainnet jobs paid from the app's wallet" : "Arc testnet jobs"} need the access code. Use practice, pay from your own passkey wallet, or ask the owner for the code.` }, { status: 403 });
   // Something no service here can ever do never becomes a job: say so, and offer what can be done.
-  const no = body.template ? null : notPossible(body.task);
+  const no = body.template ? null : notPossible(body.task, { mainnet: body.mode === "live" && body.network === "mainnet" });
   if (no) return NextResponse.json({ error: no.what, notPossible: no }, { status: 422 });
   try {
     if (body.template === "showcase") {

@@ -30,7 +30,7 @@ const PERSONA: Record<AgentId, string> = {
     "Voice: a brisk trading-desk pro. Numbers first, no hype, a little sceptical. Short sentences ('ETH's down 8% on the day. Not an uptrend.').",
   ].join(" "),
   worko: [
-    "You are Worko, a trip helper. You plan drives (drive_route, then an itinerary split into days that fit the person's hours on the road) and find places near a stop: hotels, EV chargers, fuel and food, from OpenStreetMap. You can't book or buy anything (no flights, hotels, rides or tables), can't search the web and can't read reviews. Hours and distances only from a route that has run.",
+    "You are Worko, an errands agent with three kinds of work. PLANNING: drives (drive_route, then an itinerary split into days that fit the person's hours on the road; lookFor charging for an electric car) and places near a stop (hotels, EV chargers, fuel, food) from OpenStreetMap. RESEARCHING and VERIFYING, on Arc mainnet only (real USDC, a fraction of a cent each): web_search, news_search, place_reviews (Google reviews of a business), shopping_prices (what stores charge), image_check (is a listing photo copied from elsewhere) and phone_check (is a number an internet-only line). On testnet those checks aren't available: say they run with real money on mainnet. You can't book or buy anything (no flights, hotels, rides or tables). Hours and distances only from a route that has run.",
     "Voice: a calm, capable fixer. Practical and warm; you think in next steps ('First I'd check the seller's photos, then the number.').",
   ].join(" "),
 };
@@ -71,7 +71,7 @@ function system(agent: AgentId) {
     `PAID RESEARCH you can attach to a move (bought after approval; Gemini data from the user's vault over x402 on Arc, everything else from vendors on Circle's Agent Marketplace with Gateway nanopayments):\n${researchMenu(agent)}\nAttach 1-2 lookups only when they could change the decision and say why in each; skip research the free tools already answered. Research symbols must be live markets with data.`,
     `PROBLEMS: when the user describes a worry, not what to do: call find_recipe first. For money risks, look around (markets, prices), then call propose_plan with \`understood\`, \`drivers\` (2-5; each now/partly with its step number, mainnet with the provider in \`how\`, or no with why) and \`leftOpen\`. Ask (ask_user) only if you can't tell the drivers. ${onMainnet() ? "Mainnet is ON: payable services can be steps now." : "Testnet: crypto and commodity markets can be ordered; mark mainnet only for weather, sports or rates markets, or a service you found (name its provider)."}`,
     `KNOW-HOW for problems:\n- ${PLAYBOOKS.join("\n- ")}`,
-    "PLANS: when a request has several parts (more than one move, or work for more than one agent), call propose_plan instead of propose_move. Break it into the steps that really make it up, one per thing to get done (as many as the task needs, up to 12; long workflows are fine), and for each write a brief the owning agent can act on alone (inso: prediction orders, hedges, sells; trado: spot orders and onchain checks like gas, Bitcoin fees or a wallet balance; worko: errands, checks and drives). Put real names and numbers in the brief; look them up first. Say what each step waits for in `after`: leave it empty for steps that don't depend on anything, so they run at the same time; use gate 'filled' when a step should only start once the order it waits for has filled, useProceeds when it should spend what that sell brought in, and usesFindings when WHAT it does depends on what those steps find. Put anything else no agent can do in `unavailable` with the honest reason. Never pretend a step books something.",
+    "PLANS: when a request has several parts (more than one move, or work for more than one agent), call propose_plan instead of propose_move. Break it into the steps that really make it up, one per thing to get done (as many as the task needs, up to 12; long workflows are fine), and for each write a brief the owning agent can act on alone (inso: prediction orders, hedges, sells; worko: research, checks and drives). Put real names and numbers in the brief; look them up first. Say what each step waits for in `after`: leave it empty for steps that don't depend on anything, so they run at the same time; use gate 'filled' when a step should only start once the order it waits for has filled, useProceeds when it should spend what that sell brought in, and usesFindings when WHAT it does depends on what those steps find. Put anything else no agent can do in `unavailable` with the honest reason. Never pretend a step books something.",
     "MARKETPLACE: prefer your typed lookups; use a `service` step only for a listing search_services marks payableHere.",
     "CAN'T DO: if nothing here can do the request at all, call not_possible. If only part can't be done, say so in one short plain sentence and do the rest. Never name services, providers or networks (no 'testnet', 'mainnet', vendor or product names) when explaining what you can't do.",
     `KNOWLEDGE (shared notes; use them, don't recite them):\n- ${[...PRIMERS[agent], ...lessonLines(agent).map((l) => `Learned from past jobs: ${l}`)].join("\n- ")}`,
@@ -317,11 +317,14 @@ export async function exploreTurn(agent: AgentId, chat: ChatMsg[], onTool: (note
       } else if (c.name === "propose_plan") {
         onTool("Drafting a plan");
         const args = c.args;
+        const offered = ((args as { steps?: { agent?: string }[] }).steps ?? []).some((s) => s.agent === "trado");
         // "It would work on mainnet" has to be true: a market Gemini lists only on its real exchange, or a service that was actually found.
         const loose = ((args as { drivers?: { what?: string; help?: string; how?: string }[] }).drivers ?? []).find(
           (d) => d.help === "mainnet" && !/temperature|weather|heat|cold|sport|game|rate|fed\b|election/i.test(`${d.what} ${d.how}`) && !tools.some((t) => t.tool === "search_services" && t.ok),
         );
-        const v = loose
+        const v = offered
+          ? { error: "Only inso and worko take plan steps here. Give coin trades to inso as prediction orders on the coin's price, or move them to `unavailable`." }
+          : loose
           ? { error: `"${loose.what}" is marked mainnet, but nothing shows a mainnet service or market for it. Look with search_services and name the provider you find, or mark it no.` }
           : await validatePlan(args, proposalId, (who, brief, id) => specialistMove(who, onlyStatedBudget(brief, chat), id, onTool, usage));
         if ("error" in v) content = { ok: false, error: v.error, hint: "Rewrite that step's brief with what its agent needs (real names and amounts), ask the user with ask_user if something is missing, move it to `unavailable` with the reason, or explain why no plan fits." };
@@ -447,7 +450,7 @@ export function agentFor(part: string): AgentId | null {
   if (/\b(hotel|flight|airbnb|room|accommodation|stay)\b/.test(t) && !/\b(drive|trip|route)\b/.test(t)) return null;
   if (/\b(drive|driving|road ?trip|itinerary|route|ride|uber|errand|listing|seller|scam)\b/.test(t) || /\bfrom \S.* to \S/.test(t)) return "worko";
   if (/\b(position|odds|bet|contract|prediction|market)s?\b/.test(t) || /\bsell\b/.test(t)) return "inso";
-  if (/\b(spot|coin|dca)\b/.test(t) || /\bbuy\b.*\b(btc|eth|sol|bitcoin|ethereum|solana|doge|xrp|link)\b/.test(t)) return "trado";
+  // Spot coin trading isn't offered any more: such a part is named as something no agent does here.
   return null;
 }
 

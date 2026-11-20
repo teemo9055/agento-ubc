@@ -2,15 +2,22 @@
 
 Ask an agent anything; it looks things up for free. When there's something worth doing, it proposes one concrete move ("Buy 7 YES on Phoenix at 39¢ or less if the odds are still under 40%?"). Say yes and the move becomes a priced work order: you approve once, the agent pays for its research in USDC on Arc from a vault that only pays what you approved, re-checks the condition on fresh data, then acts. You get the result and an itemized receipt.
 
-Three agents share one runtime. Each move's steps come from the conversation, often starting from a recipe in the recipe book (below) that the agent then tailors.
+Two agents share one runtime. Each agent's home is a dashboard of ready-made jobs that are known to work, grouped the way people think about them; a card opens a job built from live data, which you change in its chat, approve, watch run and get a receipt for. "Create your own" is there for anything else.
 
-| Agent | Domain | Explores with (free) | Paid research (x402) | Moves |
-| ----- | ------ | -------------------- | -------------------- | ----- |
-| **Inso** | Prediction markets | Gemini Prediction Markets search and contracts | Odds history, trade tape | Limit order on a YES/NO contract |
-| **Trado** | Trading | Gemini spot prices, related markets | Spot candles | Spot limit order |
-| **Worko** | Road trips (was Travo) | Place lookup and places near a stop (OpenStreetMap), recipe book | Driving route | Day-by-day driving plan with places to sleep; it never books |
+| Agent | Sections on its home | Paid per request | Moves |
+| ----- | -------------------- | ---------------- | ----- |
+| **Inso** | Weather · Sports · Commodities: insure a cost with Gemini's prediction markets | Odds history, trade tape (Agento's x402 feed) | Limit order on a YES/NO contract, sized to what's at stake |
+| **Worko** | Researching · Planning · Verifying | Driving route (testnet); web search, news, Google reviews, store prices, reverse image search, phone check (Orthogonal on Circle's Agent Marketplace, real USDC on Arc mainnet) | Day-by-day drive with places to sleep or EV chargers; checks with a sourced summary. It never books |
 
-All three can search [Circle's Agent Marketplace](https://agents.circle.com/services) catalog to show what other x402 services exist and whether they accept Arc testnet.
+Trado (spot coin trading) is no longer offered: its old jobs still open, and `/trado` lands on Inso.
+
+### The job catalog
+
+`src/lib/jobs.ts` lists 17 jobs (8 for Worko, 9 for Inso); `src/server/jobs.ts` builds each one by code from live data, with no model call, so a card always opens a real, checked move. Inso's cards pick the line from Gemini's open markets: the cold or hot end of a city's temperature market, the visiting team in an NBA or NFL game (your home team losing), or a month-end commodity line a jump would cross. They show the market's odds, what the cover costs and what it pays. Markets switch lines between open and post-only during the day; a post-only line is still tradable with an order that rests just under the cheapest seller, and a line that closes between picking and checking is skipped for the next one. `GET /api/jobs` returns the catalog with live numbers; `POST /api/jobs/start` opens one.
+
+### Where orders go
+
+Each job remembers where its orders go: practice (priced live, never sent), Gemini's test exchange (real orders, test money) or Gemini (real money). Choose it in Settings → Exchange; only connected venues can be picked. Weather and sports markets trade only on Gemini's real exchange, so on the test exchange those covers are practice. Commodity covers on the test exchange go to its nearest line, priced from the live market. Keys: `GEMINI_SANDBOX_KEY`/`SECRET` and `GEMINI_LIVE_KEY`/`SECRET` (Trader role, no withdrawals). Real money is never the default unless `GEMINI_DEFAULT_VENUE=gemini`. Paid data runs on Arc testnet or mainnet independently of where the order goes.
 
 ## How it uses Arc
 
@@ -372,7 +379,7 @@ cd contracts && forge script script/Deploy.s.sol --rpc-url https://rpc.testnet.a
 
 4. Put the factory address in `FACTORY_ADDRESS`, then run `npm run dev`.
 
-To place sandbox orders, register at https://exchange.sandbox.gemini.com, create an account-scoped API key with the Trader role, and set `GEMINI_TRADING_KEY` and `GEMINI_TRADING_SECRET`. The sandbox sends no emails; at the 2FA prompt run `document.cookie = "GEMINI-SANDBOX-2FA=true; path=/"` in the browser console and enter `9999999`. New sandbox accounts get test funds. The sandbox lists crypto and commodity markets. Without keys, orders are labelled simulations. `GEMINI_TRADING_ENV=production` switches to the real exchange.
+To place sandbox orders, register at https://exchange.sandbox.gemini.com, create an account-scoped API key with the Trader role, and set `GEMINI_SANDBOX_KEY` and `GEMINI_SANDBOX_SECRET` (the older `GEMINI_TRADING_KEY`/`SECRET` still work). The sandbox sends no emails; at the 2FA prompt run `document.cookie = "GEMINI-SANDBOX-2FA=true; path=/"` in the browser console and enter `9999999`. New sandbox accounts get test funds. The sandbox lists crypto and commodity markets. Without keys, orders are labelled simulations. For real money, set `GEMINI_LIVE_KEY` and `GEMINI_LIVE_SECRET` from your Gemini account; jobs then choose the real exchange in Settings.
 
 For passkey wallets, create a Circle client key bound to your domain (`localhost` locally) and set the same domain under Console → Modular Wallets → Configurator → Passkey. Put the key in `NEXT_PUBLIC_CIRCLE_CLIENT_KEY`.
 

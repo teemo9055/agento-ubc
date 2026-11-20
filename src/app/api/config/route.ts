@@ -4,6 +4,7 @@ import { EXPLORER, FACTORY, MAINNET_MAX_JOB_USD, aiKeyProblem, chainOf, liveRead
 import { NETS, NETWORKS } from "@/lib/networks";
 import { circleWallets } from "@/server/circle";
 import { gatewayStatus } from "@/server/nanopay";
+import { tradingVenue, venues, VENUE_NAME } from "@/server/exchange";
 
 export const dynamic = "force-dynamic";
 
@@ -34,6 +35,9 @@ export async function GET() {
         },
       ]),
     ),
+    // Where orders can go on this server, and where they go by default.
+    venues: venues().map((v) => ({ id: v, name: VENUE_NAME[v] })),
+    defaultVenue: tradingVenue(),
     agents: Object.values(AGENTS).map((a) => ({ id: a.id, name: a.name, tagline: a.tagline, examples: a.examples })),
   });
 }

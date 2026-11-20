@@ -286,6 +286,48 @@ export const RESEARCH: Record<string, ResearchTool> = {
     key: (a) => `onchain:balance:${a.chain?.toLowerCase()}:${a.address?.toLowerCase()}`,
     params: (a) => ({ chain: a.chain?.toLowerCase(), address: a.address }),
   },
+  web_search: {
+    product: "web.search",
+    description: "Google search results with titles, links and snippets (args: query). Real USDC on Arc mainnet only",
+    args: ["query"],
+    key: (a) => `web:search:${a.query?.toLowerCase()}`,
+    params: (a) => ({ query: a.query }),
+  },
+  news_search: {
+    product: "web.news",
+    description: "Recent news stories about a topic, company or person (args: query). Real USDC on Arc mainnet only",
+    args: ["query"],
+    key: (a) => `web:news:${a.query?.toLowerCase()}`,
+    params: (a) => ({ query: a.query }),
+  },
+  place_reviews: {
+    product: "web.reviews",
+    description: "Finds a business on Google and reads its recent reviews with star ratings (args: place, name and city, e.g. 'Blue Bottle Coffee Oakland'). Real USDC on Arc mainnet only",
+    args: ["place"],
+    key: (a) => `web:reviews:${a.place?.toLowerCase()}`,
+    params: (a) => ({ place: a.place }),
+  },
+  shopping_prices: {
+    product: "web.shopping",
+    description: "What stores charge for a product right now: lowest, typical and highest price (args: product, e.g. 'iPhone 15 128GB unlocked'). Real USDC on Arc mainnet only",
+    args: ["product"],
+    key: (a) => `web:shopping:${a.product?.toLowerCase()}`,
+    params: (a) => ({ product: a.product }),
+  },
+  image_check: {
+    product: "web.lens",
+    description: "Reverse image search: whether a listing's photo appears elsewhere online, a sign it was copied (args: imageUrl, a public https link). Real USDC on Arc mainnet only",
+    args: ["imageUrl"],
+    key: (a) => `web:lens:${a.imageUrl}`,
+    params: (a) => ({ imageUrl: a.imageUrl }),
+  },
+  phone_check: {
+    product: "web.phone",
+    description: "Whether a phone number is valid, and if it's an internet (VoIP) line, mobile or landline, with the carrier (args: phone, with country code). Real USDC on Arc mainnet only",
+    args: ["phone"],
+    key: (a) => `web:phone:${a.phone?.replace(/\D/g, "")}`,
+    params: (a) => ({ phone: a.phone }),
+  },
   service: {
     product: "marketplace.service",
     description: "One paid request to a payableHere service from search_services (args: url as listed; input, a JSON string: query fields for GET, the body for POST, or {\"method\",\"params\"} for JSON-RPC; what, 3-6 words). Code reads the seller's price and payee. Reads only",
@@ -313,7 +355,7 @@ export const TOOLKIT: Record<AgentId, { free: string[]; research: string[] }> = 
   inso: { free: ["search_markets", "get_market", "browse_markets", "combo_quote", "my_positions", "spot_price", "search_services", "find_recipe", "read_arc"], research: ["odds_history", "trade_tape", "oracle_price", "service"] },
   trado: { free: ["spot_price", "search_markets", "get_market", "browse_markets", "my_positions", "search_services", "find_recipe", "read_arc"], research: ["spot_candles", "oracle_price", "odds_history", "gas_price", "btc_network", "wallet_balance", "service"] },
   // The trip agent can look at markets too, so a brief about a trip can name the fuel cover Inso would build.
-  worko: { free: ["find_place", "find_nearby", "search_markets", "my_positions", "search_services", "find_recipe", "read_arc"], research: ["drive_route", "oracle_price", "service"] },
+  worko: { free: ["find_place", "find_nearby", "search_markets", "my_positions", "search_services", "find_recipe", "read_arc"], research: ["drive_route", "oracle_price", "web_search", "news_search", "place_reviews", "shopping_prices", "image_check", "phone_check", "service"] },
 };
 
 export const researchMenu = (agent?: AgentId) =>
@@ -367,7 +409,7 @@ export const ProposalInput = z.object({
           .describe("One order that pays only if EVERY leg resolves as its side says (legs from combo_quote). With it: eventTicker and symbol 'COMBO', side yes, orderType limit."),
       }),
       z.object({ kind: z.literal("spot_order"), symbol: z.string(), side: z.enum(["buy", "sell"]), limitPrice: z.number().positive(), amountUsd: z.number().min(1).max(100) }),
-      z.object({ kind: z.literal("itinerary"), stops: z.array(z.string().min(2).max(60)).min(2).max(6).describe("Full place names with state or country, e.g. 'Santa Fe, New Mexico'"), hoursPerDay: z.number().int().min(2).max(12).describe("Most hours of driving a day: the user's number; 6 if they didn't say") }),
+      z.object({ kind: z.literal("itinerary"), stops: z.array(z.string().min(2).max(60)).min(2).max(6).describe("Full place names with state or country, e.g. 'Santa Fe, New Mexico'"), hoursPerDay: z.number().int().min(2).max(12).describe("Most hours of driving a day: the user's number; 6 if they didn't say"), lookFor: z.enum(["hotel", "charging"]).nullable().optional().describe("What to list where each day ends: hotel (default) or charging for an electric car") }),
     ])
     .nullable()
     .describe("The concrete move. null for research only."),
@@ -383,7 +425,7 @@ export const ProposalInput = z.object({
     .describe("More checks that must ALL hold with `condition` ('only if A and B', e.g. Chainlink and Gemini spot BTC both ≥ 64k). Same rules."),
   budgetUsd: z.number().positive().nullable().describe("The most the user said they'd spend on this order in USD, if they said; enforced."),
   hedge: z
-    .object({ protects: z.string().max(80).describe("What the user stands to lose, in their words: 'a pricier Uber if it's freezing Saturday'"), lossUsd: z.number().positive().max(1000).describe("Roughly what that would cost them in USD") })
+    .object({ protects: z.string().max(80).describe("What the user stands to lose, in their words: 'a pricier Uber if it's freezing Saturday'"), lossUsd: z.number().positive().max(1000).describe("The EXTRA cost they would face if it happens, in USD: what a fuel spike adds to the trip, not the whole fuel bill. Usually a fraction of the bill") })
     .nullable()
     .optional()
     .describe("Set when the order is insurance (the user loses money if an event happens; buy the side that pays then). Code sizes it to cover lossUsd or fit budgetUsd. prediction_order buys only."),
@@ -466,7 +508,10 @@ export async function validateProposal(agent: AgentId, input: unknown, id: strin
     if (c.open === false) return { error: `${c.label} isn't open for trading right now` };
     const left = c.expiry ? Date.parse(c.expiry) - Date.now() : Infinity;
     if (left < MIN_EXPIRY_MS) return { error: `${c.label} closes ${left <= 0 ? "now" : `in ${Math.max(1, Math.round(left / 60_000))} min`}; too soon for an order to rest. Pick a later contract.` };
-    const maxPrice = round2(raw.maxPrice);
+    // A post-only line takes only orders that wait: keep the limit just under the cheapest seller so it rests.
+    const restAt = c.postOnly && c.ask != null && raw.trade !== "sell" ? round2(Math.max(0.01, c.ask - 0.01)) : undefined;
+    if (restAt != null && raw.maxPrice > restAt) adjustments.push(`Gemini only takes orders that wait on this line right now, so yours rests at ${Math.round(restAt * 100)}¢ until a seller comes down to it`);
+    const maxPrice = round2(restAt != null ? Math.min(raw.maxPrice, restAt) : raw.maxPrice);
     let quantity = raw.quantity;
     // A hedge is sized by code: enough contracts that the payout, after their cost, covers the loss.
     if (p.hedge && raw.trade !== "sell") {
@@ -534,6 +579,11 @@ export async function validateProposal(agent: AgentId, input: unknown, id: strin
     if (r.tool === "oracle_price" && !FEEDS[r.args.symbol?.toLowerCase()]) return { error: `No Chainlink feed for ${r.args.symbol}. Available: ${Object.keys(FEEDS).join(", ")}` };
     const missing = t.args.filter((x) => x !== "tf" && !r.args[x]);
     if (missing.length) return { error: `${r.tool} needs ${missing.join(", ")}` };
+    // Checks that only take real USDC on Arc mainnet can't run on a test-money job.
+    const nets = isVendorTool(r.tool) ? VENDOR_TOOLS[r.tool].nets : undefined;
+    if (nets && !nets.includes(currentNet())) return { error: `“${r.label}” is paid with real USDC on Arc mainnet, so it can't run on a practice or testnet job. Switch the job to mainnet, or drop that step.` };
+    if (r.tool === "image_check" && !/^https:\/\//.test(r.args.imageUrl ?? "")) return { error: "The photo check needs a public https link to the photo" };
+    if (r.tool === "phone_check" && (r.args.phone ?? "").replace(/\D/g, "").length < 7) return { error: "The phone check needs a full phone number with its country code" };
     // Paid lookups read live Gemini data. Don't charge the user for a symbol that has none.
     if (r.tool === "odds_history" || r.tool === "trade_tape") {
       const known = await gemini.recentTrades(r.args.symbol, 1).then(() => true, () => false);
@@ -820,7 +870,8 @@ export const PlanInput = z.object({
   steps: z
     .array(
       z.object({
-        agent: z.enum(["inso", "trado", "worko"]).describe("inso: prediction-market orders, hedges and sells. trado: spot crypto orders and onchain checks. worko: driving routes and places near a stop."),
+        // Trado stays valid for plans built by code; the AI is told to use only Inso and Worko.
+        agent: z.enum(["inso", "trado", "worko"]).describe("inso: prediction-market orders, hedges and sells. worko: research, drives and checks before paying. Use only these two."),
         brief: z.string().min(8).max(260).describe("What this agent should do, complete on its own: name the market, coin, places and amounts. That agent builds the move with its own tools; it never sees this conversation."),
         after: z.array(z.number().int().min(1).max(12)).max(6).describe("Numbers of the earlier steps this one must wait for. Empty when it doesn't depend on any: independent steps run at the same time."),
         gate: z.enum(["done", "filled"]).describe("done: start once the steps in `after` finish. filled: only once their orders have actually filled."),

@@ -24,7 +24,7 @@ import { aiEnabled, type AiUsage } from "./ai";
 import { buildPlanStep, exploreTurn } from "./explore";
 import { editPlan, type PlanOp } from "./plan-edit";
 import { routeAgent } from "./route";
-import { cancelOrder, marketBase, refreshOrder } from "./exchange";
+import { cancelOrder, marketBase, refreshOrder, tradingVenue, venueReady, withVenue } from "./exchange";
 import * as gemini from "./gemini";
 import { settle } from "@/lib/settle";
 import { stillTradable, toProposalInput, validateProposal } from "./tools";
@@ -34,7 +34,7 @@ import { anchorOrder, canAnchor } from "./anchor";
 import { suggestionsFor } from "./suggest";
 import { recordOrder, recordSettlement } from "./knowledge";
 import { aiEditMove } from "./edit-move";
-import { offVault, paidInUsdc, type ChatMsg, type Plan, type PlanStep, type Proposal } from "@/lib/types";
+import { offVault, paidInUsdc, type ChatMsg, type Plan, type PlanStep, type Proposal, type Venue } from "@/lib/types";
 import { PhaseFailure, SkipPhase, type AgentCtx, type PlanDraft } from "./agents/types";
 import { MAINNET_MAX_JOB_USD, chainOf, factoryAbi, liveReady, setupProblems, vaultAbi } from "./chain";
 import type { Net } from "@/lib/networks";
@@ -231,6 +231,8 @@ type CreateInput = {
   payerAddress?: Hex;
   /** Arc testnet (test USDC) or Arc mainnet (real money). Practice jobs never touch either. */
   network?: Net;
+  /** Where orders go: practice, Gemini's test exchange, or Gemini with real money. */
+  venue?: Venue;
 };
 
 /**
@@ -268,6 +270,8 @@ export async function createRun(input: CreateInput, opts: { wait?: boolean; quie
     planner: "rules",
     payer: input.payerAddress && mode === "live" ? "passkey" : "server",
     estFees: "0",
+    // Orders go where the job asked, if that exchange is connected here; otherwise the safe default.
+    venue: input.venue && venueReady(input.venue) ? input.venue : tradingVenue(),
   };
   const ctl: Ctl = {
     run,
@@ -351,7 +355,7 @@ const YES = /^(yes|yep|yeah|yup|ok|okay|sure|do it|set it up|go|go ahead|sounds 
 
 /** Runs inside the job's network, so lookups and purchases deep below follow it. */
 function agentReply(ctl: Ctl) {
-  return withNet(ctl.run.network, () => agentReplyInNet(ctl));
+  return withNet(ctl.run.network, () => withVenue(ctl.run.venue, () => agentReplyInNet(ctl)));
 }
 
 async function agentReplyInNet(ctl: Ctl) {
@@ -422,7 +426,7 @@ export async function adjustMove(runId: string, kind: AdjustKind) {
   if (!prev) throw new Error("there is no move to change");
   adjusting.add(runId);
   try {
-    const v = await validateProposal(ctl.run.agent, applyAdjust(toProposalInput(prev), prev, kind), prev.id);
+    const v = await withNet(ctl.run.network, () => withVenue(ctl.run.venue, () => validateProposal(ctl.run.agent, applyAdjust(toProposalInput(prev), prev, kind), prev.id)));
     if ("error" in v) throw new Error(v.error.split(". ")[0]);
     const changes = diffMoves(prev, v.proposal);
     if (!changes.length) throw new Error(prev.budgetUsd != null && kind === "more" ? `That's all your $${prev.budgetUsd} allows` : "That's as far as it goes");
@@ -497,7 +501,7 @@ function trackAi(ctl: Ctl, purpose: string, usage: AiUsage) {
 /** AI edit first (keeps the model's card copy in sync), rule-based edit as fallback. */
 /** Runs inside the job's network, so lookups and purchases deep below follow it. */
 function editOptions(ctl: Ctl, card: Card["kind"], prompt: string, step?: string) {
-  return withNet(ctl.run.network, () => editOptionsInNet(ctl, card, prompt, step));
+  return withNet(ctl.run.network, () => withVenue(ctl.run.venue, () => editOptionsInNet(ctl, card, prompt, step)));
 }
 
 async function editOptionsInNet(ctl: Ctl, card: Card["kind"], prompt: string, step?: string) {
@@ -641,7 +645,7 @@ async function execute(ctl: Ctl) {
 
 /** Runs inside the job's network, so lookups and purchases deep below follow it. */
 function executeNow(ctl: Ctl) {
-  return withNet(ctl.run.network, () => executeNowInNet(ctl));
+  return withNet(ctl.run.network, () => withVenue(ctl.run.venue, () => executeNowInNet(ctl)));
 }
 
 async function executeNowInNet(ctl: Ctl) {
@@ -1396,6 +1400,20 @@ export async function createProject(title: string, mode?: "demo" | "live") {
 }
 
 /** Puts a ready-made plan in front of the user as an agent message (used by outside AIs and tests). */
+/** Drops a job that never got going (its ready-made move couldn't be built): it leaves the Jobs list. */
+export function discard(runId: string) {
+  const ctl = ctlOf(runId);
+  if (ctl.run.status === "exploring" && !ctl.run.proposal) emit(ctl, { type: "workorder.updated", run: { ...ctl.run, impossible: true } });
+}
+
+/** Puts a ready-made, checked move in the chat as the agent's answer: the person edits it there, then sets it up. */
+export function offerMove(runId: string, proposal: Proposal, text: string) {
+  const ctl = ctlOf(runId);
+  if (ctl.run.status !== "exploring") throw new Error("a move can only be offered while chatting");
+  emit(ctl, { type: "chat.message", message: { id: id(), role: "agent", text, at: now(), proposal, suggestions: suggestionsFor(ctl.run.agent, [], { proposal }) } });
+  return ctl.run;
+}
+
 export function offerPlan(runId: string, plan: Plan, text = plan.why) {
   const ctl = ctlOf(runId);
   if (ctl.run.status !== "exploring") throw new Error("a plan can only be offered while chatting");
@@ -1572,7 +1590,7 @@ async function advanceNow(parentId: string) {
         const a = draft.action;
         if (a?.kind === "prediction_order" && a.trade !== "sell" && !draft.hedge) a.quantity = Math.min(500, Math.max(1, Math.floor(spend / a.maxPrice + 1e-9)));
         if (a?.kind === "spot_order" && a.side === "buy") a.amountUsd = Math.min(100, Math.max(1, Math.floor(spend * 100) / 100));
-        const v = await validateProposal(s.agent, { ...draft, budgetUsd: budget }, s.proposal.id);
+        const v = await withNet(ctl.run.network, () => withVenue(ctl.run.venue, () => validateProposal(s.agent, { ...draft, budgetUsd: budget }, s.proposal.id)));
         if ("error" in v) throw new Error(v.error.split(". ")[0]);
         proposal = v.proposal;
         s.proposal = proposal;
@@ -1590,7 +1608,7 @@ async function advanceNow(parentId: string) {
           rebuilt = "Built from what the earlier steps found";
         } else rebuilt = built && "proposal" in built ? "Kept as first planned: the version built from the findings would cost more than you approved" : "Kept as first planned";
       }
-      const child = await createRun({ agent: s.agent, task: proposal.title, mode: ctl.run.mode, network: ctl.run.network, proposal, plannedBy: `plan in job ${parentId}` } as CreateInput);
+      const child = await createRun({ agent: s.agent, task: proposal.title, mode: ctl.run.mode, network: ctl.run.network, venue: ctl.run.venue, proposal, plannedBy: `plan in job ${parentId}` } as CreateInput);
       const cc = ctlOf(child.id);
       // The agents before this one pass along what they did, so this step starts with the full picture.
       const handoff = [rebuilt, ...deps.map((d) => `${AGENTS[d.agent].name}: ${d.proposal.title} → ${d.note ?? "done"}`), budget != null ? `Budget for this step: $${budget.toFixed(2)}, what that brought in` : ""].filter(Boolean).join(" · ");
@@ -1637,9 +1655,9 @@ export function saveRun(runId: string, saved: boolean) {
  */
 export async function rerun(runId: string) {
   const src = ctlOf(runId).run;
-  const base = { agent: src.agent, task: src.task, mode: src.mode };
+  const base = { agent: src.agent, task: src.task, mode: src.mode, network: src.network, venue: src.venue };
   if (src.proposal && src.payer !== "passkey") {
-    const v = await validateProposal(src.agent, toProposalInput(src.proposal), id());
+    const v = await withNet(src.network, () => withVenue(src.venue, () => validateProposal(src.agent, toProposalInput(src.proposal!), id())));
     if ("proposal" in v) {
       const run = await createRun({ ...base, proposal: v.proposal, plannedBy: "a saved job" } as CreateInput);
       const cc = ctlOf(run.id);

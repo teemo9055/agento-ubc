@@ -507,10 +507,10 @@ export function toolboxAgent(id: AgentId): AgentDef {
           for (const d of mem.days) {
             const at = mem.places.find((x) => x.name === d.to);
             if (!at) continue;
-            ctx.progress(0.6, `Looking for places to stay in ${d.to}`);
+            ctx.progress(0.6, a.lookFor === "charging" ? `Looking for EV chargers in ${d.to}` : `Looking for places to stay in ${d.to}`);
             // A shortlist is a nice-to-have: if the map service is slow or down, the plan still stands.
             const found = await Promise.resolve()
-              .then(() => geo.nearby(at, "hotel", 3))
+              .then(() => geo.nearby(at, a.lookFor === "charging" ? "charging" : "hotel", 3))
               .catch(() => []);
             if (found.length) {
               d.stay = found.map((x) => ({ name: x.name, where: x.where, website: x.website }));
@@ -519,7 +519,7 @@ export function toolboxAgent(id: AgentId): AgentDef {
           }
           const over = mem.days.filter((d) => d.hours > a.hoursPerDay + 0.25).length;
           const longest = Math.max(...mem.days.map((d) => d.hours));
-          ctx.progress(1, `${mem.days.length} day${mem.days.length === 1 ? "" : "s"} · longest ${longest.toFixed(1)} h of driving${fit.added.length ? ` · added a night in ${fit.added.join(" and ")}` : ""}${over ? ` · ${over} day${over === 1 ? "" : "s"} still over ${a.hoursPerDay} h: no town on the way to stop in` : ""}${stays ? ` · places to stay listed for ${stays === mem.days.length ? "each night" : `${stays} of them`}` : ""}`);
+          ctx.progress(1, `${mem.days.length} day${mem.days.length === 1 ? "" : "s"} · longest ${longest.toFixed(1)} h of driving${fit.added.length ? ` · added a night in ${fit.added.join(" and ")}` : ""}${over ? ` · ${over} day${over === 1 ? "" : "s"} still over ${a.hoursPerDay} h: no town on the way to stop in` : ""}${stays ? ` · ${a.lookFor === "charging" ? "chargers" : "places to stay"} listed for ${stays === mem.days.length ? "each stop" : `${stays} of them`}` : ""}`);
           return;
         }
         if (!mem.check?.met) {
@@ -642,6 +642,6 @@ const summary = o
 return {
   summary,
   method: `${p.research.length} paid lookup${p.research.length === 1 ? "" : "s"} via x402 on Arc${o ? ` · ${VENUE_NAME[o.venue]}` : ""}`,
-  data: { move: p, check: mem.check, order: o, days: mem.days, places: mem.places, route: mem.route },
+  data: { move: p, check: mem.check, order: o, days: mem.days, places: mem.places, route: mem.route, lookFor: p.action?.kind === "itinerary" ? (p.action.lookFor ?? "hotel") : undefined },
 };
 }

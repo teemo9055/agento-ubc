@@ -121,7 +121,7 @@ type Place = { name: string; lat: number; lon: number };
 type RouteData = { path: [number, number][]; distanceKm: number; hours: number };
 
 function RouteMap({ run }: { run: Run }) {
-  const d0 = run.deliverable?.data as { days?: { day: number; from: string; to: string; hours: number; km: number; stay?: { name: string; where: string; website?: string }[] }[]; places?: Place[]; route?: RouteData } | undefined;
+  const d0 = run.deliverable?.data as { days?: { day: number; from: string; to: string; hours: number; km: number; stay?: { name: string; where: string; website?: string }[] }[]; places?: Place[]; route?: RouteData; lookFor?: "hotel" | "charging" } | undefined;
   const places = (d0?.places ?? []).map((p, i) => ({ k: `${i}`, p }));
   const route = (feedOf(run, "routes.drive")[0]?.[1].data as RouteData | undefined) ?? d0?.route;
   const days = d0?.days;
@@ -168,10 +168,10 @@ function RouteMap({ run }: { run: Run }) {
               <span className="num block text-ink-3">
                 {Math.round(x.km)} km · {x.hours.toFixed(1)} h
               </span>
-              {!x.stay?.length && days.some((d) => d.stay?.length) && <span className="mt-1.5 block border-t border-[#f1f0ec] pt-1.5 text-ink-3">The map lists no places to stay right here; look in the nearest town.</span>}
+              {!x.stay?.length && days.some((d) => d.stay?.length) && <span className="mt-1.5 block border-t border-[#f1f0ec] pt-1.5 text-ink-3">{d0?.lookFor === "charging" ? "The map lists no chargers right here; plan to charge at the stop before." : "The map lists no places to stay right here; look in the nearest town."}</span>}
               {x.stay && x.stay.length > 0 && (
                 <div className="mt-1.5 border-t border-[#f1f0ec] pt-1.5" data-testid="stay">
-                  <span className="text-ink-3">Places to stay in {x.to}:</span>
+                  <span className="text-ink-3">{d0?.lookFor === "charging" ? "EV chargers in" : "Places to stay in"} {x.to}:</span>
                   <ul className="mt-0.5 space-y-0.5">
                     {x.stay.map((h) => (
                       <li key={h.name}>
@@ -192,7 +192,7 @@ function RouteMap({ run }: { run: Run }) {
           ))}
         </ol>
       )}
-      {days?.some((x) => x.stay?.length) && <p className="mt-2 text-[12px] text-ink-3">A shortlist from OpenStreetMap, closest first. Nothing is booked; check prices and availability with the hotel.</p>}
+      {days?.some((x) => x.stay?.length) && <p className="mt-2 text-[12px] text-ink-3">{d0?.lookFor === "charging" ? "Chargers from OpenStreetMap, closest first. Check plug type and availability before you go." : "A shortlist from OpenStreetMap, closest first. Nothing is booked; check prices and availability with the hotel."}</p>}
     </div>
   );
 }

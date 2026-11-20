@@ -11,6 +11,8 @@ export interface MarketContract {
   expiry?: string;
   /** Contract is active and its book is open for trading. */
   open?: boolean;
+  /** Only resting orders are taken right now: an order waits on the book instead of filling at once. */
+  postOnly?: boolean;
   /** The exchange's own id for the contract, used to name it as a leg of a combination. */
   contractId?: string;
   /** How it resolved, once settled. */
@@ -107,7 +109,9 @@ const toEvent = (e: any): MarketEvent => ({
     bid: num(c.prices?.bestBid),
     ask: num(c.prices?.bestAsk),
     expiry: c.expiryDate,
-    open: (c.status ?? "active") === "active" && (c.marketState ?? "open") === "open",
+    // "post_only": Gemini takes only orders that wait on the book for now. Still tradable, just not at once.
+    open: (c.status ?? "active") === "active" && ["open", "post_only"].includes(c.marketState ?? "open"),
+    postOnly: c.marketState === "post_only" || undefined,
     contractId: typeof c.id === "string" ? c.id.split("-").pop() : undefined,
     resolved: c.resolutionSide === "yes" || c.resolutionSide === "no" ? c.resolutionSide : undefined,
     strike: c.strike?.value != null && Number.isFinite(Number(c.strike.value)) ? Number(c.strike.value) : undefined,
@@ -195,6 +199,18 @@ export async function findEvents(query: string, limit = 6, base = BASE): Promise
   // A word can also match inside a title the other word's search returned ("NYC" in a temperature market).
   for (const hit of score.values()) hit.n += words.filter((w) => new RegExp(`\\b${w.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}`, "i").test(hit.e.title)).length;
   return [...score.values()].sort((a, b) => b.n - a.n || b.e.volume - a.e.volume).slice(0, limit).map((x) => x.e);
+}
+
+const activeCache = new Map<string, { at: number; list: Promise<MarketEvent[]> }>();
+/** Every open event on a venue (up to 200), kept for a minute: the job catalog reads it for each card. */
+export function activeEvents(base = BASE): Promise<MarketEvent[]> {
+  const hit = activeCache.get(base);
+  if (hit && Date.now() - hit.at < 60_000) return hit.list;
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const list = get<{ data: any[] }>(`/v1/prediction-markets/events?status=active&limit=200`, { data: [] }, base).then((r) => r.data.map(toEvent));
+  activeCache.set(base, { at: Date.now(), list });
+  list.catch(() => activeCache.delete(base));
+  return list;
 }
 
 export async function getEvent(ticker: string, base = BASE): Promise<MarketEvent> {

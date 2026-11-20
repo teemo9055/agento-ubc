@@ -645,3 +645,11 @@ body {
     transition: none;
   }
 }
+
+/* Rows of cards that scroll sideways: the bar hides, the swipe and the arrows stay. */
+.no-scrollbar {
+  scrollbar-width: none;
+}
+.no-scrollbar::-webkit-scrollbar {
+  display: none;
+}

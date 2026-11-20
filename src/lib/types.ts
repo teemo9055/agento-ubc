@@ -311,7 +311,7 @@ export type MoveAction =
       combo?: Combo;
     }
   | { kind: "spot_order"; symbol: string; side: "buy" | "sell"; limitPrice: number; amountUsd: number }
-  | { kind: "itinerary"; stops: string[]; hoursPerDay: number };
+  | { kind: "itinerary"; stops: string[]; hoursPerDay: number; /** What to list where each day ends: places to sleep (default) or EV chargers. */ lookFor?: "hotel" | "charging" | null };
 
 export interface ComboLeg {
   eventTicker: string;
@@ -408,6 +408,8 @@ export interface Run {
   /** The write-up once the job is done. */
   report?: Report;
   /** The recipe this job taught the book, if it was composed and worked. */
+  /** Where this job's orders go, chosen when it was made: practice, Gemini's test exchange, or Gemini with real money. */
+  venue?: Venue;
   /** The request is something no service here can do: kept for its link, left off the Jobs list. */
   impossible?: boolean;
   learned?: { id: string; title: string; status: "draft" | "promoted" | "retired"; runs: number; successes: number; network: "testnet" | "mainnet" };

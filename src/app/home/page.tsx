@@ -10,7 +10,7 @@ import { useRuns } from "@/components/runsStore";
 import { Icon } from "@/components/Icon";
 import { useTransitionNav } from "@/components/transitions";
 import { toast } from "@/components/Toaster";
-import { THEMES } from "@/lib/themes";
+import { AGENT_LIST, THEMES } from "@/lib/themes";
 import { openedMap } from "@/lib/opened";
 import { Band, Card } from "@/components/JobCard";
 import type { RunSummary } from "@/lib/summary";
@@ -68,6 +68,41 @@ function NewTile({ folder }: { folder: Folder }) {
   );
 }
 
+/** The two agents, as doors: what each does and the kinds of jobs behind it. */
+function AgentDoors() {
+  const DOOR: Record<"inso" | "worko", { line: string; kinds: string[] }> = {
+    inso: { line: "Insure what could go wrong, with Gemini's prediction markets.", kinds: ["Weather", "Sports", "Commodities"] },
+    worko: { line: "Errands done for you: researched, planned and checked.", kinds: ["Researching", "Planning", "Verifying"] },
+  };
+  return (
+    <div className="grid grid-cols-1 gap-4 md:grid-cols-2" data-testid="agent-doors">
+      {(["inso", "worko"] as const).map((a, i) => (
+        <motion.div key={a} initial={{ opacity: 0, y: 12 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: i * 0.06, type: "spring", stiffness: 260, damping: 26 }} whileHover={{ y: -3 }}>
+          <Link href={`/${a}`} data-agent={a} className="group flex h-full items-center gap-4 rounded-[22px] border-[1.5px] border-ink bg-panel p-4 transition-shadow duration-200 hover:shadow-[6px_6px_0_0_var(--agent)] sm:p-5" data-testid={`door-${a}`}>
+            <span className="inline-flex shrink-0 rounded-2xl border-[1.5px] border-ink bg-agent-soft p-1.5 shadow-[2px_2px_0_0_var(--color-ink)] transition-transform duration-200 group-hover:-rotate-3">
+              <AgentIcon agent={a} size={56} mood="happy" />
+            </span>
+            <span className="min-w-0 flex-1">
+              <span className="block font-pixel text-[22px] leading-none text-agent-ink">{THEMES[a].name}</span>
+              <span className="mt-1.5 block text-[14px] leading-snug text-ink-2">{DOOR[a].line}</span>
+              <span className="mt-2.5 flex flex-wrap gap-1.5">
+                {DOOR[a].kinds.map((k) => (
+                  <span key={k} className="rounded-full border border-agent/30 bg-agent-soft px-2 py-0.5 text-[11.5px] font-semibold text-agent-ink">
+                    {k}
+                  </span>
+                ))}
+              </span>
+            </span>
+            <span className="inline-flex h-10 w-10 shrink-0 items-center justify-center rounded-full border-[1.5px] border-ink transition-colors group-hover:bg-ink group-hover:text-white">
+              <Icon name="arrow" size={16} />
+            </span>
+          </Link>
+        </motion.div>
+      ))}
+    </div>
+  );
+}
+
 function Dashboard() {
   const router = useRouter();
   const params = useSearchParams();
@@ -115,13 +150,14 @@ function Dashboard() {
   const count = (f: Folder) => top.filter((r) => f === "all" || (f === "saved" ? r.saved : r.agent === f)).length;
   const folders: { key: Folder; label: string; sub: string }[] = [
     { key: "all", label: "All", sub: "Every agent" },
-    ...(Object.keys(THEMES) as AgentId[]).map((a) => ({ key: a as Folder, label: THEMES[a].name, sub: THEMES[a].domain })),
+    ...AGENT_LIST.map((a) => ({ key: a as Folder, label: THEMES[a].name, sub: THEMES[a].domain })),
     { key: "saved", label: "Saved", sub: "Jobs you saved to run again" },
   ];
 
   return (
     <div className="flex flex-col gap-6">
       <Band />
+      {folder === "all" && <AgentDoors />}
       <div className="flex flex-wrap items-end justify-between gap-4">
         <div>
           <h1 className="font-pixel text-[30px] leading-tight sm:text-[34px]">{folder === "all" ? "Your jobs" : folder === "saved" ? "Saved jobs" : `${THEMES[folder].name} jobs`}</h1>

@@ -167,9 +167,7 @@ test("dismissed re-approval stays pending, never auto-approved", async ({ page }
   await receipt(page);
 });
 
-test("trado and worko run end to end", async ({ page }) => {
-  await start(page, [], "Is BTC trending this week?", "Trado");
-  await receipt(page);
+test("a worko drive runs end to end", async ({ page }) => {
   await start(page, [], "Drive from Vancouver to Seattle", "Worko");
   await receipt(page);
   await expect(page.getByRole("img", { name: "Route map" })).toBeVisible();
@@ -323,10 +321,10 @@ test("before there is a move, the workspace shows the outline of the kind of wor
   await expect(page.locator("[data-testid^=kind-]")).toHaveCount(0);
 });
 
-test("the showcase builds a long plan that can be changed before anything is paid", async ({ page }) => {
+test("the showcase builds a long plan that can be changed before anything is paid", async ({ page, request }) => {
   await prefs(page);
-  await page.goto("/new");
-  await page.getByTestId("showcase").click();
+  const made = await (await request.post("/api/runs", { data: { agent: "inso", task: "Run the showcase", mode: "demo", template: "showcase" } })).json();
+  await page.goto(`/runs/${made.id}`);
   const board = page.getByTestId("plan-card");
   await expect(board).toBeVisible({ timeout: 60_000 });
   const steps = board.getByTestId("plan-step");

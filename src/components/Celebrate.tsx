@@ -1,7 +1,7 @@
 "use client";
 import { useEffect, useMemo } from "react";
 import { AnimatePresence, motion, useReducedMotion } from "framer-motion";
-import { offVault, type Run } from "@/lib/types";
+import { paidInUsdc, type Run } from "@/lib/types";
 import { fmt } from "@/lib/money";
 import { AgentIcon } from "./AgentIcon";
 import { Icon } from "./Icon";
@@ -67,7 +67,8 @@ export function FinishCard({ run, kind, onClose }: { run: Run; kind: "done" | "c
     };
   }, [kind, onClose]);
 
-  const paid = run.lines.filter((l) => !offVault(l.rail)).reduce((a, l) => a + BigInt(l.actual), 0n);
+  // Everything paid in USDC for this job, the vault's payments and the marketplace checks alike, as on the receipt.
+  const paid = run.lines.filter((l) => paidInUsdc(l.rail)).reduce((a, l) => a + BigInt(l.actual), 0n);
   const back = BigInt(run.refunded ?? 0);
   const done = kind === "done";
 

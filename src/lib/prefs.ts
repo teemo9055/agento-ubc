@@ -14,6 +14,8 @@ export interface Prefs {
   network?: "testnet" | "mainnet";
   /** Which Arc network the Add money page shows. Separate, so looking at mainnet there never moves jobs onto real money. */
   walletNetwork?: "testnet" | "mainnet";
+  /** Where Inso's orders go: practice, Gemini's test exchange, or Gemini with real money. Unset: the server's default. */
+  venue?: "paper" | "gemini-sandbox" | "gemini";
 }
 
 /** What /api/config says about each network, as far as choosing one goes. */

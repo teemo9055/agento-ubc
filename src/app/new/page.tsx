@@ -8,7 +8,7 @@ import { motion } from "framer-motion";
 import { AgentIcon } from "@/components/AgentIcon";
 import { Button, Spinner } from "@/components/ui";
 import { post, useAgentTheme } from "@/components/useRun";
-import { THEMES } from "@/lib/themes";
+import { AGENT_LIST, THEMES } from "@/lib/themes";
 import type { AgentId, Run, Venue } from "@/lib/types";
 import { Icon } from "@/components/Icon";
 import { CAPABILITIES, WHERE_LABEL, type Where } from "@/lib/capabilities";
@@ -32,7 +32,6 @@ const GOALS: { title: string; sub: string; agent: AgentId; say: string }[] = [
   { title: "Protect against a cost", sub: "Pay a little now, get paid if the bad thing happens", agent: "inso", say: "I want to protect myself against a cost" },
   { title: "Bet on an outcome", sub: "Crypto, rates, weather, sports", agent: "inso", say: "I want to bet on something" },
   { title: "See what the odds say", sub: "What the market thinks will happen", agent: "inso", say: "What are the markets saying?" },
-  { title: "Buy or sell crypto", sub: "With a price limit you set", agent: "trado", say: "I want to trade a coin" },
   { title: "Plan a road trip", sub: "A drive split into days, with places to stay", agent: "worko", say: "Plan a road trip for me" },
   { title: "Check what I hold", sub: "Your positions, and selling them", agent: "inso", say: "Show my positions" },
 ];
@@ -146,7 +145,7 @@ export default function NewJob() {
         />
         <div className="mt-2 flex flex-wrap items-center justify-between gap-3">
           <div className="flex min-w-0 flex-wrap items-center gap-1 text-[12.5px]" role="tablist" aria-label="Who takes it">
-            {(["auto", "inso", "trado", "worko"] as const).map((id) => (
+            {(["auto", "inso", "worko"] as const).map((id) => (
               <button
                 key={id}
                 type="button"
@@ -194,29 +193,8 @@ export default function NewJob() {
         )}
       </form>
 
-      <button
-        type="button"
-        disabled={Boolean(busy)}
-        onClick={() => start("Run the showcase: real work across three agents for a few cents", "inso", "showcase", "showcase")}
-        className="pressable group flex items-center gap-4 rounded-[14px] border-[1.5px] border-ink bg-agent-soft px-4 py-3.5 text-left shadow-[3px_3px_0_0_var(--agent)] disabled:opacity-60"
-        data-testid="showcase"
-      >
-        <span className="flex shrink-0 -space-x-2">
-          {(["inso", "trado", "worko"] as const).map((a) => (
-            <span key={a} data-agent={a}>
-              <AgentIcon agent={a} size={34} mood={busy === "showcase" ? "working" : "happy"} />
-            </span>
-          ))}
-        </span>
-        <span className="min-w-0 flex-1">
-          <span className="block text-[15px] font-semibold">See it work: ten real steps for about six cents</span>
-          <span className="block text-[13px] text-ink-2">Three agents, three sellers, real payments. Prices, network checks, a route, and a bet that waits for a sale and two price sources. You can change any step before it runs.</span>
-        </span>
-        {busy === "showcase" ? <Spinner /> : <Icon name="arrow" size={17} className="shrink-0 transition-transform group-hover:translate-x-0.5" />}
-      </button>
-
-      <nav aria-label="Agent homes" className="grid grid-cols-3 gap-2" data-testid="agent-homes">
-        {(Object.keys(THEMES) as AgentId[]).map((a) => (
+      <nav aria-label="Agent homes" className="grid grid-cols-2 gap-2" data-testid="agent-homes">
+        {AGENT_LIST.map((a) => (
           <Link key={a} href={`/${a}`} data-agent={a} className="pressable flex items-center gap-2 rounded-xl border border-line bg-panel px-3 py-2.5 hover:border-ink">
             <AgentIcon agent={a} size={28} />
             <span className="min-w-0">

@@ -9,11 +9,11 @@ import { Icon } from "@/components/Icon";
 import { Point, Points } from "@/components/Points";
 import { useAgentRecords } from "@/components/agentStats";
 import { KITS } from "@/lib/agentKit";
-import { THEMES } from "@/lib/themes";
+import { AGENT_LIST, THEMES } from "@/lib/themes";
 import { fmt } from "@/lib/money";
 import type { AgentId } from "@/lib/types";
 
-const AGENTS = Object.keys(THEMES) as AgentId[];
+const AGENTS = AGENT_LIST;
 
 export default function AgentDirectory() {
   const [q, setQ] = useState("");

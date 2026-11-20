@@ -1,21 +1,59 @@
 import { createHmac, randomUUID } from "node:crypto";
+import { AsyncLocalStorage } from "node:async_hooks";
 import type { MoveAction, OrderResult, Venue } from "@/lib/types";
 import * as gemini from "./gemini";
 import { PROD_BASE, SANDBOX_BASE } from "./gemini";
 
 /**
  * Gemini exchange client for the moves users approve.
- * - gemini-sandbox (default when keys are set): Gemini's test exchange, real order flow, test funds.
- * - gemini: real money, only with GEMINI_TRADING_ENV=production.
+ * - gemini-sandbox (default when its key is set): Gemini's test exchange, real order flow, test funds.
+ * - gemini: real money, only for jobs that choose it (or GEMINI_DEFAULT_VENUE=gemini).
  * - paper: no keys; nothing is sent and every result says "simulation".
  * Keys sign each request locally (HMAC-SHA384), so they stay in the server env.
  * Endpoints follow developer.gemini.com (Prediction Markets REST + spot order API).
  */
 const PROD = process.env.GEMINI_TRADING_ENV === "production";
-const KEY = process.env.GEMINI_TRADING_KEY;
-const SECRET = process.env.GEMINI_TRADING_SECRET;
 
-export const tradingVenue = (): Venue => (KEY && SECRET ? (PROD ? "gemini" : "gemini-sandbox") : "paper");
+/**
+ * Keys per venue: GEMINI_SANDBOX_KEY/SECRET for the test exchange, GEMINI_LIVE_KEY/SECRET for real
+ * money. The older single GEMINI_TRADING_KEY/SECRET still works: it is the sandbox key, or the live
+ * one when GEMINI_TRADING_ENV=production.
+ */
+function creds(v: Venue): { key: string; secret: string; base: string } | null {
+  const pick = (a?: string, b?: string) => (a && b ? { key: a, secret: b } : null);
+  if (v === "gemini-sandbox") {
+    const c = pick(process.env.GEMINI_SANDBOX_KEY, process.env.GEMINI_SANDBOX_SECRET) ?? (!PROD ? pick(process.env.GEMINI_TRADING_KEY, process.env.GEMINI_TRADING_SECRET) : null);
+    return c && { ...c, base: SANDBOX_BASE };
+  }
+  if (v === "gemini") {
+    const c = pick(process.env.GEMINI_LIVE_KEY, process.env.GEMINI_LIVE_SECRET) ?? (PROD ? pick(process.env.GEMINI_TRADING_KEY, process.env.GEMINI_TRADING_SECRET) : null);
+    return c && { ...c, base: PROD_BASE };
+  }
+  return null;
+}
+
+/** Whether orders can go to a venue on this server. Practice always can. */
+export const venueReady = (v: Venue) => v === "paper" || Boolean(creds(v));
+/** Every venue this server can send orders to, safest first. */
+export const venues = (): Venue[] => (["paper", "gemini-sandbox", "gemini"] as Venue[]).filter(venueReady);
+
+/** Real money is never the default unless the owner says so (GEMINI_DEFAULT_VENUE=gemini, or the old production setting with only a live key). */
+function defaultVenue(): Venue {
+  const want = process.env.GEMINI_DEFAULT_VENUE as Venue | undefined;
+  if (want && venueReady(want)) return want;
+  if (venueReady("gemini-sandbox")) return "gemini-sandbox";
+  if (PROD && venueReady("gemini")) return "gemini";
+  return "paper";
+}
+
+const venueStore = new AsyncLocalStorage<Venue>();
+/** Where this job's orders go: the job's own choice when it has one, else the server's default. */
+export const tradingVenue = (): Venue => {
+  const v = venueStore.getStore();
+  return v && venueReady(v) ? v : defaultVenue();
+};
+/** Runs `fn` with orders going to `v` (falls back to the default if `v` isn't connected). */
+export const withVenue = <T>(v: Venue | undefined, fn: () => T): T => venueStore.run(v && venueReady(v) ? v : defaultVenue(), fn);
 export const VENUE_NAME: Record<Venue, string> = { "gemini-sandbox": "Gemini sandbox", gemini: "Gemini", paper: "Practice" };
 export const VENUE_NOTE: Record<Venue, string> = {
   "gemini-sandbox": "Gemini's test exchange: real orders, test money",
@@ -24,7 +62,7 @@ export const VENUE_NOTE: Record<Venue, string> = {
 };
 /** Where tradable markets and their order books live for a venue. */
 export const marketBase = (v: Venue = tradingVenue()) => (v === "gemini-sandbox" ? SANDBOX_BASE : PROD_BASE);
-const tradeBase = () => (PROD ? PROD_BASE : SANDBOX_BASE);
+const tradeBase = () => creds(tradingVenue())?.base ?? marketBase(tradingVenue());
 
 export class ExchangeError extends Error {
   constructor(
@@ -37,7 +75,10 @@ export class ExchangeError extends Error {
 
 let lastNonce = 0;
 async function priv<T = Record<string, unknown>>(path: string, body: Record<string, unknown> = {}, method: "POST" | "GET" = "POST"): Promise<T> {
-  if (!KEY || !SECRET) throw new ExchangeError("No exchange connected", "auth");
+  const c = creds(tradingVenue());
+  if (!c) throw new ExchangeError("No exchange connected", "auth");
+  const KEY = c.key;
+  const SECRET = c.secret;
   // Nonces must increase per key, even for calls in the same millisecond.
   lastNonce = Math.max(Date.now(), lastNonce + 1);
   const payload = Buffer.from(JSON.stringify({ request: path, nonce: lastNonce, ...body })).toString("base64");
@@ -344,8 +385,13 @@ export async function positions(): Promise<{ venue: Venue; positions: Position[]
 type PmOrder = { orderId: number; status: "open" | "filled" | "cancelled"; filledQuantity: string; quantity: string; avgExecutionPrice: string | null };
 
 /** Latest state of an order placed for a move. */
+/** An order's latest state, read from the venue it was placed on. */
 export async function refreshOrder(o: OrderResult, kind: MoveAction["kind"]): Promise<OrderResult> {
-  if (!o.orderId || o.venue === "paper" || o.venue !== tradingVenue()) return o;
+  if (!o.orderId || o.venue === "paper" || !venueReady(o.venue)) return o;
+  return venueStore.run(o.venue, () => refreshOn(o, kind));
+}
+
+async function refreshOn(o: OrderResult, kind: MoveAction["kind"]): Promise<OrderResult> {
   const id = Number(o.orderId);
   if (kind === "prediction_order") {
     const active = await priv<{ orders: PmOrder[] }>("/v1/prediction-markets/orders/active", { symbol: o.symbol, limit: 100 });
@@ -362,6 +408,11 @@ export async function refreshOrder(o: OrderResult, kind: MoveAction["kind"]): Pr
 export async function cancelOrder(o: OrderResult, kind: MoveAction["kind"]): Promise<OrderResult> {
   if (o.venue === "paper") return { ...o, status: "cancelled", updatedAt: now() };
   if (!o.orderId) throw new ExchangeError("No order to cancel");
+  if (!venueReady(o.venue)) throw new ExchangeError(`${VENUE_NAME[o.venue]} isn't connected on this server any more`, "auth");
+  return venueStore.run(o.venue, () => cancelOn(o, kind));
+}
+
+async function cancelOn(o: OrderResult, kind: MoveAction["kind"]): Promise<OrderResult> {
   if (kind === "prediction_order") await priv("/v1/prediction-markets/order/cancel", { orderId: Number(o.orderId) });
   else await priv("/v1/order/cancel", { order_id: Number(o.orderId) });
   return refreshOrder({ ...o, status: "cancelled" }, kind).catch(() => ({ ...o, status: "cancelled" as const, updatedAt: now() }));

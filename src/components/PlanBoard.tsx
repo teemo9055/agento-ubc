@@ -2,7 +2,7 @@
 import { useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import Link from "next/link";
 import type { AgentId, Plan, PlanStep, Run } from "@/lib/types";
-import { THEMES } from "@/lib/themes";
+import { AGENT_LIST, THEMES } from "@/lib/themes";
 import { AgentIcon } from "./AgentIcon";
 import { Assemble } from "./Assemble";
 import { stepCost, usdc } from "./Chat";
@@ -416,7 +416,7 @@ export function PlanBoard({ plan, run }: { plan: Plan; run: Run }) {
           />
           <select value={addAgent} onChange={(e) => setAddAgent(e.target.value as "auto" | AgentId)} aria-label="Who does it" className="h-10 rounded-lg border border-line bg-surface px-2 text-[13px]">
             <option value="auto">Auto</option>
-            {(Object.keys(THEMES) as AgentId[]).map((a) => (
+            {AGENT_LIST.map((a) => (
               <option key={a} value={a}>
                 {THEMES[a].name}
               </option>

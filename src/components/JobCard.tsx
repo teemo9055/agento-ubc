@@ -155,14 +155,14 @@ export function Card({ r, opened }: { r: RunSummary; opened?: number }) {
 
 /** A band of pixel blocks in the agents' colours, across the top of the page. */
 export function Band({ single = false }: { /** One agent's colour (from the page's agent theme) instead of all three. */ single?: boolean } = {}) {
-  const cols = single ? ["var(--agent)", "var(--agent)", "var(--agent)"] : ["var(--inso, #6250d6)", "var(--trado, #2368c4)", "var(--worko, #eb6834)"];
+  const cols = single ? ["var(--agent)", "var(--agent)"] : ["var(--inso, #6250d6)", "var(--worko, #eb6834)"];
   return (
     <div className="grid h-14 grid-cols-[repeat(24,minmax(0,1fr))] overflow-hidden rounded-2xl border-[1.5px] border-ink sm:h-16" aria-hidden>
       {Array.from({ length: 48 }, (_, i) => {
         const row = Math.floor(i / 24);
         const col = i % 24;
         const on = (col + row) % 2 === 0;
-        return <span key={i} style={{ background: on ? cols[Math.floor(col / 8) % 3] : "transparent", opacity: on ? 0.85 - ((col * 7 + row * 3) % 4) * 0.15 : 1 }} />;
+        return <span key={i} style={{ background: on ? cols[Math.floor(col / 12) % 2] : "transparent", opacity: on ? 0.85 - ((col * 7 + row * 3) % 4) * 0.15 : 1 }} />;
       })}
     </div>
   );

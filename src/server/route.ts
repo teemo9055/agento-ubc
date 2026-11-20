@@ -18,20 +18,21 @@ export function routeByRules(task: string): AgentId | null {
   const t = task.toLowerCase();
   if (/\b(hedge|protect|insur|odds|bet|chance|probab|will .+\?)\b/.test(t)) return "inso";
   if (/\b(trade|chart|trend|candle|dip)\b/.test(t)) return "trado";
-  if (/\b(trip|drive|route|road|errand|listing|seller|scam|apartment|landlord|ride|flight|hotel)\b/.test(t)) return "worko";
+  if (/\b(trip|drive|route|road|errand|listing|seller|scam|apartment|landlord|ride|flight|hotel|review|reviews|news|search|price check|contractor)\b/.test(t)) return "worko";
   return null;
 }
 
 export async function routeAgent(task: string): Promise<AgentId> {
+  // Trado isn't offered any more: its kind of request goes to Inso.
   const byRule = routeByRules(task);
-  if (byRule) return byRule;
+  if (byRule) return byRule === "trado" ? "inso" : byRule;
   const r = await aiJson(Pick, {
     name: "route",
     model: FAST_MODEL,
     maxTokens: 40,
     system:
-      "Pick the agent for a request. inso: prediction markets (odds, bets, hedging a cost, selling positions) and anything that needs several agents. trado: buying or selling a crypto coin at spot, price trends. worko: driving trips (routes split into days, places to stay, charge, fuel or eat near a stop). If unsure, inso.",
+      "Pick the agent for a request. inso: prediction markets (odds, bets, hedging or insuring a cost, selling positions, crypto prices) and anything that needs several agents. worko: errands: researching (web, news, store prices, reviews), planning drives, and checking a seller, number or business before paying. If unsure, inso.",
     user: task,
   }).catch(() => null);
-  return r?.value.agent ?? "inso";
+  return r?.value.agent === "worko" ? "worko" : "inso";
 }

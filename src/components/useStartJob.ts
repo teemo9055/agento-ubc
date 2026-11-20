@@ -50,5 +50,25 @@ export function useStartJob() {
       setBusy("");
     }
   }
-  return { start, busy, err, blocked, mode };
+  /** Opens a catalog job: built from live data, then shown in its chat to change or set up. */
+  async function startJob(id: string) {
+    if (busy) return;
+    setBusy(id);
+    setErr("");
+    setBlocked(null);
+    try {
+      const run = await post<Run>("/api/jobs/start", {
+        id,
+        mode,
+        network: mode === "live" ? jobNetwork(prefs, cfg) : undefined,
+        venue: prefs.venue,
+        accessCode: prefs.accessCode,
+      });
+      router.push(`/runs/${run.id}`);
+    } catch (x) {
+      setErr((x as Error).message);
+      setBusy("");
+    }
+  }
+  return { start, startJob, busy, err, blocked, mode };
 }

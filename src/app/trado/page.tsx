@@ -1,9 +1,6 @@
-import type { Metadata } from "next";
-import { AgentHome } from "@/components/AgentHome";
+import { redirect } from "next/navigation";
 
-export const metadata: Metadata = { title: "Trado · Agento" };
-
-/** Trado's own home: how it starts, and your jobs with it. */
+/** Trado isn't offered any more: its old links land on Inso, which trades on prediction markets. */
 export default function Page() {
-  return <AgentHome agent="trado" />;
+  redirect("/inso");
 }

@@ -163,7 +163,7 @@ export function LiveMarket({ action, hedge, venue, settlement, held }: { action:
     <section className="rounded-2xl border border-line bg-panel px-4 py-3" aria-label="Live market" data-testid="live-market">
       <div className="flex items-center justify-between gap-2">
         <div className="min-w-0 truncate text-[13px] font-semibold">
-          {a.event ? `${a.event}: ` : ""}
+          {a.event ? `${a.event.replace(/\?$/, "")}: ` : ""}
           {outcomeOf(a)}
         </div>
         <LiveDot t={first} />

@@ -64,7 +64,7 @@ export function CoverSheet({ p }: { p: Proposal }) {
       <p className="border-t border-[#f1f0ec] py-2.5 text-[13.5px] leading-snug" data-testid="cover-ensures">
         <Icon name="shield" size={14} className="mr-1.5 inline text-agent-ink" />
         {h
-          ? `If ${h.protects} happens, this pays ${money(h.payout)}, about ${Math.round((h.covered / h.lossUsd) * 100)}% of your ${money(h.lossUsd)} loss. If it doesn't, the ${money(cost)} is what the cover cost.`
+          ? `If you face ${h.protects}, this pays ${money(h.payout)}, about ${Math.round((h.covered / h.lossUsd) * 100)}% of your ${money(h.lossUsd)} loss. If not, the ${money(cost)} is what the cover cost.`
           : `If ${outcome} happens you get ${money(pays)}; if not, you're out the ${money(cost)} it cost.`}
       </p>
     </section>
