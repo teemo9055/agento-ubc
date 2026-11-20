@@ -78,11 +78,16 @@ export const JOBS: JobCardInfo[] = [
   // ---------- Worko ----------
   { id: "company-brief", agent: "worko", section: "research", title: "What's going on with this company?", does: "Top search results and the latest news, summed up", glyph: "case", money: "real" },
   { id: "fair-price", agent: "worko", section: "research", title: "Is this a fair price?", does: "What stores charge for the same thing right now", glyph: "tag", money: "real" },
+  { id: "company-deep", agent: "worko", section: "research", title: "Before I invest in or partner with a company", does: "Search results, news, complaints and rivals: five lookups, summed up", glyph: "case", money: "real" },
+  { id: "big-buy", agent: "worko", section: "research", title: "Buying something big. Right one, right price?", does: "Store prices, reviews, recalls and whether a new model is coming", glyph: "tag", money: "real" },
   { id: "place-reviews", agent: "worko", section: "research", title: "Is this place any good?", does: "Its Google reviews and star ratings, read for you", glyph: "food", money: "real" },
+  { id: "city-weekend", agent: "worko", section: "plan", title: "Plan a weekend in a city I don't know", does: "What's on, what's in the news, and reviews of where to eat", glyph: "food", money: "real" },
   { id: "road-trip", agent: "worko", section: "plan", title: "Plan my drive so no day is too long", does: "The route split into days, with places to sleep", glyph: "map", money: "any" },
   { id: "ev-trip", agent: "worko", section: "plan", title: "Will I find chargers on my EV trip?", does: "The route split into days, with chargers at each stop", glyph: "car", money: "any" },
   { id: "trip-gas", agent: "worko", section: "plan", title: "Road trip, and cover the gas", does: "Worko plans the drive, Inso covers an oil price jump", glyph: "map", money: "any" },
   { id: "seller-check", agent: "worko", section: "verify", title: "Is this seller real?", does: "Phone line check and a reverse image search of the photo", glyph: "shield", money: "real" },
+  { id: "used-car", agent: "worko", section: "verify", title: "Buying a used car from a stranger", does: "Seller's phone, a fair price, recalls, common faults and scams", glyph: "car", money: "real" },
+  { id: "rental-check", agent: "worko", section: "verify", title: "Is this apartment listing real?", does: "Landlord's phone, the manager's reviews, usual rent and scams", glyph: "house", money: "real" },
   { id: "business-check", agent: "worko", section: "verify", title: "Can I trust this contractor?", does: "Recent reviews plus any news about the business", glyph: "tool", money: "real" },
   // ---------- Inso ----------
   { id: "news-crypto", agent: "inso", section: "news", title: "Bitcoin's in the headlines. Is it priced in?", does: "Reads today's Bitcoin news, then bets on a price line", glyph: "chart", money: "real" },

@@ -1,6 +1,6 @@
 import { describe, expect, it, vi } from "vitest";
 import { jobById, JOBS, SECTIONS } from "@/lib/jobs";
-import { venueFor } from "./jobs";
+import { buildJob, venueFor } from "./jobs";
 import { validateProposal } from "./tools";
 import { withNet } from "./netContext";
 
@@ -50,4 +50,18 @@ describe("checks paid in real USDC", () => {
     if ("error" in r) throw new Error(r.error);
     expect(r.proposal.research[0].tool).toBe("phone_check");
   });
+});
+
+describe("every check job in the catalog", () => {
+  // Checks need no market data, so each one can be built and checked here: a wrong argument name
+  // or an unpriced lookup fails now, not when someone clicks the card.
+  const checks = ["company-brief", "company-deep", "fair-price", "big-buy", "place-reviews", "city-weekend", "seller-check", "used-car", "rental-check", "business-check"];
+  for (const id of checks)
+    it(`${id} builds and passes the checks on mainnet`, async () => {
+      const b = await buildJob(id, "paper");
+      if ("error" in b || !("input" in b)) throw new Error("error" in b ? b.error : "not a single move");
+      const r = await withNet("mainnet", () => validateProposal("worko", b.input, `t-${id}`));
+      if ("error" in r) throw new Error(`${id}: ${r.error}`);
+      expect(r.proposal.research.length).toBe(b.input.research.length);
+    });
 });

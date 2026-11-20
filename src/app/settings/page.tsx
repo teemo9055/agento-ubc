@@ -275,6 +275,15 @@ export default function Settings() {
             );
           })}
         </div>
+        {cfg?.venues && !cfg.venues.some((v) => v.id === "gemini") && (
+          <div className="mt-3 rounded-xl border-[1.5px] border-ink bg-agent-soft/50 p-3 shadow-[3px_3px_0_0_var(--agent)]" data-testid="connect-gemini">
+            <span className="text-[11px] font-semibold uppercase tracking-wide text-agent-ink">Connect the real exchange</span>
+            <p className="mt-1 text-[13px] leading-snug text-ink-2">
+              Weather, sports and Fed markets are only on Gemini&apos;s real exchange. Create an API key with trading access on gemini.com, add it to <code className="rounded bg-panel px-1">.env.local</code> as{" "}
+              <code className="rounded bg-panel px-1">GEMINI_LIVE_KEY</code> and <code className="rounded bg-panel px-1">GEMINI_LIVE_SECRET</code>, then restart the app. Orders there use real money, always shown before you approve.
+            </p>
+          </div>
+        )}
         <div className="mt-3">
           <ExchangePanel />
         </div>

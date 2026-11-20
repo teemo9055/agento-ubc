@@ -222,6 +222,78 @@ const CARDS: Record<string, CardDef> = {
       venue: "paper",
     }),
   },
+  "company-deep": {
+    ask: () => "I'm thinking of investing in Rivian. Give me the full picture first.",
+    cost: () => ({ usd: usd(WEB_PRICES.search * 4n + WEB_PRICES.news), steps: 5 }),
+    build: async () => ({
+      input: check("Brief: Rivian", "What the web says, the latest news, complaints, money trouble and who it competes with, in one brief.", "Run five lookups on Rivian for $0.01?", [
+        { tool: "web_search", args: { query: "Rivian" }, label: "What it is and does", why: "The company in its own words and others'" },
+        { tool: "news_search", args: { query: "Rivian" }, label: "Latest news", why: "What changed recently" },
+        { tool: "web_search", args: { query: "Rivian complaints problems" }, label: "Complaints", why: "What customers and staff say goes wrong" },
+        { tool: "web_search", args: { query: "Rivian earnings cash debt layoffs" }, label: "Money health", why: "Earnings, cash and layoffs" },
+        { tool: "web_search", args: { query: "Rivian competitors vs" }, label: "Who it competes with", why: "Its rivals and how it compares" },
+      ]),
+      intro: "Five lookups on Rivian: what it is, the latest news, complaints, money health and rivals, then one brief with the sources. Change the company in the chat, or add or drop a lookup.",
+      venue: "paper",
+    }),
+  },
+  "big-buy": {
+    ask: () => "I want to buy Sony WH-1000XM5 headphones. Is it the right pick, at the right price, right now?",
+    cost: () => ({ usd: usd(WEB_PRICES.shopping + WEB_PRICES.search * 2n + WEB_PRICES.news), steps: 4 }),
+    build: async () => ({
+      input: check("Buy check: Sony WH-1000XM5", "Prices across stores, what reviewers say, any recall, and whether a newer model is about to replace it.", "Run four lookups on the Sony WH-1000XM5 for $0.01?", [
+        { tool: "shopping_prices", args: { product: "Sony WH-1000XM5" }, label: "Store prices", why: "What stores charge right now" },
+        { tool: "web_search", args: { query: "Sony WH-1000XM5 review" }, label: "Reviews", why: "What reviewers like and dislike" },
+        { tool: "news_search", args: { query: "Sony WH-1000XM5 recall problem" }, label: "Recalls and problems", why: "Known faults or recalls" },
+        { tool: "web_search", args: { query: "Sony WH-1000XM6 release date" }, label: "Is a new model coming?", why: "Whether to wait for the next one" },
+      ]),
+      intro: "Four lookups on the Sony WH-1000XM5: store prices, reviews, recalls, and whether a new model is coming. Change the product in the chat.",
+      venue: "paper",
+    }),
+  },
+  "city-weekend": {
+    ask: () => "I'm spending this weekend in Portland, Oregon. What's on, and where should I eat?",
+    cost: () => ({ usd: usd(WEB_PRICES.search + WEB_PRICES.news + (WEB_PRICES.places + WEB_PRICES.reviews) * 2n), steps: 4 }),
+    build: async () => ({
+      input: check("Weekend: Portland", "Events this weekend, anything in the news to plan around, and real reviews of two places to eat.", "Plan your Portland weekend with four lookups for $0.012?", [
+        { tool: "web_search", args: { query: "things to do in Portland Oregon this weekend" }, label: "What's on", why: "Events and things to do" },
+        { tool: "news_search", args: { query: "Portland Oregon this weekend" }, label: "In the news", why: "Closures, weather or crowds to plan around" },
+        { tool: "place_reviews", args: { place: "Pine State Biscuits Portland" }, label: "Breakfast: reviews", why: "Is it worth the line" },
+        { tool: "place_reviews", args: { place: "Ox Restaurant Portland" }, label: "Dinner: reviews", why: "Recent ratings and what people order" },
+      ]),
+      intro: "Four lookups for a Portland weekend: what's on, what's in the news, and reviews of a breakfast and a dinner spot. Change the city or the places in the chat.",
+      venue: "paper",
+    }),
+  },
+  "used-car": {
+    ask: () => "I'm buying a 2018 Honda Civic for $14,000 from a private seller. Their number is +1 415 555 0134. Check everything first.",
+    cost: () => ({ usd: usd(WEB_PRICES.phone + WEB_PRICES.shopping + WEB_PRICES.news + WEB_PRICES.search * 2n), steps: 5 }),
+    build: async () => ({
+      input: check("Check: 2018 Honda Civic sale", "The seller's phone, what the car really sells for, recalls, common problems and known scams.", "Run five checks before you pay $14,000, for $0.02?", [
+        { tool: "phone_check", args: { phone: "+1 415 555 0134" }, label: "Seller's phone line", why: "Internet-only numbers are common in scams" },
+        { tool: "web_search", args: { query: "2018 Honda Civic common problems" }, label: "Common problems", why: "What to look at on the test drive" },
+        { tool: "shopping_prices", args: { product: "2018 Honda Civic used" }, label: "What it sells for", why: "Whether $14,000 is fair" },
+        { tool: "news_search", args: { query: "2018 Honda Civic recall" }, label: "Recalls", why: "Faults to ask the seller about" },
+        { tool: "web_search", args: { query: "private seller used car scam deposit" }, label: "Known scams", why: "The tricks to watch for" },
+      ]),
+      intro: "Five checks before you pay: the seller's phone, a fair price, recalls, common problems and known scams. Paste their number in the chat to check yours, and a link to the listing photo to also check whether it was copied.",
+      venue: "paper",
+    }),
+  },
+  "rental-check": {
+    ask: () => "I found an apartment managed by Greystar in Austin. The landlord's number is +1 512 555 0199. Is the listing real?",
+    cost: () => ({ usd: usd(WEB_PRICES.phone + WEB_PRICES.places + WEB_PRICES.reviews + WEB_PRICES.search * 2n), steps: 4 }),
+    build: async () => ({
+      input: check("Check: Austin apartment listing", "The landlord's phone, the manager's reviews, what rent usually is there, and how rental scams work.", "Run four checks before you send a deposit, for $0.018?", [
+        { tool: "phone_check", args: { phone: "+1 512 555 0199" }, label: "Landlord's phone line", why: "Internet-only numbers are common in rental scams" },
+        { tool: "web_search", args: { query: "average rent 1 bedroom apartment Austin" }, label: "What rent usually is", why: "A price far below it is a warning sign" },
+        { tool: "place_reviews", args: { place: "Greystar Austin" }, label: "Manager's reviews", why: "How tenants rate the manager" },
+        { tool: "web_search", args: { query: "rental listing scam deposit wire" }, label: "How rental scams work", why: "The signs to watch for" },
+      ]),
+      intro: "Four checks before you send a deposit: the landlord's phone, the manager's reviews, what rent usually is, and how rental scams work. Paste the real number in the chat, and a link to a listing photo to also check whether it was copied.",
+      venue: "paper",
+    }),
+  },
   "place-reviews": {
     ask: () => "Is Blue Bottle Coffee in Oakland any good?",
     cost: () => ({ usd: usd(WEB_PRICES.places + WEB_PRICES.reviews), steps: 1 }),
@@ -383,7 +455,7 @@ export async function previews(want: Venue): Promise<JobPreview[]> {
       // Checks paid in real USDC need Arc mainnet on this server: say so on the card, not after a click.
       if (card.money === "real" && !mainnet) return { id: card.id, venue, needsMainnet: true, unavailable: "Needs Arc mainnet. Set it up in Settings → Paying, then this runs for real USDC." };
       // A real-exchange-only market with no real exchange connected (and practice off): say what's missing.
-      if (venue === "paper" && !venueReady("paper")) return { id: card.id, venue: "gemini", needsVenue: true, unavailable: "This market is only on Gemini's real exchange. Add your Gemini API key in Settings → Exchange to trade it." };
+      if (venue === "paper" && !venueReady("paper")) return { id: card.id, venue: "gemini", needsVenue: true, unavailable: "Gemini lists this market only on its real exchange, which isn't connected yet. Settings → Exchange shows how." };
       const cost = def.cost?.();
       if (!def.options) return { id: card.id, cost: cost?.usd, steps: cost?.steps, venue };
       const o = await Promise.race([def.options(), new Promise<null>((r) => setTimeout(() => r(null), 15_000))]).catch(() => null);

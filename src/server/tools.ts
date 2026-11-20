@@ -368,8 +368,8 @@ export const ProposalInput = z.object({
   ask: z.string().max(160).describe("The yes/no question for the user, e.g. 'Buy 10 YES at 55¢ or less if the odds are still under 60%?'"),
   research: z
     .array(z.object({ tool: z.enum(Object.keys(RESEARCH) as [string, ...string[]]), args: z.record(z.string(), z.string()), label: z.string().max(50), why: z.string().max(100) }))
-    .max(4)
-    .describe("Paid lookups to run before acting. Empty if the free data already settles it."),
+    .max(8)
+    .describe("Paid lookups to run before acting (up to 8; the job's spending cap still applies). Empty if the free data already settles it."),
   action: z
     .discriminatedUnion("kind", [
       z.object({
@@ -466,7 +466,7 @@ export async function validateProposal(agent: AgentId, input: unknown, id: strin
   const parsed = (opts.composed ? ComposedInput : ProposalInput).safeParse(input);
   if (!parsed.success) return { error: `Invalid move: ${parsed.error.issues.map((i) => `${i.path.join(".")} ${i.message}`).join("; ")}` };
   const p = parsed.data as z.infer<typeof ComposedInput>;
-  if (!opts.composed && p.research.length > 4) return { error: "At most 4 paid lookups in one move" };
+  if (!opts.composed && p.research.length > 8) return { error: "At most 8 paid lookups in one job. Split the rest into a second job, or drop the least useful one." };
   const venue = tradingVenue();
   const adjustments: string[] = [];
   let eventContracts: string[] = [];
